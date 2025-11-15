@@ -1,7 +1,7 @@
 apiVersion: v2
-name: predictive-horizontal-pod-autoscaler
+name: phpa-operator
 description: The Predictive Horizontal Pod Autoscaler Operator allows deployment of Predictive Horizontal Pod Autoscalers
 
 type: application
 
-version: 0.0.0
+version: 0.13.3

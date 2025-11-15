@@ -703,6 +703,90 @@ spec:
                   description: Model represents a prediction model to use, e.g. a
                     linear regression
                   properties:
+                    arima:
+                      description: arima is the configuration to use for the ARIMA
+                        model, it will only be used if the type is set to 'ARIMA'
+                      properties:
+                        autoArima:
+                          description: autoArima enables automatic ARIMA parameter
+                            selection using information criteria
+                          type: boolean
+                        concentrateScale:
+                          description: concentrateScale concentrates the scale when
+                            fitting the model
+                          type: boolean
+                        enforceInvertibility:
+                          description: enforceInvertibility forces the MA parameters
+                            to be invertible during model fitting
+                          type: boolean
+                        enforceStationarity:
+                          description: enforceStationarity forces the AR parameters
+                            to be stationary during model fitting
+                          type: boolean
+                        historySize:
+                          description: historySize is how many timestamped replica
+                            counts should be stored for this ARIMA model, with older
+                            timestamped replica counts being removed from the data
+                            as new ones are added. For example a value of 50 means
+                            there will only be a maximum of 50 stored timestamped
+                            replica counts for this model. Default is 50 if not specified.
+                          minimum: 1
+                          type: integer
+                        informationCriterion:
+                          description: 'informationCriterion is used when autoArima
+                            is true: ''aic'' (default) or ''bic'''
+                          type: string
+                        lookAhead:
+                          description: lookAhead is how far in the future should the
+                            ARIMA predict in milliseconds. For example a value of
+                            10000 will predict 10 seconds into the future
+                          minimum: 1
+                          type: integer
+                        maxOrder:
+                          description: maxOrder defines bounds for automatic ARIMA
+                            parameter selection [maxP, maxD, maxQ]
+                          items:
+                            type: integer
+                          maxItems: 3
+                          minItems: 3
+                          type: array
+                        maxSeasonalOrder:
+                          description: maxSeasonalOrder defines bounds for automatic
+                            SARIMA parameter selection [maxP, maxD, maxQ, maxS]
+                          items:
+                            type: integer
+                          maxItems: 4
+                          minItems: 4
+                          type: array
+                        order:
+                          description: 'order is the ARIMA order parameters [p, d,
+                            q] where: p = number of lag observations (AR part) d =
+                            degree of differencing (I part) q = size of moving average
+                            window (MA part)'
+                          items:
+                            type: integer
+                          maxItems: 3
+                          minItems: 3
+                          type: array
+                        seasonalOrder:
+                          description: 'seasonalOrder is the SARIMA seasonal parameters
+                            [P, D, Q, s] where: P = seasonal AR order D = seasonal
+                            differencing order Q = seasonal MA order s = number of
+                            time steps per seasonal cycle'
+                          items:
+                            type: integer
+                          maxItems: 4
+                          minItems: 4
+                          type: array
+                        trend:
+                          description: 'trend specifies the deterministic trend component.
+                            Can be: null (no trend), ''c'' (constant), ''t'' (linear),
+                            ''ct'' (both)'
+                          type: string
+                      required:
+                      - lookAhead
+                      - order
+                      type: object
                     calculationTimeout:
                       description: 'calculationTimeout is how long the PHPA should
                         allow for the model to calculate a value in milliseconds,
@@ -882,6 +966,7 @@ spec:
                       enum:
                       - Linear
                       - HoltWinters
+                      - ARIMA
                       type: string
                   required:
                   - name

@@ -1,0 +1,22 @@
+{
+  "order": [1, 1, 1],
+  "lookAhead": 10000,
+  "replicaHistory": [
+    {
+      "time": "2023-01-01T12:00:00Z",
+      "replicas": 2
+    },
+    {
+      "time": "2023-01-01T12:01:00Z",
+      "replicas": 3
+    },
+    {
+      "time": "2023-01-01T12:02:00Z",
+      "replicas": 4
+    },
+    {
+      "time": "2023-01-01T12:03:00Z",
+      "replicas": 5
+    }
+  ]
+}

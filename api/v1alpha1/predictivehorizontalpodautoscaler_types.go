@@ -35,6 +35,7 @@ const (
 const (
 	TypeHoltWinters = "HoltWinters"
 	TypeLinear      = "Linear"
+	TypeArima       = "ARIMA"
 )
 
 const (
@@ -121,11 +122,82 @@ type HoltWinters struct {
 	RuntimeTuningFetchHook *HookDefinition `json:"runtimeTuningFetchHook"`
 }
 
+// Arima represents an ARIMA (AutoRegressive Integrated Moving Average) prediction model configuration
+type Arima struct {
+	// order is the ARIMA order parameters [p, d, q] where:
+	// p = number of lag observations (AR part)
+	// d = degree of differencing (I part)
+	// q = size of moving average window (MA part)
+	// +kubebuilder:validation:MinItems=3
+	// +kubebuilder:validation:MaxItems=3
+	Order []int `json:"order"`
+
+	// lookAhead is how far in the future should the ARIMA predict in milliseconds. For example a value of 10000
+	// will predict 10 seconds into the future
+	// +kubebuilder:validation:Minimum=1
+	LookAhead int `json:"lookAhead"`
+
+	// seasonalOrder is the SARIMA seasonal parameters [P, D, Q, s] where:
+	// P = seasonal AR order
+	// D = seasonal differencing order
+	// Q = seasonal MA order
+	// s = number of time steps per seasonal cycle
+	// +optional
+	// +kubebuilder:validation:MinItems=4
+	// +kubebuilder:validation:MaxItems=4
+	SeasonalOrder []int `json:"seasonalOrder,omitempty"`
+
+	// trend specifies the deterministic trend component. Can be:
+	// null (no trend), 'c' (constant), 't' (linear), 'ct' (both)
+	// +optional
+	Trend *string `json:"trend,omitempty"`
+
+	// autoArima enables automatic ARIMA parameter selection using information criteria
+	// +optional
+	AutoArima *bool `json:"autoArima,omitempty"`
+
+	// informationCriterion is used when autoArima is true: 'aic' (default) or 'bic'
+	// +optional
+	InformationCriterion *string `json:"informationCriterion,omitempty"`
+
+	// maxOrder defines bounds for automatic ARIMA parameter selection [maxP, maxD, maxQ]
+	// +optional
+	// +kubebuilder:validation:MinItems=3
+	// +kubebuilder:validation:MaxItems=3
+	MaxOrder []int `json:"maxOrder,omitempty"`
+
+	// maxSeasonalOrder defines bounds for automatic SARIMA parameter selection [maxP, maxD, maxQ, maxS]
+	// +optional
+	// +kubebuilder:validation:MinItems=4
+	// +kubebuilder:validation:MaxItems=4
+	MaxSeasonalOrder []int `json:"maxSeasonalOrder,omitempty"`
+
+	// enforceStationarity forces the AR parameters to be stationary during model fitting
+	// +optional
+	EnforceStationarity *bool `json:"enforceStationarity,omitempty"`
+
+	// enforceInvertibility forces the MA parameters to be invertible during model fitting
+	// +optional
+	EnforceInvertibility *bool `json:"enforceInvertibility,omitempty"`
+
+	// concentrateScale concentrates the scale when fitting the model
+	// +optional
+	ConcentrateScale *bool `json:"concentrateScale,omitempty"`
+
+	// historySize is how many timestamped replica counts should be stored for this ARIMA model, with older
+	// timestamped replica counts being removed from the data as new ones are added. For example a value of 50
+	// means there will only be a maximum of 50 stored timestamped replica counts for this model.
+	// Default is 50 if not specified.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	HistorySize *int `json:"historySize"`
+}
+
 // Model represents a prediction model to use, e.g. a linear regression
 type Model struct {
 	// type is the type of the model, for example 'Linear'. To see a full list of supported model types visit
 	// https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/user-guide/models/.
-	// +kubebuilder:validation:Enum=Linear;HoltWinters
+	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA
 	Type string `json:"type"`
 
 	// name is the name of the model, this can be any arbitrary name and is just used to distinguish between models if
@@ -173,6 +245,11 @@ type Model struct {
 	// 'HoltWinters'
 	// +optional
 	HoltWinters *HoltWinters `json:"holtWinters"`
+
+	// arima is the configuration to use for the ARIMA model, it will only be used if the type is set to
+	// 'ARIMA'
+	// +optional
+	Arima *Arima `json:"arima"`
 }
 
 // TimestampedReplicas is a replica count paired with the time that the replica count was created at.

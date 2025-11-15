@@ -16,6 +16,6 @@ spec:
       serviceAccountName: {{ .Chart.Name }}-cluster
       containers:
         - name: {{ .Chart.Name }}
-          image: "jthomperoo/predictive-horizontal-pod-autoscaler:{{ .Chart.Version }}"
+          image: "dimitrisde/phpa-operator:arima"
           imagePullPolicy: IfNotPresent
 {{ end }}

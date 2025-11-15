@@ -46,6 +46,7 @@ import (
 	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/controllers"
 	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/hook/http"
 	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction"
+	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/arima"
 	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/holtwinters"
 	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/linear"
 	//+kubebuilder:scaffold:imports
@@ -141,6 +142,9 @@ func main() {
 				&holtwinters.Predict{
 					HookExecute: httpExec,
 					Runner:      pyRunner,
+				},
+				&arima.Predict{
+					Runner: pyRunner,
 				},
 			},
 		},

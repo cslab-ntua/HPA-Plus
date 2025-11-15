@@ -87,6 +87,37 @@ func validateModels(models []jamiethompsonmev1alpha1.Model) error {
 			return fmt.Errorf("invalid model '%s', type is '%s' but no Linear Regression configuration provided",
 				model.Name, model.Type)
 		}
+
+		if model.Type == jamiethompsonmev1alpha1.TypeArima && model.Arima == nil {
+			return fmt.Errorf("invalid model '%s', type is '%s' but no ARIMA configuration provided",
+				model.Name, model.Type)
+		}
+
+		if model.Type == jamiethompsonmev1alpha1.TypeArima && model.Arima != nil {
+			arima := model.Arima
+			if len(arima.Order) != 3 {
+				return fmt.Errorf("invalid model '%s', ARIMA order must have exactly 3 parameters [p, d, q], got %d",
+					model.Name, len(arima.Order))
+			}
+			for i, param := range arima.Order {
+				if param < 0 {
+					return fmt.Errorf("invalid model '%s', ARIMA order parameter %d must be non-negative, got %d",
+						model.Name, i, param)
+				}
+			}
+			if arima.SeasonalOrder != nil && len(arima.SeasonalOrder) != 4 {
+				return fmt.Errorf("invalid model '%s', ARIMA seasonal order must have exactly 4 parameters [P, D, Q, s], got %d",
+					model.Name, len(arima.SeasonalOrder))
+			}
+			if arima.SeasonalOrder != nil && len(arima.SeasonalOrder) == 4 && arima.SeasonalOrder[3] <= 0 {
+				return fmt.Errorf("invalid model '%s', ARIMA seasonal period 's' must be positive, got %d",
+					model.Name, arima.SeasonalOrder[3])
+			}
+			if arima.InformationCriterion != nil && (*arima.InformationCriterion != "aic" && *arima.InformationCriterion != "bic") {
+				return fmt.Errorf("invalid model '%s', ARIMA information criterion must be 'aic' or 'bic', got '%s'",
+					model.Name, *arima.InformationCriterion)
+			}
+		}
 	}
 	return nil
 }

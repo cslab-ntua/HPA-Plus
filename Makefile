@@ -1,6 +1,6 @@
-REGISTRY = jthomperoo
-NAME = predictive-horizontal-pod-autoscaler
-VERSION = latest
+REGISTRY = dimitrisde
+NAME = phpa-operator
+VERSION = 0.13.3
 
 LOCAL_HELM_CHART_NAME=predictive-horizontal-pod-autoscaler-operator
 
