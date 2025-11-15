@@ -32,3 +32,8 @@ predictive-horizontal-pod-autoscaler
 *.swp
 *.swo
 *~
+.venv/
+.venv/
+
+# Pre-commit cache
+**/.cache/pre-commit
