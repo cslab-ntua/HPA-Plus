@@ -183,7 +183,7 @@ def test_arima(subtests):
         "description": "Successful basic ARIMA prediction",
         "expected_status_code": 0,
         "expected_stderr": "",
-        "expected_stdout": "4",
+        "expected_stdout": "5",
         "stdin": """{
                 "order": [1, 1, 1],
                 "lookAhead": 10000,
@@ -209,8 +209,8 @@ def test_arima(subtests):
     }, {
         "description": "Successful seasonal ARIMA prediction",
         "expected_status_code": 0,
-        "expected_stderr": "",
-        "expected_stdout": "5",
+        "expected_stderr": "ARIMA model fitting failed: seasonal order requires at least 12 observations, falling back to last observed value\n",
+        "expected_stdout": "4",
         "stdin": """{
                 "order": [1, 1, 1],
                 "seasonalOrder": [1, 1, 1, 12],
@@ -238,8 +238,8 @@ def test_arima(subtests):
     }, {
         "description": "Successful auto ARIMA prediction",
         "expected_status_code": 0,
-        "expected_stderr": "# Auto-selected ARIMA order: (1, 1, 1)\n",
-        "expected_stdout": "6",
+        "expected_stderr": "# Auto-selected ARIMA order: (1, 1, 1), seasonal_order: none\n",
+        "expected_stdout": "5",
         "stdin": """{
                 "order": [1, 1, 1],
                 "autoArima": true,
@@ -266,10 +266,84 @@ def test_arima(subtests):
                 ]
             }"""
     }, {
+        "description": "Successful timestamp-based lookAhead conversion",
+        "expected_status_code": 0,
+        "expected_stderr": "",
+        "expected_stdout": "8",
+        "stdin": """{
+                "order": [1, 1, 0],
+                "lookAhead": 30000,
+                "replicaHistory": [
+                    {
+                        "replicas": 3,
+                        "time": "2020-02-01T00:00:00Z"
+                    },
+                    {
+                        "replicas": 4,
+                        "time": "2020-02-01T00:00:15Z"
+                    },
+                    {
+                        "replicas": 5,
+                        "time": "2020-02-01T00:00:30Z"
+                    },
+                    {
+                        "replicas": 6,
+                        "time": "2020-02-01T00:00:45Z"
+                    }
+                ]
+            }"""
+    }, {
+        "description": "Successful seasonal auto ARIMA prediction",
+        "expected_status_code": 0,
+        "expected_stderr": "# Auto-selected ARIMA order: (1, 0, 0), seasonal_order: (1, 0, 0, 2)\n",
+        "expected_stdout": "11",
+        "stdin": """{
+                "order": [1, 1, 1],
+                "autoArima": true,
+                "informationCriterion": "aic",
+                "maxOrder": [1, 0, 0],
+                "maxSeasonalOrder": [1, 0, 0, 2],
+                "lookAhead": 10000,
+                "replicaHistory": [
+                    {
+                        "replicas": 10,
+                        "time": "2020-02-01T00:00:00Z"
+                    },
+                    {
+                        "replicas": 20,
+                        "time": "2020-02-01T00:00:10Z"
+                    },
+                    {
+                        "replicas": 10,
+                        "time": "2020-02-01T00:00:20Z"
+                    },
+                    {
+                        "replicas": 20,
+                        "time": "2020-02-01T00:00:30Z"
+                    },
+                    {
+                        "replicas": 10,
+                        "time": "2020-02-01T00:00:40Z"
+                    },
+                    {
+                        "replicas": 20,
+                        "time": "2020-02-01T00:00:50Z"
+                    },
+                    {
+                        "replicas": 10,
+                        "time": "2020-02-01T00:01:00Z"
+                    },
+                    {
+                        "replicas": 20,
+                        "time": "2020-02-01T00:01:10Z"
+                    }
+                ]
+            }"""
+    }, {
         "description": "ARIMA with enforcement options",
         "expected_status_code": 0,
         "expected_stderr": "",
-        "expected_stdout": "7",
+        "expected_stdout": "5",
         "stdin": """{
                 "order": [1, 1, 1],
                 "lookAhead": 10000,

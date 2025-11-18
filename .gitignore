@@ -37,3 +37,6 @@ predictive-horizontal-pod-autoscaler
 
 # Pre-commit cache
 **/.cache/pre-commit
+.pre-commit-config.yaml
+test-arima-phpa.yaml
+test-deployment.yaml

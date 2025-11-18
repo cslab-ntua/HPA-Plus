@@ -344,16 +344,16 @@ func TestPredict_PruneHistory(t *testing.T) {
 			description: "Only 3 in history, max size 4",
 			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
 				{
-					Replicas: 4,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
+					Replicas: 1,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
 				},
 				{
 					Replicas: 2,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
 				},
 				{
-					Replicas: 1,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
+					Replicas: 4,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
 				},
 			},
 			expectedErr: nil,
@@ -364,16 +364,16 @@ func TestPredict_PruneHistory(t *testing.T) {
 			},
 			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
 				{
-					Replicas: 4,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
+					Replicas: 1,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
 				},
 				{
 					Replicas: 2,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
 				},
 				{
-					Replicas: 1,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
+					Replicas: 4,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
 				},
 			},
 		},
@@ -381,16 +381,16 @@ func TestPredict_PruneHistory(t *testing.T) {
 			description: "3 too many, remove oldest 3",
 			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
 				{
-					Replicas: 4,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
+					Replicas: 1,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
 				},
 				{
 					Replicas: 2,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
 				},
 				{
-					Replicas: 1,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
+					Replicas: 4,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
 				},
 			},
 			expectedErr: nil,
@@ -400,15 +400,6 @@ func TestPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
-				{
-					Replicas: 1,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
-				},
-				{
-					Replicas: 2,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
-				},
-				// START OLDEST
 				{
 					Replicas: 5,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(1) * time.Second)},
@@ -421,7 +412,14 @@ func TestPredict_PruneHistory(t *testing.T) {
 					Replicas: 8,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
 				},
-				// END OLDEST
+				{
+					Replicas: 1,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
+				},
+				{
+					Replicas: 2,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
+				},
 				{
 					Replicas: 4,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
@@ -433,9 +431,10 @@ func TestPredict_PruneHistory(t *testing.T) {
 			expected: func() []jamiethompsonmev1alpha1.TimestampedReplicas {
 				result := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 50)
 				for i := 0; i < 50; i++ {
+					value := i + 11
 					result[i] = jamiethompsonmev1alpha1.TimestampedReplicas{
-						Replicas: int32(60 - i), // 11, 12, 13, ..., 60
-						Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(60-i) * time.Second)},
+						Replicas: int32(value),
+						Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(value) * time.Second)},
 					}
 				}
 				return result
@@ -445,9 +444,10 @@ func TestPredict_PruneHistory(t *testing.T) {
 			replicaHistory: func() []jamiethompsonmev1alpha1.TimestampedReplicas {
 				result := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 60)
 				for i := 0; i < 60; i++ {
+					value := i + 1
 					result[i] = jamiethompsonmev1alpha1.TimestampedReplicas{
-						Replicas: int32(60 - i),
-						Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(60-i) * time.Second)},
+						Replicas: int32(value),
+						Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(value) * time.Second)},
 					}
 				}
 				return result
