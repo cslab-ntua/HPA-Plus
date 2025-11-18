@@ -1,0 +1,30 @@
+apiVersion: jamiethompson.me/v1alpha1
+kind: PredictiveHorizontalPodAutoscaler
+metadata:
+  name: test-arima-scaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: test-app
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+  models:
+    - type: ARIMA
+      name: traffic-predictor
+      arima:
+        order: [1, 1, 1]
+        lookAhead: 30000  # 30 seconds ahead
+        historySize: 20
+        autoArima: false
+        enforceStationarity: true
+        enforceInvertibility: true
+        concentrateScale: false
+  decisionType: maximum  # Use the higher prediction from both models
