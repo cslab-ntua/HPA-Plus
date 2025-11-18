@@ -32,3 +32,11 @@ predictive-horizontal-pod-autoscaler
 *.swp
 *.swo
 *~
+.venv/
+.venv/
+
+# Pre-commit cache
+**/.cache/pre-commit
+.pre-commit-config.yaml
+test-arima-phpa.yaml
+test-deployment.yaml

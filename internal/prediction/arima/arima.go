@@ -19,7 +19,6 @@ package arima
 import (
 	"encoding/json"
 	"errors"
-	"sort"
 	"strconv"
 
 	jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
@@ -162,13 +161,12 @@ func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 		return replicaHistory, nil
 	}
 
-	// Sort by date created, newest first
-	sort.Slice(replicaHistory, func(i, j int) bool {
-		return !replicaHistory[i].Time.Before(replicaHistory[j].Time)
-	})
-
-	// Keep only the newest HistorySize observations
-	replicaHistory = replicaHistory[:defaultHistorySize]
+	// Keep only the newest HistorySize observations while preserving chronological order
+	start := len(replicaHistory) - defaultHistorySize
+	if start < 0 {
+		start = 0
+	}
+	replicaHistory = replicaHistory[start:]
 
 	return replicaHistory, nil
 }

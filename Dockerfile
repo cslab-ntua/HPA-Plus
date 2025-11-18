@@ -38,6 +38,9 @@ RUN python -m pip install -r algorithms/requirements.txt
 
 COPY algorithms/ ./algorithms
 COPY --from=builder /workspace/manager .
+RUN chmod -R go+rX /app/algorithms && \
+    chmod +x /app/manager && \
+    chown -R 65532:65532 /app
 USER 65532:65532
 
 ENTRYPOINT ["/app/manager"]
