@@ -17,5 +17,5 @@ spec:
       containers:
         - name: {{ .Chart.Name }}
           image: "dimitrisde/phpa-operator:arima"
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
 {{ end }}
