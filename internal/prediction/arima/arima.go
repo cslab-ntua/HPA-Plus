@@ -34,12 +34,10 @@ type arimaParameters struct {
 	Order                []int                                         `json:"order"`
 	LookAhead            int                                           `json:"lookAhead"`
 	ReplicaHistory       []jamiethompsonmev1alpha1.TimestampedReplicas `json:"replicaHistory"`
-	SeasonalOrder        []int                                         `json:"seasonalOrder,omitempty"`
 	Trend                *string                                       `json:"trend,omitempty"`
 	AutoArima            bool                                          `json:"autoArima"`
 	InformationCriterion string                                        `json:"informationCriterion"`
 	MaxOrder             []int                                         `json:"maxOrder,omitempty"`
-	MaxSeasonalOrder     []int                                         `json:"maxSeasonalOrder,omitempty"`
 	EnforceStationarity  bool                                          `json:"enforceStationarity"`
 	EnforceInvertibility bool                                          `json:"enforceInvertibility"`
 	ConcentrateScale     bool                                          `json:"concentrateScale"`
@@ -49,12 +47,10 @@ type arimaParameters struct {
 type Config struct {
 	Order                []int   `yaml:"order"`
 	LookAhead            int     `yaml:"lookAhead"`
-	SeasonalOrder        []int   `yaml:"seasonalOrder,omitempty"`
 	Trend                *string `yaml:"trend,omitempty"`
 	AutoArima            bool    `yaml:"autoArima"`
 	InformationCriterion string  `yaml:"informationCriterion"`
 	MaxOrder             []int   `yaml:"maxOrder,omitempty"`
-	MaxSeasonalOrder     []int   `yaml:"maxSeasonalOrder,omitempty"`
 	EnforceStationarity  bool    `yaml:"enforceStationarity"`
 	EnforceInvertibility bool    `yaml:"enforceInvertibility"`
 	ConcentrateScale     bool    `yaml:"concentrateScale"`
@@ -113,12 +109,10 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 		Order:                model.Arima.Order,
 		LookAhead:            model.Arima.LookAhead,
 		ReplicaHistory:       replicaHistory,
-		SeasonalOrder:        model.Arima.SeasonalOrder,
 		Trend:                model.Arima.Trend,
 		AutoArima:            autoArima,
 		InformationCriterion: informationCriterion,
 		MaxOrder:             model.Arima.MaxOrder,
-		MaxSeasonalOrder:     model.Arima.MaxSeasonalOrder,
 		EnforceStationarity:  enforceStationarity,
 		EnforceInvertibility: enforceInvertibility,
 		ConcentrateScale:     concentrateScale,

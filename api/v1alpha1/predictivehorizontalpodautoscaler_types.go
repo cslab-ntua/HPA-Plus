@@ -137,16 +137,6 @@ type Arima struct {
 	// +kubebuilder:validation:Minimum=1
 	LookAhead int `json:"lookAhead"`
 
-	// seasonalOrder is the SARIMA seasonal parameters [P, D, Q, s] where:
-	// P = seasonal AR order
-	// D = seasonal differencing order
-	// Q = seasonal MA order
-	// s = number of time steps per seasonal cycle
-	// +optional
-	// +kubebuilder:validation:MinItems=4
-	// +kubebuilder:validation:MaxItems=4
-	SeasonalOrder []int `json:"seasonalOrder,omitempty"`
-
 	// trend specifies the deterministic trend component. Can be:
 	// null (no trend), 'c' (constant), 't' (linear), 'ct' (both)
 	// +optional
@@ -165,12 +155,6 @@ type Arima struct {
 	// +kubebuilder:validation:MinItems=3
 	// +kubebuilder:validation:MaxItems=3
 	MaxOrder []int `json:"maxOrder,omitempty"`
-
-	// maxSeasonalOrder defines bounds for automatic SARIMA parameter selection [maxP, maxD, maxQ, maxS]
-	// +optional
-	// +kubebuilder:validation:MinItems=4
-	// +kubebuilder:validation:MaxItems=4
-	MaxSeasonalOrder []int `json:"maxSeasonalOrder,omitempty"`
 
 	// enforceStationarity forces the AR parameters to be stationary during model fitting
 	// +optional

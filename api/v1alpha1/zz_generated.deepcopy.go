@@ -35,11 +35,6 @@ func (in *Arima) DeepCopyInto(out *Arima) {
 		*out = make([]int, len(*in))
 		copy(*out, *in)
 	}
-	if in.SeasonalOrder != nil {
-		in, out := &in.SeasonalOrder, &out.SeasonalOrder
-		*out = make([]int, len(*in))
-		copy(*out, *in)
-	}
 	if in.Trend != nil {
 		in, out := &in.Trend, &out.Trend
 		*out = new(string)
@@ -57,11 +52,6 @@ func (in *Arima) DeepCopyInto(out *Arima) {
 	}
 	if in.MaxOrder != nil {
 		in, out := &in.MaxOrder, &out.MaxOrder
-		*out = make([]int, len(*in))
-		copy(*out, *in)
-	}
-	if in.MaxSeasonalOrder != nil {
-		in, out := &in.MaxSeasonalOrder, &out.MaxSeasonalOrder
 		*out = make([]int, len(*in))
 		copy(*out, *in)
 	}

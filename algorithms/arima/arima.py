@@ -14,9 +14,9 @@
 
 # pylint: disable=no-member, invalid-name
 """
-This ARIMA script performs ARIMA (AutoRegressive Integrated Moving Average) time series forecasting
-using the statsmodels library. ARIMA models are capable of capturing complex temporal patterns
-including trends and seasonality.
+This ARIMA script performs non-seasonal ARIMA (AutoRegressive Integrated Moving Average) time series
+forecasting using the statsmodels library. ARIMA models capture complex temporal patterns including
+overall trends.
 """
 
 import math
@@ -43,13 +43,11 @@ warnings.filterwarnings('ignore', message='No frequency information was provided
 # ARIMA configuration input format:
 # {
 #   "order": [1, 1, 1],
-#   "seasonalOrder": [1, 1, 1, 12],
 #   "trend": null,
 #   "lookAhead": 3,
 #   "autoArima": false,
 #   "informationCriterion": "aic",
 #   "maxOrder": [5, 2, 5],
-#   "maxSeasonalOrder": [2, 1, 1, 12],
 #   "series": [
 #       {
 #           "time": "2020-02-01T00:55:33Z",
@@ -84,12 +82,10 @@ class AlgorithmInput:
     look_ahead: int
     replica_history: List[TimestampedReplica]
     current_time: Optional[str] = None
-    seasonal_order: Optional[List[int]] = None
     trend: Optional[str] = None
     auto_arima: bool = False
     information_criterion: str = "aic"
     max_order: Optional[List[int]] = None
-    max_seasonal_order: Optional[List[int]] = None
     enforce_stationarity: bool = True
     enforce_invertibility: bool = True
     concentrate_scale: bool = False
@@ -118,16 +114,6 @@ def validate_arima_input(algorithm_input: AlgorithmInput) -> None:
     if len(algorithm_input.replica_history) < 3:
         print("Invalid data provided, ARIMA requires at least 3 observations, exiting", file=sys.stderr)
         sys.exit(1)
-
-    if algorithm_input.seasonal_order:
-        if len(algorithm_input.seasonal_order) != 4:
-            print("Invalid seasonal order provided, must be [P, D, Q, s]", file=sys.stderr)
-            sys.exit(1)
-
-        P, D, Q, s = algorithm_input.seasonal_order
-        if P < 0 or D < 0 or Q < 0 or s <= 0:
-            print("Seasonal order parameters must be non-negative (s must be positive)", file=sys.stderr)
-            sys.exit(1)
 
 
 def sort_history_by_time(replica_history: List[TimestampedReplica]) -> Tuple[List[TimestampedReplica], List[float]]:
@@ -172,7 +158,6 @@ def determine_forecast_steps(look_ahead_ms: int, timestamps: List[float]) -> int
 
 
 def evaluate_configuration(series: List[int], order: Tuple[int, int, int],
-                           seasonal: Optional[Tuple[int, int, int, int]],
                            algorithm_input: AlgorithmInput) -> float:
     """Fit a model for a given configuration and return the requested information criterion."""
     model_kwargs = {
@@ -183,9 +168,6 @@ def evaluate_configuration(series: List[int], order: Tuple[int, int, int],
         'concentrate_scale': algorithm_input.concentrate_scale
     }
 
-    if seasonal is not None:
-        model_kwargs['seasonal_order'] = seasonal
-
     model = sm.tsa.ARIMA(series, **model_kwargs)
     fitted = model.fit()
 
@@ -194,72 +176,28 @@ def evaluate_configuration(series: List[int], order: Tuple[int, int, int],
     return fitted.aic
 
 
-def build_seasonal_candidates(algorithm_input: AlgorithmInput) -> List[Optional[Tuple[int, int, int, int]]]:
-    """Build seasonal order candidates for auto ARIMA search."""
-    candidates: List[Optional[Tuple[int, int, int, int]]] = [None]
-    seen = {None}
-    manual_seasonal = tuple(algorithm_input.seasonal_order) if algorithm_input.seasonal_order else None
-
-    if len(series) < 6:
-        return manual_order, manual_seasonal
-
-    if len(series) < 6:
-        return manual_order, manual_seasonal
-
-    if len(series) < 6:
-        return manual_order, manual_seasonal
-
-    if manual_seasonal is not None:
-        if manual_seasonal not in seen:
-            candidates.append(manual_seasonal)
-            seen.add(manual_seasonal)
-
-    if algorithm_input.max_seasonal_order:
-        max_p, max_d, max_q, max_s = algorithm_input.max_seasonal_order
-        if manual_seasonal is not None:
-            max_p = max(max_p, manual_seasonal[0])
-            max_d = max(max_d, manual_seasonal[1])
-            max_q = max(max_q, manual_seasonal[2])
-            max_s = max(max_s, manual_seasonal[3])
-
-        if max_s > 0:
-            for P in range(max_p + 1):
-                for D in range(max_d + 1):
-                    for Q in range(max_q + 1):
-                        for S in range(1, max_s + 1):
-                            seasonal = (P, D, Q, S)
-                            if seasonal not in seen:
-                                candidates.append(seasonal)
-                                seen.add(seasonal)
-
-    return candidates
-
-
-def auto_select_arima(series: List[int], algorithm_input: AlgorithmInput) -> Tuple[Tuple[int, int, int],
-                                                                                  Optional[Tuple[int, int, int, int]]]:
-    """Automatically select ARIMA/SARIMA parameters using information criteria."""
+def auto_select_arima(series: List[int], algorithm_input: AlgorithmInput) -> Tuple[int, int, int]:
+    """Automatically select non-seasonal ARIMA parameters using information criteria."""
     manual_order = tuple(algorithm_input.order)
     max_order = algorithm_input.max_order or [5, 2, 5]
     max_p = max(max_order[0], manual_order[0])
     max_d = manual_order[1]
     max_q = max(max_order[2], manual_order[2])
 
-    manual_seasonal = tuple(algorithm_input.seasonal_order) if algorithm_input.seasonal_order else None
     if len(series) < 6:
-        return manual_order, manual_seasonal
+        return manual_order
 
     best_ic = float('inf')
-    best_config: Optional[Tuple[Tuple[int, int, int], Optional[Tuple[int, int, int, int]]]] = None
+    best_config: Optional[Tuple[int, int, int]] = None
 
     try:
-        baseline_ic = evaluate_configuration(series, manual_order, manual_seasonal, algorithm_input)
+        baseline_ic = evaluate_configuration(series, manual_order, algorithm_input)
         best_ic = baseline_ic
-        best_config = (manual_order, manual_seasonal)
+        best_config = manual_order
     except Exception:
         # Baseline configuration invalid, continue searching
         pass
 
-    seasonal_candidates = build_seasonal_candidates(algorithm_input)
     evaluated_configs = set()
 
     for p in range(max_p + 1):
@@ -268,19 +206,18 @@ def auto_select_arima(series: List[int], algorithm_input: AlgorithmInput) -> Tup
                 if p == 0 and d == 0 and q == 0:
                     # Skip the completely empty model
                     continue
-                for seasonal in seasonal_candidates:
-                    config = ((p, d, q), seasonal)
-                    if config in evaluated_configs:
-                        continue
-                    evaluated_configs.add(config)
-                    try:
-                        ic = evaluate_configuration(series, config[0], config[1], algorithm_input)
-                        if ic < best_ic:
-                            best_ic = ic
-                            best_config = config
-                    except Exception:
-                        # Skip invalid parameter combinations
-                        continue
+                config = (p, d, q)
+                if config in evaluated_configs:
+                    continue
+                evaluated_configs.add(config)
+                try:
+                    ic = evaluate_configuration(series, config, algorithm_input)
+                    if ic < best_ic:
+                        best_ic = ic
+                        best_config = config
+                except Exception:
+                    # Skip invalid parameter combinations
+                    continue
 
     if best_config is None:
         raise RuntimeError("auto ARIMA search failed to fit any parameter combinations")
@@ -312,14 +249,10 @@ replica_history, timestamps = sort_history_by_time(algorithm_input.replica_histo
 series = [replica.replicas for replica in replica_history]
 
 try:
-    seasonal_order = tuple(algorithm_input.seasonal_order) if algorithm_input.seasonal_order else None
-
     # Auto-select ARIMA parameters if requested
     if algorithm_input.auto_arima:
-        selected_order, selected_seasonal = auto_select_arima(series, algorithm_input)
-        seasonal_order = selected_seasonal
-        seasonal_msg = selected_seasonal if selected_seasonal is not None else "none"
-        print(f"# Auto-selected ARIMA order: {selected_order}, seasonal_order: {seasonal_msg}", file=sys.stderr)
+        selected_order = auto_select_arima(series, algorithm_input)
+        print(f"# Auto-selected ARIMA order: {selected_order}", file=sys.stderr)
         arima_order = selected_order
     else:
         arima_order = tuple(algorithm_input.order)
@@ -332,12 +265,6 @@ try:
         'enforce_invertibility': algorithm_input.enforce_invertibility,
         'concentrate_scale': algorithm_input.concentrate_scale
     }
-
-    # Add seasonal parameters if provided
-    if seasonal_order is not None:
-        if len(series) < seasonal_order[3]:
-            raise ValueError(f"seasonal order requires at least {seasonal_order[3]} observations")
-        model_kwargs['seasonal_order'] = seasonal_order
 
     model = sm.tsa.ARIMA(series, **model_kwargs)
     fitted_model = model.fit()

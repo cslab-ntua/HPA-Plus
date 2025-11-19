@@ -105,14 +105,6 @@ func validateModels(models []jamiethompsonmev1alpha1.Model) error {
 						model.Name, i, param)
 				}
 			}
-			if arima.SeasonalOrder != nil && len(arima.SeasonalOrder) != 4 {
-				return fmt.Errorf("invalid model '%s', ARIMA seasonal order must have exactly 4 parameters [P, D, Q, s], got %d",
-					model.Name, len(arima.SeasonalOrder))
-			}
-			if arima.SeasonalOrder != nil && len(arima.SeasonalOrder) == 4 && arima.SeasonalOrder[3] <= 0 {
-				return fmt.Errorf("invalid model '%s', ARIMA seasonal period 's' must be positive, got %d",
-					model.Name, arima.SeasonalOrder[3])
-			}
 			if arima.InformationCriterion != nil && (*arima.InformationCriterion != "aic" && *arima.InformationCriterion != "bic") {
 				return fmt.Errorf("invalid model '%s', ARIMA information criterion must be 'aic' or 'bic', got '%s'",
 					model.Name, *arima.InformationCriterion)

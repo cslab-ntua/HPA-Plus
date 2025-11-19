@@ -17,6 +17,7 @@ Tests the ARIMA algorithm by calling it from the shell, giving different stdin a
 code and stderr and stdout.
 """
 import subprocess
+import sys
 
 
 def test_arima(subtests):
@@ -109,54 +110,6 @@ def test_arima(subtests):
                 ]
             }"""
     }, {
-        "description": "Seasonal order with wrong length",
-        "expected_status_code": 1,
-        "expected_stderr": "Invalid seasonal order provided, must be [P, D, Q, s]\n",
-        "expected_stdout": "",
-        "stdin": """{
-                "order": [1, 1, 1],
-                "seasonalOrder": [1, 1, 1],
-                "lookAhead": 10000,
-                "replicaHistory": [
-                    {
-                        "time": "2020-02-01T00:55:33Z",
-                        "replicas": 2
-                    },
-                    {
-                        "time": "2020-02-01T00:56:33Z",
-                        "replicas": 3
-                    },
-                    {
-                        "time": "2020-02-01T00:57:33Z",
-                        "replicas": 4
-                    }
-                ]
-            }"""
-    }, {
-        "description": "Seasonal order with negative period",
-        "expected_status_code": 1,
-        "expected_stderr": "Seasonal order parameters must be non-negative (s must be positive)\n",
-        "expected_stdout": "",
-        "stdin": """{
-                "order": [1, 1, 1],
-                "seasonalOrder": [1, 1, 1, -1],
-                "lookAhead": 10000,
-                "replicaHistory": [
-                    {
-                        "time": "2020-02-01T00:55:33Z",
-                        "replicas": 2
-                    },
-                    {
-                        "time": "2020-02-01T00:56:33Z",
-                        "replicas": 3
-                    },
-                    {
-                        "time": "2020-02-01T00:57:33Z",
-                        "replicas": 4
-                    }
-                ]
-            }"""
-    }, {
         "description": "Invalid timestamp provided",
         "expected_status_code": 1,
         "expected_stderr": "Invalid datetime format: time data 'invalid' does not match format '%Y-%m-%dT%H:%M:%SZ'\n",
@@ -207,38 +160,9 @@ def test_arima(subtests):
                 ]
             }"""
     }, {
-        "description": "Successful seasonal ARIMA prediction",
-        "expected_status_code": 0,
-        "expected_stderr": "ARIMA model fitting failed: seasonal order requires at least 12 observations, falling back to last observed value\n",
-        "expected_stdout": "4",
-        "stdin": """{
-                "order": [1, 1, 1],
-                "seasonalOrder": [1, 1, 1, 12],
-                "trend": "c",
-                "lookAhead": 10000,
-                "replicaHistory": [
-                    {
-                        "replicas": 1,
-                        "time": "2020-02-01T00:55:33Z"
-                    },
-                    {
-                        "replicas": 2,
-                        "time": "2020-02-01T00:55:43Z"
-                    },
-                    {
-                        "replicas": 3,
-                        "time": "2020-02-01T00:55:53Z"
-                    },
-                    {
-                        "replicas": 4,
-                        "time": "2020-02-01T00:56:03Z"
-                    }
-                ]
-            }"""
-    }, {
         "description": "Successful auto ARIMA prediction",
         "expected_status_code": 0,
-        "expected_stderr": "# Auto-selected ARIMA order: (1, 1, 1), seasonal_order: none\n",
+        "expected_stderr": "# Auto-selected ARIMA order: (1, 1, 1)\n",
         "expected_stdout": "5",
         "stdin": """{
                 "order": [1, 1, 1],
@@ -293,53 +217,6 @@ def test_arima(subtests):
                 ]
             }"""
     }, {
-        "description": "Successful seasonal auto ARIMA prediction",
-        "expected_status_code": 0,
-        "expected_stderr": "# Auto-selected ARIMA order: (1, 0, 0), seasonal_order: (1, 0, 0, 2)\n",
-        "expected_stdout": "11",
-        "stdin": """{
-                "order": [1, 1, 1],
-                "autoArima": true,
-                "informationCriterion": "aic",
-                "maxOrder": [1, 0, 0],
-                "maxSeasonalOrder": [1, 0, 0, 2],
-                "lookAhead": 10000,
-                "replicaHistory": [
-                    {
-                        "replicas": 10,
-                        "time": "2020-02-01T00:00:00Z"
-                    },
-                    {
-                        "replicas": 20,
-                        "time": "2020-02-01T00:00:10Z"
-                    },
-                    {
-                        "replicas": 10,
-                        "time": "2020-02-01T00:00:20Z"
-                    },
-                    {
-                        "replicas": 20,
-                        "time": "2020-02-01T00:00:30Z"
-                    },
-                    {
-                        "replicas": 10,
-                        "time": "2020-02-01T00:00:40Z"
-                    },
-                    {
-                        "replicas": 20,
-                        "time": "2020-02-01T00:00:50Z"
-                    },
-                    {
-                        "replicas": 10,
-                        "time": "2020-02-01T00:01:00Z"
-                    },
-                    {
-                        "replicas": 20,
-                        "time": "2020-02-01T00:01:10Z"
-                    }
-                ]
-            }"""
-    }, {
         "description": "ARIMA with enforcement options",
         "expected_status_code": 0,
         "expected_stderr": "",
@@ -373,7 +250,7 @@ def test_arima(subtests):
 
     for i, test_case in enumerate(test_cases):
         with subtests.test(msg=test_case["description"], i=i):
-            result = subprocess.run(["python", "./algorithms/arima/arima.py"],
+            result = subprocess.run([sys.executable, "./algorithms/arima/arima.py"],
                                     input=test_case["stdin"].encode("utf-8"),
                                     capture_output=True,
                                     check=False)

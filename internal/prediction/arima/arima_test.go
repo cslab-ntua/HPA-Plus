@@ -208,38 +208,6 @@ func TestPredict_GetPrediction(t *testing.T) {
 			},
 		},
 		{
-			description: "Success with seasonal ARIMA",
-			expected:    7,
-			expectedErr: nil,
-			predicter: &arima.Predict{
-				Runner: &fake.Run{
-					RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
-						return "7", nil
-					},
-				},
-			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
-					Order:         []int{1, 1, 1},
-					LookAhead:     10000,
-					SeasonalOrder: []int{1, 1, 1, 12},
-					Trend:         stringPtr("c"),
-				},
-			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
-				{
-					Replicas: 1,
-				},
-				{
-					Replicas: 2,
-				},
-				{
-					Replicas: 3,
-				},
-			},
-		},
-		{
 			description: "Success with auto ARIMA",
 			expected:    6,
 			expectedErr: nil,
