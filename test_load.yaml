@@ -8,7 +8,7 @@ data:
     #!/bin/sh
     set -eu
     TARGET="${TARGET_URL:?TARGET_URL must be set}"
-    RATES="50 100 150"
+    RATES="10 15 5 0"
     STEP_DURATION="5m"
     echo "Generating load toward ${TARGET}"
     while true; do
@@ -17,8 +17,8 @@ data:
         echo "GET ${TARGET}" | vegeta attack \
           -rate "${RATE}" \
           -duration "${STEP_DURATION}" \
-          -workers 64 \
-          -connections 1024 \
+          -workers 3 \
+          -connections 16 \
           > /tmp/vegeta.bin
       done
     done
