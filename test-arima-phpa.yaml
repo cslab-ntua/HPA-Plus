@@ -3,28 +3,35 @@ kind: PredictiveHorizontalPodAutoscaler
 metadata:
   name: test-arima-scaler
 spec:
+  # Move the PHPA sync to 60s (default is 15s)
+  syncPeriod: 60000
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: test-app
   minReplicas: 1
-  maxReplicas: 10
+  maxReplicas: 20
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 120
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 50
+        averageUtilization: 70
   models:
     - type: ARIMA
       name: traffic-predictor
       arima:
         order: [1, 1, 1]
-        lookAhead: 30000  # 30 seconds ahead
-        historySize: 20
+        lookAhead: 90000 #30 seconds ahead
+        historySize: 120
         autoArima: false
+        maxOrder: [2, 2, 2]
+        trend: "c"
         enforceStationarity: true
         enforceInvertibility: true
         concentrateScale: false
-  decisionType: maximum  # Use the higher prediction from both models
+  decisionType: mean

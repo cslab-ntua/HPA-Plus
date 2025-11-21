@@ -70,8 +70,8 @@ type Linear struct {
 	// there will only be a maxmimu of 6 stored timestamped replica counts for this model.
 	// +kubebuilder:validation:Minimum=1
 	HistorySize int `json:"historySize"`
-	// lookAhead is how far in the future should the linear regression predict in seconds. For example a value of 10
-	// will predict 10 seconds into the future
+	// lookAhead is how far in the future the linear regression should predict in milliseconds. For example a value of
+	// 10000 will predict 10 seconds into the future
 	// +kubebuilder:validation:Minimum=1
 	LookAhead int `json:"lookAhead"`
 }
