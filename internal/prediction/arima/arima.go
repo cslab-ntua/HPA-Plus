@@ -41,6 +41,9 @@ type arimaParameters struct {
 	EnforceStationarity  bool                                          `json:"enforceStationarity"`
 	EnforceInvertibility bool                                          `json:"enforceInvertibility"`
 	ConcentrateScale     bool                                          `json:"concentrateScale"`
+	UseSarima            bool                                          `json:"useSarima"`
+	SeasonalOrder        []int                                         `json:"seasonalOrder,omitempty"`
+	SeasonalPeriods      *int                                          `json:"seasonalPeriods,omitempty"`
 }
 
 // Config represents an ARIMA prediction model configuration
@@ -54,6 +57,9 @@ type Config struct {
 	EnforceStationarity  bool    `yaml:"enforceStationarity"`
 	EnforceInvertibility bool    `yaml:"enforceInvertibility"`
 	ConcentrateScale     bool    `yaml:"concentrateScale"`
+	UseSarima            bool    `yaml:"useSarima"`
+	SeasonalOrder        []int   `yaml:"seasonalOrder,omitempty"`
+	SeasonalPeriods      *int    `yaml:"seasonalPeriods,omitempty"`
 }
 
 // Runner defines an algorithm runner, allowing algorithms to be run
@@ -88,6 +94,7 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 	enforceStationarity := true
 	enforceInvertibility := true
 	concentrateScale := false
+	useSarima := false
 
 	if model.Arima.AutoArima != nil {
 		autoArima = *model.Arima.AutoArima
@@ -104,6 +111,9 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 	if model.Arima.ConcentrateScale != nil {
 		concentrateScale = *model.Arima.ConcentrateScale
 	}
+	if model.Arima.UseSarima != nil {
+		useSarima = *model.Arima.UseSarima
+	}
 
 	parameters, err := json.Marshal(arimaParameters{
 		Order:                model.Arima.Order,
@@ -116,6 +126,9 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 		EnforceStationarity:  enforceStationarity,
 		EnforceInvertibility: enforceInvertibility,
 		ConcentrateScale:     concentrateScale,
+		UseSarima:            useSarima,
+		SeasonalOrder:        model.Arima.SeasonalOrder,
+		SeasonalPeriods:      model.Arima.SeasonalPeriods,
 	})
 	if err != nil {
 		// Should not occur, panic

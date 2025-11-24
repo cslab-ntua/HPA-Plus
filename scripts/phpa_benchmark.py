@@ -95,6 +95,7 @@ def run_arima_prediction(model_spec: Dict, history: List[Dict]) -> Optional[int]
     enforce_invertibility = arima_config.get("enforceInvertibility", True)
     concentrate_scale = arima_config.get("concentrateScale", False)
 
+    use_sarima = arima_config.get("useSarima", False)
     payload = {
         "order": arima_config["order"],
         "lookAhead": arima_config["lookAhead"],
@@ -106,6 +107,9 @@ def run_arima_prediction(model_spec: Dict, history: List[Dict]) -> Optional[int]
         "enforceStationarity": enforce_stationarity,
         "enforceInvertibility": enforce_invertibility,
         "concentrateScale": concentrate_scale,
+        "useSarima": use_sarima,
+        "seasonalOrder": arima_config.get("seasonalOrder"),
+        "seasonalPeriods": arima_config.get("seasonalPeriods"),
     }
 
     repo_root = Path(__file__).resolve().parents[1]

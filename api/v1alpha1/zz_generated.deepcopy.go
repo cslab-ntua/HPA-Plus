@@ -70,6 +70,21 @@ func (in *Arima) DeepCopyInto(out *Arima) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.UseSarima != nil {
+		in, out := &in.UseSarima, &out.UseSarima
+		*out = new(bool)
+		**out = **in
+	}
+	if in.SeasonalOrder != nil {
+		in, out := &in.SeasonalOrder, &out.SeasonalOrder
+		*out = make([]int, len(*in))
+		copy(*out, *in)
+	}
+	if in.SeasonalPeriods != nil {
+		in, out := &in.SeasonalPeriods, &out.SeasonalPeriods
+		*out = new(int)
+		**out = **in
+	}
 	if in.HistorySize != nil {
 		in, out := &in.HistorySize, &out.HistorySize
 		*out = new(int)

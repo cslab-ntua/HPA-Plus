@@ -109,6 +109,24 @@ func validateModels(models []jamiethompsonmev1alpha1.Model) error {
 				return fmt.Errorf("invalid model '%s', ARIMA information criterion must be 'aic' or 'bic', got '%s'",
 					model.Name, *arima.InformationCriterion)
 			}
+			if arima.SeasonalOrder != nil && len(arima.SeasonalOrder) != 0 && len(arima.SeasonalOrder) != 3 {
+				return fmt.Errorf("invalid model '%s', ARIMA seasonal order must have exactly 3 parameters [P, D, Q], got %d",
+					model.Name, len(arima.SeasonalOrder))
+			}
+			for i, param := range arima.SeasonalOrder {
+				if param < 0 {
+					return fmt.Errorf("invalid model '%s', ARIMA seasonal order parameter %d must be non-negative, got %d",
+						model.Name, i, param)
+				}
+			}
+			if arima.UseSarima != nil && *arima.UseSarima {
+				if arima.SeasonalOrder == nil || len(arima.SeasonalOrder) != 3 {
+					return fmt.Errorf("invalid model '%s', SARIMA enabled but seasonalOrder is missing or invalid", model.Name)
+				}
+				if arima.SeasonalPeriods == nil || *arima.SeasonalPeriods <= 0 {
+					return fmt.Errorf("invalid model '%s', SARIMA enabled but seasonalPeriods is missing or invalid", model.Name)
+				}
+			}
 		}
 	}
 	return nil

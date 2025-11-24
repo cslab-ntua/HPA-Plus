@@ -11,13 +11,13 @@ data:
     WORKERS=4
     CONNECTIONS=16
 
-    echo "Generating smooth ramp load toward ${TARGET}"
+    # Triangle pattern: 10 → 40 → 10 RPS, 30s per step
     while true; do
-      for RATE in 20 25 30 35 40 45 50 45 40 35 30 25; do
-        echo "$(date --iso-8601=seconds) -> ${RATE} rps for 2m"
+      for RATE in 10 15 20 25 30 35 40 35 30 25 20 15; do
+        echo "$(date --iso-8601=seconds) -> ${RATE} rps for 30s"
         echo "GET ${TARGET}" | vegeta attack \
           -rate "${RATE}" \
-          -duration 2m \
+          -duration 30s \
           -workers "${WORKERS}" \
           -connections "${CONNECTIONS}" \
           > /tmp/vegeta.bin
@@ -46,13 +46,6 @@ spec:
           env:
             - name: TARGET_URL
               value: "http://test-app.default.svc.cluster.local/"
-          resources:
-            requests:
-              cpu: "500m"
-              memory: "512Mi"
-            limits:
-              cpu: "2"
-              memory: "1Gi"
           volumeMounts:
             - name: load-script
               mountPath: /scripts

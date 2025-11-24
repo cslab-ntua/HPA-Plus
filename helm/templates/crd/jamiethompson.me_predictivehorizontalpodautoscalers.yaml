@@ -760,11 +760,28 @@ spec:
                           maxItems: 3
                           minItems: 3
                           type: array
+                        seasonalOrder:
+                          description: seasonalOrder is the seasonal ARIMA order parameters
+                            [P, D, Q].
+                          items:
+                            type: integer
+                          maxItems: 3
+                          minItems: 3
+                          type: array
+                        seasonalPeriods:
+                          description: seasonalPeriods is the length of the seasonal
+                            cycle (m) in sync periods.
+                          minimum: 1
+                          type: integer
                         trend:
                           description: 'trend specifies the deterministic trend component.
                             Can be: null (no trend), ''c'' (constant), ''t'' (linear),
                             ''ct'' (both)'
                           type: string
+                        useSarima:
+                          description: useSarima enables seasonal ARIMA. When true,
+                            seasonalOrder and seasonalPeriods must be provided.
+                          type: boolean
                       required:
                       - lookAhead
                       - order
@@ -899,9 +916,9 @@ spec:
                           minimum: 1
                           type: integer
                         lookAhead:
-                          description: lookAhead is how far in the future should the
-                            linear regression predict in seconds. For example a value
-                            of 10 will predict 10 seconds into the future
+                          description: lookAhead is how far in the future the linear
+                            regression should predict in milliseconds. For example
+                            a value of 10000 will predict 10 seconds into the future
                           minimum: 1
                           type: integer
                       required:
