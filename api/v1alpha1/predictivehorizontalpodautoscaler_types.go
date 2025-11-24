@@ -70,8 +70,8 @@ type Linear struct {
 	// there will only be a maxmimu of 6 stored timestamped replica counts for this model.
 	// +kubebuilder:validation:Minimum=1
 	HistorySize int `json:"historySize"`
-	// lookAhead is how far in the future should the linear regression predict in seconds. For example a value of 10
-	// will predict 10 seconds into the future
+	// lookAhead is how far in the future the linear regression should predict in milliseconds. For example a value of
+	// 10000 will predict 10 seconds into the future
 	// +kubebuilder:validation:Minimum=1
 	LookAhead int `json:"lookAhead"`
 }
@@ -167,6 +167,21 @@ type Arima struct {
 	// concentrateScale concentrates the scale when fitting the model
 	// +optional
 	ConcentrateScale *bool `json:"concentrateScale,omitempty"`
+
+	// useSarima enables seasonal ARIMA. When true, seasonalOrder and seasonalPeriods must be provided.
+	// +optional
+	UseSarima *bool `json:"useSarima,omitempty"`
+
+	// seasonalOrder is the seasonal ARIMA order parameters [P, D, Q].
+	// +kubebuilder:validation:MinItems=3
+	// +kubebuilder:validation:MaxItems=3
+	// +optional
+	SeasonalOrder []int `json:"seasonalOrder,omitempty"`
+
+	// seasonalPeriods is the length of the seasonal cycle (m) in sync periods.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	SeasonalPeriods *int `json:"seasonalPeriods,omitempty"`
 
 	// historySize is how many timestamped replica counts should be stored for this ARIMA model, with older
 	// timestamped replica counts being removed from the data as new ones are added. For example a value of 50

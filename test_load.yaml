@@ -8,17 +8,18 @@ data:
     #!/bin/sh
     set -eu
     TARGET="${TARGET_URL:?TARGET_URL must be set}"
-    RATES="10 15 5 0"
-    STEP_DURATION="5m"
-    echo "Generating load toward ${TARGET}"
+    WORKERS=4
+    CONNECTIONS=16
+
+    # Triangle pattern: 10 → 40 → 10 RPS, 30s per step
     while true; do
-      for RATE in ${RATES}; do
-        echo "$(date) -> ${RATE} rps for ${STEP_DURATION}"
+      for RATE in 10 15 20 25 30 35 40 35 30 25 20 15; do
+        echo "$(date --iso-8601=seconds) -> ${RATE} rps for 30s"
         echo "GET ${TARGET}" | vegeta attack \
           -rate "${RATE}" \
-          -duration "${STEP_DURATION}" \
-          -workers 3 \
-          -connections 16 \
+          -duration 30s \
+          -workers "${WORKERS}" \
+          -connections "${CONNECTIONS}" \
           > /tmp/vegeta.bin
       done
     done
@@ -45,13 +46,6 @@ spec:
           env:
             - name: TARGET_URL
               value: "http://test-app.default.svc.cluster.local/"
-          resources:
-            requests:
-              cpu: "500m"
-              memory: "512Mi"
-            limits:
-              cpu: "2"
-              memory: "1Gi"
           volumeMounts:
             - name: load-script
               mountPath: /scripts

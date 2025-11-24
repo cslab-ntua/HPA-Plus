@@ -89,6 +89,9 @@ class AlgorithmInput:
     enforce_stationarity: bool = True
     enforce_invertibility: bool = True
     concentrate_scale: bool = False
+    use_sarima: bool = False
+    seasonal_order: Optional[List[int]] = None
+    seasonal_periods: Optional[int] = None
 
 
 def parse_time(time_str: str) -> float:
@@ -114,6 +117,18 @@ def validate_arima_input(algorithm_input: AlgorithmInput) -> None:
     if len(algorithm_input.replica_history) < 3:
         print("Invalid data provided, ARIMA requires at least 3 observations, exiting", file=sys.stderr)
         sys.exit(1)
+
+    if algorithm_input.use_sarima or algorithm_input.seasonal_order is not None or algorithm_input.seasonal_periods is not None:
+        if algorithm_input.seasonal_order is None or len(algorithm_input.seasonal_order) != 3:
+            print("Invalid SARIMA seasonal_order provided, must be [P, D, Q]", file=sys.stderr)
+            sys.exit(1)
+        if algorithm_input.seasonal_periods is None or algorithm_input.seasonal_periods <= 0:
+            print("Invalid SARIMA seasonal_periods provided, must be > 0", file=sys.stderr)
+            sys.exit(1)
+        P, D, Q = algorithm_input.seasonal_order
+        if P < 0 or D < 0 or Q < 0:
+            print("SARIMA seasonal order parameters must be non-negative", file=sys.stderr)
+            sys.exit(1)
 
 
 def sort_history_by_time(replica_history: List[TimestampedReplica]) -> Tuple[List[TimestampedReplica], List[float]]:
@@ -257,17 +272,36 @@ try:
     else:
         arima_order = tuple(algorithm_input.order)
 
-    # Create and fit ARIMA model
-    model_kwargs = {
-        'order': arima_order,
-        'trend': algorithm_input.trend,
-        'enforce_stationarity': algorithm_input.enforce_stationarity,
-        'enforce_invertibility': algorithm_input.enforce_invertibility,
-        'concentrate_scale': algorithm_input.concentrate_scale
-    }
+    use_sarima = algorithm_input.use_sarima or algorithm_input.seasonal_order is not None or algorithm_input.seasonal_periods is not None
 
-    model = sm.tsa.ARIMA(series, **model_kwargs)
-    fitted_model = model.fit()
+    if use_sarima:
+        seasonal_order = tuple(algorithm_input.seasonal_order or [0, 0, 0])
+        seasonal_periods = algorithm_input.seasonal_periods or 0
+        model = sm.tsa.SARIMAX(
+            series,
+            order=arima_order,
+            seasonal_order=seasonal_order + (seasonal_periods,),
+            trend=algorithm_input.trend,
+            enforce_stationarity=algorithm_input.enforce_stationarity,
+            enforce_invertibility=algorithm_input.enforce_invertibility,
+            concentrate_scale=algorithm_input.concentrate_scale
+        )
+    else:
+        model_kwargs = {
+            'order': arima_order,
+            'trend': algorithm_input.trend,
+            'enforce_stationarity': algorithm_input.enforce_stationarity,
+            'enforce_invertibility': algorithm_input.enforce_invertibility,
+            'concentrate_scale': algorithm_input.concentrate_scale
+        }
+        model = sm.tsa.ARIMA(series, **model_kwargs)
+
+    fit_kwargs = {}
+    try:
+        fitted_model = model.fit(disp=False)
+    except TypeError:
+        # Older statsmodels signatures may not accept disp, fall back without it
+        fitted_model = model.fit()
 
     # Forecast ahead for the specified number of steps (based on timestamps when available)
     forecast_steps = determine_forecast_steps(algorithm_input.look_ahead, timestamps)
