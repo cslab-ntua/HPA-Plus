@@ -41,3 +41,7 @@ predictive-horizontal-pod-autoscaler
 test-arima-phpa.yaml
 test-deployment.yaml
 scripts/
+test-load.yaml
+test-app-server-configmap.yaml
+test-arima-phpa.yaml
+test-deployment.yaml
