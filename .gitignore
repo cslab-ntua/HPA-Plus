@@ -50,3 +50,4 @@ test-app-server-configmap.yaml
 test-arima-phpa.yaml
 test-deployment.yaml
 **/.gocache/
+test_load.yaml
