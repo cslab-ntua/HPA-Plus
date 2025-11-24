@@ -40,3 +40,4 @@ predictive-horizontal-pod-autoscaler
 .pre-commit-config.yaml
 test-arima-phpa.yaml
 test-deployment.yaml
+scripts/
