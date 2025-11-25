@@ -51,3 +51,5 @@ test-arima-phpa.yaml
 test-deployment.yaml
 **/.gocache/
 test_load.yaml
+.cache/
+vendor/

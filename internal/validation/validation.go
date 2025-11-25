@@ -128,6 +128,36 @@ func validateModels(models []jamiethompsonmev1alpha1.Model) error {
 				}
 			}
 		}
+
+		if model.Type == jamiethompsonmev1alpha1.TypeXGBoost {
+			xb := model.XGBoost
+			if xb == nil {
+				return fmt.Errorf("invalid model '%s', type is '%s' but no XGBoost configuration provided",
+					model.Name, model.Type)
+			}
+			if xb.HistorySize < 1 {
+				return fmt.Errorf("invalid model '%s', XGBoost historySize must be >= 1", model.Name)
+			}
+			if xb.LookAhead < 1 {
+				return fmt.Errorf("invalid model '%s', XGBoost lookAhead must be >= 1", model.Name)
+			}
+			if xb.Lags < 1 {
+				return fmt.Errorf("invalid model '%s', XGBoost lags must be >= 1", model.Name)
+			}
+			if xb.WindowSize != nil && *xb.WindowSize < 1 {
+				return fmt.Errorf("invalid model '%s', XGBoost windowSize must be >= 1", model.Name)
+			}
+			if xb.WindowSize != nil && *xb.WindowSize > xb.HistorySize {
+				return fmt.Errorf("invalid model '%s', XGBoost windowSize (%d) cannot exceed historySize (%d)",
+					model.Name, *xb.WindowSize, xb.HistorySize)
+			}
+			if xb.Subsample != nil && (*xb.Subsample < 0 || *xb.Subsample > 1) {
+				return fmt.Errorf("invalid model '%s', XGBoost subsample must be between 0 and 1", model.Name)
+			}
+			if xb.ColsampleBytree != nil && (*xb.ColsampleBytree < 0 || *xb.ColsampleBytree > 1) {
+				return fmt.Errorf("invalid model '%s', XGBoost colsampleBytree must be between 0 and 1", model.Name)
+			}
+		}
 	}
 	return nil
 }

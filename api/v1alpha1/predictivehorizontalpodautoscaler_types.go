@@ -36,6 +36,7 @@ const (
 	TypeHoltWinters = "HoltWinters"
 	TypeLinear      = "Linear"
 	TypeArima       = "ARIMA"
+	TypeXGBoost     = "XGBoost"
 )
 
 const (
@@ -122,6 +123,64 @@ type HoltWinters struct {
 	RuntimeTuningFetchHook *HookDefinition `json:"runtimeTuningFetchHook"`
 }
 
+// XGBoost represents a gradient boosted regression tree configuration driven by XGBoost
+type XGBoost struct {
+	// historySize is how many timestamped replica counts should be stored for this model, older entries are pruned.
+	// +kubebuilder:validation:Minimum=1
+	HistorySize int `json:"historySize"`
+
+	// lookAhead is how far ahead (in milliseconds) the prediction should forecast.
+	// +kubebuilder:validation:Minimum=1
+	LookAhead int `json:"lookAhead"`
+
+	// lags controls how many previous replica counts are used as features for training.
+	// +kubebuilder:validation:Minimum=1
+	Lags int `json:"lags"`
+
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	WindowSize *int `json:"windowSize,omitempty"`
+
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxDepth *int `json:"maxDepth,omitempty"`
+
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	NEstimators *int `json:"nEstimators,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	LearningRate *float64 `json:"learningRate,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	// +optional
+	Subsample *float64 `json:"subsample,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	// +optional
+	ColsampleBytree *float64 `json:"colsampleBytree,omitempty"`
+
+	// objective defines the XGBoost objective function, defaults to reg:squarederror.
+	// +optional
+	Objective *string `json:"objective,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	MinChildWeight *float64 `json:"minChildWeight,omitempty"`
+
+	// +optional
+	Gamma *float64 `json:"gamma,omitempty"`
+
+	// +optional
+	RegLambda *float64 `json:"regLambda,omitempty"`
+
+	// +optional
+	RegAlpha *float64 `json:"regAlpha,omitempty"`
+}
+
 // Arima represents an ARIMA (AutoRegressive Integrated Moving Average) prediction model configuration
 type Arima struct {
 	// order is the ARIMA order parameters [p, d, q] where:
@@ -196,7 +255,7 @@ type Arima struct {
 type Model struct {
 	// type is the type of the model, for example 'Linear'. To see a full list of supported model types visit
 	// https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/user-guide/models/.
-	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA
+	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA;XGBoost
 	Type string `json:"type"`
 
 	// name is the name of the model, this can be any arbitrary name and is just used to distinguish between models if
@@ -249,6 +308,11 @@ type Model struct {
 	// 'ARIMA'
 	// +optional
 	Arima *Arima `json:"arima"`
+
+	// xgboost is the configuration to use for the XGBoost model, it will only be used if the type is set to
+	// 'XGBoost'
+	// +optional
+	XGBoost *XGBoost `json:"xgboost,omitempty"`
 }
 
 // TimestampedReplicas is a replica count paired with the time that the replica count was created at.
@@ -257,6 +321,9 @@ type TimestampedReplicas struct {
 	Time *metav1.Time `json:"time"`
 	// replicas is the replica count at the time.
 	Replicas int32 `json:"replicas"`
+	// metric is the associated metric value (e.g. CPU utilization percentage) recorded at the time.
+	// +optional
+	Metric *float64 `json:"metric,omitempty"`
 }
 
 // PredictiveHorizontalPodAutoscalerData is the data storage format for the PHPA, this is stored in a ConfigMap

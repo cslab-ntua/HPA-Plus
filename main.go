@@ -49,6 +49,7 @@ import (
 	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/arima"
 	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/holtwinters"
 	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/linear"
+	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/xgboost"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -144,6 +145,9 @@ func main() {
 					Runner:      pyRunner,
 				},
 				&arima.Predict{
+					Runner: pyRunner,
+				},
+				&xgboost.Predict{
 					Runner: pyRunner,
 				},
 			},

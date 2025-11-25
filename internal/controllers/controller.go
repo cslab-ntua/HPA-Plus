@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/jthomperoo/k8shorizmetrics/v2/metricsclient"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -237,7 +238,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
-	calculatedReplicas, err := r.calculateReplicas(instance, scale)
+	calculatedReplicas, metricValue, err := r.calculateReplicas(instance, scale)
 	if err != nil {
 		logger.Error(err, "failed to calculate replicas based on metrics",
 			"scaleTargetRef", scaleTargetRef,
@@ -248,7 +249,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 	// This function doesn't return any errors, since if it fails to process a model it will skip and continue
 	// processing without that model's results
 	predictedReplicas, phpaData := r.processModels(ctx, instance, phpaData, now, scale.Spec.Replicas,
-		calculatedReplicas)
+		calculatedReplicas, metricValue)
 
 	err = r.updateConfigMapData(ctx, configMap, phpaData)
 	if err != nil {
@@ -389,7 +390,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) updateConfigMapData(ctx co
 func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.Context,
 	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler,
 	phpaData *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData, now time.Time, currentReplicas int32,
-	calculatedReplicas int32) ([]int32, *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) {
+	calculatedReplicas int32, metricValue *float64) ([]int32, *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) {
 
 	logger := log.FromContext(ctx)
 
@@ -497,6 +498,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 				Time: now,
 			},
 			Replicas: calculatedReplicas,
+			Metric:   metricValue,
 		})
 
 		if shouldRunOnThisSyncPeriod {
@@ -554,9 +556,9 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 }
 
 // calculateReplicas does the HPA processing part of the autoscaling based on the metrics provided in the spec,
-// returns the calculated value (the value the HPA would calculate based on these metrics).
+// returns the calculated value (the value the HPA would calculate based on these metrics) and the latest metric value if available.
 func (r *PredictiveHorizontalPodAutoscalerReconciler) calculateReplicas(
-	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler, scale *autoscalingv1.Scale) (int32, error) {
+	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler, scale *autoscalingv1.Scale) (int32, *float64, error) {
 	cpuInitializationPeriod := defaultCPUInitializationPeriod
 	if instance.Spec.CPUInitializationPeriod != nil {
 		cpuInitializationPeriod = *instance.Spec.CPUInitializationPeriod
@@ -574,24 +576,41 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) calculateReplicas(
 
 	selector, err := labels.Parse(scale.Status.Selector)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse pod selector from scale subresource selector: %w", err)
+		return 0, nil, fmt.Errorf("failed to parse pod selector from scale subresource selector: %w", err)
 	}
 
 	// Gather K8s metrics using the spec
 	metrics, err := r.Gatherer.GatherWithOptions(instance.Spec.Metrics, scale.Namespace, selector,
 		time.Duration(cpuInitializationPeriod)*time.Second, time.Duration(initialReadinessDelay)*time.Second)
 	if err != nil {
-		return 0, fmt.Errorf("failed to gather metrics using provided metric specs: %w", err)
+		return 0, nil, fmt.Errorf("failed to gather metrics using provided metric specs: %w", err)
+	}
+
+	var metricValue *float64
+	for _, metric := range metrics {
+		if metric.Resource != nil && metric.Spec.Type == autoscalingv2.ResourceMetricSourceType &&
+			metric.Spec.Resource != nil && metric.Spec.Resource.Name == corev1.ResourceCPU &&
+			metric.Spec.Resource.Target.AverageUtilization != nil {
+			usageRatio, currentUtilization, _, err := metricsclient.GetResourceUtilizationRatio(
+				metric.Resource.PodMetricsInfo, metric.Resource.Requests, *metric.Spec.Resource.Target.AverageUtilization)
+			if err == nil {
+				val := float64(currentUtilization)
+				metricValue = &val
+			} else {
+				_ = usageRatio
+			}
+			break
+		}
 	}
 
 	// Calculate the targetReplicas using these metrics
 	currentReplicas := scale.Spec.Replicas
 	calculatedReplicas, err := r.Evaluator.EvaluateWithOptions(metrics, currentReplicas, tolerance)
 	if err != nil {
-		return 0, fmt.Errorf("failed to evaluate metrics and calculate target replica count: %w", err)
+		return 0, nil, fmt.Errorf("failed to evaluate metrics and calculate target replica count: %w", err)
 	}
 
-	return calculatedReplicas, nil
+	return calculatedReplicas, metricValue, nil
 }
 
 // preScaleStatusCheck makes sure that the PHPAs status fields are correct before scaling, e.g. the reference field

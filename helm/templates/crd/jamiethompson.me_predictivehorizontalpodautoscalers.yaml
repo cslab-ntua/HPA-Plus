@@ -966,7 +966,66 @@ spec:
                       - Linear
                       - HoltWinters
                       - ARIMA
+                      - XGBoost
                       type: string
+                    xgboost:
+                      description: xgboost is the configuration to use for the XGBoost
+                        model, it will only be used if the type is set to 'XGBoost'
+                      properties:
+                        colsampleBytree:
+                          maximum: 1
+                          minimum: 0
+                          type: number
+                        gamma:
+                          type: number
+                        historySize:
+                          description: historySize is how many timestamped replica
+                            counts should be stored for this model, older entries
+                            are pruned.
+                          minimum: 1
+                          type: integer
+                        lags:
+                          description: lags controls how many previous replica counts
+                            are used as features for training.
+                          minimum: 1
+                          type: integer
+                        learningRate:
+                          minimum: 0
+                          type: number
+                        lookAhead:
+                          description: lookAhead is how far ahead (in milliseconds)
+                            the prediction should forecast.
+                          minimum: 1
+                          type: integer
+                        maxDepth:
+                          minimum: 1
+                          type: integer
+                        minChildWeight:
+                          minimum: 0
+                          type: number
+                        nEstimators:
+                          minimum: 1
+                          type: integer
+                        objective:
+                          description: objective defines the XGBoost objective function,
+                            defaults to reg:squarederror.
+                          type: string
+                        regAlpha:
+                          type: number
+                        regLambda:
+                          type: number
+                        subsample:
+                          maximum: 1
+                          minimum: 0
+                          type: number
+                        windowSize:
+                          minimum: 1
+                          type: integer
+                      required:
+                      - historySize
+                      - lags
+                      - lookAhead
+                      type: object
                   required:
                   - name
                   - type
@@ -1474,6 +1533,10 @@ spec:
                   description: TimestampedReplicas is a replica count paired with
                     the time that the replica count was created at.
                   properties:
+                    metric:
+                      description: metric is the associated metric value (e.g. CPU
+                        utilization percentage) recorded at the time.
+                      type: number
                     replicas:
                       description: replicas is the replica count at the time.
                       format: int32
@@ -1496,6 +1559,10 @@ spec:
                   description: TimestampedReplicas is a replica count paired with
                     the time that the replica count was created at.
                   properties:
+                    metric:
+                      description: metric is the associated metric value (e.g. CPU
+                        utilization percentage) recorded at the time.
+                      type: number
                     replicas:
                       description: replicas is the replica count at the time.
                       format: int32
@@ -1519,6 +1586,10 @@ spec:
                   description: TimestampedReplicas is a replica count paired with
                     the time that the replica count was created at.
                   properties:
+                    metric:
+                      description: metric is the associated metric value (e.g. CPU
+                        utilization percentage) recorded at the time.
+                      type: number
                     replicas:
                       description: replicas is the replica count at the time.
                       format: int32
@@ -1541,6 +1612,10 @@ spec:
                   description: TimestampedReplicas is a replica count paired with
                     the time that the replica count was created at.
                   properties:
+                    metric:
+                      description: metric is the associated metric value (e.g. CPU
+                        utilization percentage) recorded at the time.
+                      type: number
                     replicas:
                       description: replicas is the replica count at the time.
                       format: int32
