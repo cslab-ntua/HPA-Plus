@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-app-load-script
+  namespace: default
+data:
+  load.sh: |
+    #!/bin/sh
+    set -eu
+    TARGET="${TARGET_URL:?TARGET_URL must be set}"
+    WORKERS=4
+    CONNECTIONS=16
+
+    # Triangle pattern: 10 → 40 → 10 RPS, 30s per step
+    while true; do
+      for RATE in 10 15 20 25 30 35 40 35 30 25 20 15; do
+        echo "$(date --iso-8601=seconds) -> ${RATE} rps for 30s"
+        echo "GET ${TARGET}" | vegeta attack \
+          -rate "${RATE}" \
+          -duration 30s \
+          -workers "${WORKERS}" \
+          -connections "${CONNECTIONS}" \
+          > /tmp/vegeta.bin
+      done
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-app-loadgen
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-app-loadgen
+  template:
+    metadata:
+      labels:
+        app: test-app-loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: peterevans/vegeta:latest
+          command: ["/bin/sh", "/scripts/load.sh"]
+          env:
+            - name: TARGET_URL
+              value: "http://test-app.default.svc.cluster.local/"
+          volumeMounts:
+            - name: load-script
+              mountPath: /scripts
+      volumes:
+        - name: load-script
+          configMap:
+            name: test-app-load-script
+            defaultMode: 0755

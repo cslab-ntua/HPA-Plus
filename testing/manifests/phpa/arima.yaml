@@ -1,0 +1,38 @@
+apiVersion: jamiethompson.me/v1alpha1
+kind: PredictiveHorizontalPodAutoscaler
+metadata:
+  name: test-arima-scaler
+spec:
+  syncPeriod: 15000
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: test-app
+  minReplicas: 1
+  maxReplicas: 20
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 120
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  models:
+    - type: ARIMA
+      name: traffic-predictor
+      arima:
+        useSarima: true
+        order: [1, 0, 1]
+        seasonalOrder: [1, 0, 1]
+        seasonalPeriods: 24 # 6-minute cycle with 15s sync
+        lookAhead: 45000 # predict ~3 syncs (45s) ahead for more seasonal lead
+        historySize: 200
+        autoArima: false
+        trend: "c"
+        enforceStationarity: true
+        enforceInvertibility: true
+        concentrateScale: false
+  decisionType: mean
