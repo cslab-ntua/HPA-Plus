@@ -94,6 +94,17 @@ Possible values:
 
 Default value: `maximum`.
 
+## includeHPA
+
+```yaml
+includeHPA: true
+```
+
+Controls whether the baseline Horizontal Pod Autoscaler (HPA) calculation should continue to participate in the
+decision strategy once the configured models have accumulated enough history to run. When `includeHPA` is `false`
+(the default) the PHPA falls back to the HPA result only while the model histories are still being populated; afterwards,
+the decision is made solely from the model predictions unless this flag is explicitly set to `true`.
+
 ## behavior
 
 Scaling behavior to apply.

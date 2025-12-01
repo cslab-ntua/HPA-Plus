@@ -423,6 +423,12 @@ type PredictiveHorizontalPodAutoscalerSpec struct {
 	// +kubebuilder:validation:Enum=maximum;minimum;mean;median
 	// +optional
 	DecisionType *string `json:"decisionType"`
+
+	// includeHPA controls whether the baseline HPA calculation should be part of the decision strategy after models have
+	// accumulated enough history to run. By default it is disabled so that only model predictions are considered once
+	// available.
+	// +optional
+	IncludeHPA *bool `json:"includeHPA,omitempty"`
 }
 
 // PredictiveHorizontalPodAutoscalerStatus defines the observed state of PredictiveHorizontalPodAutoscaler

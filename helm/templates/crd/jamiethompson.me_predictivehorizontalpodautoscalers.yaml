@@ -198,6 +198,12 @@ spec:
                 - mean
                 - median
                 type: string
+              includeHPA:
+                description: includeHPA controls whether the baseline HPA calculation
+                  should be part of the decision strategy after models have accumulated
+                  enough history to run. By default it is disabled so that only model
+                  predictions are considered once available.
+                type: boolean
               initialReadinessDelay:
                 description: initialReadinessDelay is equivalent to --horizontal-pod-autoscaler-initial-readiness-delay;
                   the period after pod start during which readiness changes will be

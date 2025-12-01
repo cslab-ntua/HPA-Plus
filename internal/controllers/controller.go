@@ -83,7 +83,8 @@ const (
 )
 
 const (
-	configMapDataKey = "data"
+	configMapDataKey        = "data"
+	defaultArimaHistorySize = 50
 )
 
 // PredictiveHorizontalPodAutoscalerReconciler reconciles a PredictiveHorizontalPodAutoscaler object
@@ -248,7 +249,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 
 	// This function doesn't return any errors, since if it fails to process a model it will skip and continue
 	// processing without that model's results
-	predictedReplicas, phpaData := r.processModels(ctx, instance, phpaData, now, scale.Spec.Replicas,
+	predictedReplicas, modelPredictions, phpaData := r.processModels(ctx, instance, phpaData, now, scale.Spec.Replicas,
 		calculatedReplicas, metricValue)
 
 	err = r.updateConfigMapData(ctx, configMap, phpaData)
@@ -263,7 +264,41 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 		decisionType = *instance.Spec.DecisionType
 	}
 
+	if modelPredictions == nil {
+		modelPredictions = map[string]int32{}
+	}
+
+	includeHPABaseline := instance.Spec.IncludeHPA != nil && *instance.Spec.IncludeHPA
+	modelInputsReady := len(predictedReplicas) > 0
+
+	if !modelInputsReady {
+		logger.Info("Model histories incomplete; falling back to HPA decision",
+			"scaleTargetRef", scaleTargetRef,
+			"calculatedReplicas", calculatedReplicas)
+	}
+
+	if includeHPABaseline {
+		logger.Info("includeHPA enabled; including baseline HPA calculation in decision",
+			"scaleTargetRef", scaleTargetRef,
+			"calculatedReplicas", calculatedReplicas)
+	}
+
+	if includeHPABaseline || len(predictedReplicas) == 0 {
+		predictedReplicas = append(predictedReplicas, calculatedReplicas)
+		modelPredictions["hpa"] = calculatedReplicas
+	}
+
+	logger.Info("Preparing to select target replicas",
+		"scaleTargetRef", scaleTargetRef,
+		"decisionType", decisionType,
+		"inputs", modelPredictions)
+
 	targetReplicas := scalebehavior.DecideTargetReplicasByScalingStrategy(decisionType, predictedReplicas)
+	logger.Info("Decision complete",
+		"scaleTargetRef", scaleTargetRef,
+		"decisionType", decisionType,
+		"inputs", modelPredictions,
+		"targetReplicas", targetReplicas)
 
 	currentReplicas := scale.Spec.Replicas
 
@@ -390,14 +425,25 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) updateConfigMapData(ctx co
 func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.Context,
 	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler,
 	phpaData *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData, now time.Time, currentReplicas int32,
-	calculatedReplicas int32, metricValue *float64) ([]int32, *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) {
+	calculatedReplicas int32, metricValue *float64) ([]int32, map[string]int32, *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) {
 
 	logger := log.FromContext(ctx)
 
 	scaleTargetRef := instance.Spec.ScaleTargetRef
 
-	// Set up a slice with the calculated replicas as the first prediction
-	predictedReplicas := []int32{calculatedReplicas}
+	modelNames := make([]string, len(instance.Spec.Models))
+	for idx, model := range instance.Spec.Models {
+		modelNames[idx] = model.Name
+	}
+	if len(modelNames) > 0 {
+		logger.Info("Configured models for evaluation",
+			"scaleTargetRef", scaleTargetRef,
+			"models", modelNames)
+	}
+
+	// Set up a slice for predictions; the HPA result is added later depending on configuration/availability
+	predictedReplicas := []int32{}
+	modelPredictions := make(map[string]int32)
 
 	// Add the calculated replicas to a list of past replicas
 	for _, model := range instance.Spec.Models {
@@ -501,7 +547,9 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 			Metric:   metricValue,
 		})
 
-		if shouldRunOnThisSyncPeriod {
+		historyReady := modelHasSufficientHistory(&model, modelHistory.ReplicaHistory)
+
+		if shouldRunOnThisSyncPeriod && historyReady {
 			logger.V(1).Info("Using model to calculate predicted target replicas",
 				"scaleTargetRef", scaleTargetRef,
 				"model", model.Name)
@@ -515,13 +563,26 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 				continue
 			}
 			predictedReplicas = append(predictedReplicas, replicas)
+			modelPredictions[model.Name] = replicas
+			logger.Info("Model prediction ready",
+				"scaleTargetRef", scaleTargetRef,
+				"model", model.Name,
+				"prediction", replicas)
 			modelHistory.SyncPeriodsPassed = 1
 		} else {
-			logger.V(1).Info("Skipping model for this sync period, should not run on this sync period",
-				"scaleTargetRef", scaleTargetRef,
-				"syncPeriodsPassed", modelHistory.SyncPeriodsPassed,
-				"perSyncPeriod", perSyncPeriod,
-				"model", model.Name)
+			if !historyReady {
+				logger.V(1).Info("Skipping model for this sync period, not enough history recorded to satisfy history size",
+					"scaleTargetRef", scaleTargetRef,
+					"model", model.Name,
+					"currentHistorySize", len(modelHistory.ReplicaHistory),
+					"requiredHistorySize", requiredHistorySize(&model))
+			} else {
+				logger.V(1).Info("Skipping model for this sync period, should not run on this sync period",
+					"scaleTargetRef", scaleTargetRef,
+					"syncPeriodsPassed", modelHistory.SyncPeriodsPassed,
+					"perSyncPeriod", perSyncPeriod,
+					"model", model.Name)
+			}
 			modelHistory.SyncPeriodsPassed += 1
 		}
 
@@ -552,7 +613,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 		}
 	}
 
-	return predictedReplicas, phpaData
+	return predictedReplicas, modelPredictions, phpaData
 }
 
 // calculateReplicas does the HPA processing part of the autoscaling based on the metrics provided in the spec,
@@ -719,6 +780,37 @@ func int32Ptr(i int32) *int32 {
 
 func selectPolicyPtr(policy autoscalingv2.ScalingPolicySelect) *autoscalingv2.ScalingPolicySelect {
 	return &policy
+}
+
+func requiredHistorySize(model *jamiethompsonmev1alpha1.Model) int {
+	switch model.Type {
+	case jamiethompsonmev1alpha1.TypeLinear:
+		if model.Linear != nil {
+			return model.Linear.HistorySize
+		}
+	case jamiethompsonmev1alpha1.TypeXGBoost:
+		if model.XGBoost != nil {
+			return model.XGBoost.HistorySize
+		}
+	case jamiethompsonmev1alpha1.TypeArima:
+		if model.Arima != nil && model.Arima.HistorySize != nil {
+			return *model.Arima.HistorySize
+		}
+		return defaultArimaHistorySize
+	case jamiethompsonmev1alpha1.TypeHoltWinters:
+		if model.HoltWinters != nil {
+			return model.HoltWinters.SeasonalPeriods * model.HoltWinters.StoredSeasons
+		}
+	}
+	return 0
+}
+
+func modelHasSufficientHistory(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) bool {
+	required := requiredHistorySize(model)
+	if required <= 0 {
+		return true
+	}
+	return len(replicaHistory) >= required
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -1,1 +1,6 @@
 mode: cluster
+
+image:
+  repository: dimitrisde/phpa-operator
+  tag: arima
+  pullPolicy: Always

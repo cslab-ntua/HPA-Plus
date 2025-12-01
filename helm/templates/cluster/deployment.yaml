@@ -16,6 +16,6 @@ spec:
       serviceAccountName: {{ .Chart.Name }}-cluster
       containers:
         - name: {{ .Chart.Name }}
-          image: "dimitrisde/phpa-operator:arima"
-          imagePullPolicy: Always
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ default "Always" .Values.image.pullPolicy }}
 {{ end }}

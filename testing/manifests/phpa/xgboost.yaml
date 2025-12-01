@@ -26,8 +26,8 @@ spec:
       xgboost:
         historySize: 400
         lookAhead: 60000 # ~4 syncs ahead
-        lags: 8
-        windowSize: 8
+        lags: 20
+        windowSize: 20
         nEstimators: 400
         maxDepth: 5
         learningRate: 0.05
