@@ -13,7 +13,7 @@ spec:
     listKind: PredictiveHorizontalPodAutoscalerList
     plural: predictivehorizontalpodautoscalers
     shortNames:
-    - phpa
+    - hpaplus
     singular: predictivehorizontalpodautoscaler
   scope: Namespaced
   versions:
@@ -190,7 +190,7 @@ spec:
                   replica count to use if you have multiple models, or even just choosing
                   between the calculculated replicas and the predicted replicas of
                   a single model. For details on which decisionTypes are available
-                  visit https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/reference/configuration/#decisiontype
+                  visit https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/reference/configuration.md#decisiontype
                   Default strategy is 'maximum'
                 enum:
                 - maximum
@@ -793,7 +793,7 @@ spec:
                       - order
                       type: object
                     calculationTimeout:
-                      description: 'calculationTimeout is how long the PHPA should
+                      description: 'calculationTimeout is how long the HPA+ should
                         allow for the model to calculate a value in milliseconds,
                         if it takes longer than this timeout it should skip processing
                         the model. Default varies based on model type: Linear is 30000
@@ -967,7 +967,7 @@ spec:
                       type: string
                     type:
                       description: type is the type of the model, for example 'Linear'.
-                        To see a full list of supported model types visit https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/user-guide/models/.
+                        To see a full list of supported model types visit https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/models.md.
                       enum:
                       - Linear
                       - HoltWinters
@@ -1057,7 +1057,7 @@ spec:
                 type: object
               syncPeriod:
                 description: syncPeriod is equivalent to --horizontal-pod-autoscaler-sync-period;
-                  the frequency with which the PHPA calculates replica counts and
+                  the frequency with which the HPA+ calculates replica counts and
                   scales in milliseconds. Default value 15000 milliseconds (15 seconds).
                 minimum: 1
                 type: integer

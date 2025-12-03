@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cslab-ntua/HPA-Plus/internal/algorithm"
 	"github.com/google/go-cmp/cmp"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/algorithm"
 )
 
 type command func(name string, arg ...string) *exec.Cmd

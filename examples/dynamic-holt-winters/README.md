@@ -1,6 +1,6 @@
 # Dynamic Holt Winters
 
-This example shows how Holt-Winters can be used to with the Predictive Horizontal Pod Autoscaler (PHPA) to predict
+This example shows how Holt-Winters can be used with HPA+ to predict
 scaling demand based on seasonal data. This example is described as *dynamic* as it fetches it's tuning values from
 an external source at runtime, allowing these values to be dynamically calculated at runtime rather than being
 hardcoded.
@@ -31,14 +31,14 @@ To set up this example and follow the steps listed here you need:
 - [kubectl](https://kubernetes.io/docs/tasks/tools/).
 - A Kubernetes cluster that kubectl is configured to use - [k3d](https://github.com/rancher/k3d) is good for local
 testing.
-- [helm](https://helm.sh/docs/intro/install/) to install the PHPA operator.
+- [helm](https://helm.sh/docs/intro/install/) to install the HPA+ operator.
 - [jq](https://stedolan.github.io/jq/) to format some JSON output.
 
 ## Usage
 
-If you want to deploy this onto your cluster, you first need to install the Predictive Horizontal Pod Autoscaler
+If you want to deploy this onto your cluster, you first need to install the HPA+
 Operator, follow the [installation guide for instructions for installing the
-operator](https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/user-guide/installation).
+operator](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/installation.md).
 
 This example was based on the [Horizontal Pod Autoscaler
 Walkthrough](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/).
@@ -64,7 +64,7 @@ kubectl apply -f tuning/tuning.yaml
 3. Run this command to start the autoscaler, pointing at the previously created deployment:
 
 ```bash
-kubectl apply -f phpa.yaml
+kubectl apply -f hpa-plus.yaml
 ```
 
 4. Run this command to build the load tester image and import it into your Kubernetes cluster:
@@ -82,7 +82,7 @@ kubectl apply -f load/load.yaml
 6. Run this command to see the autoscaler working and the log output it produces:
 
 ```bash
-kubectl logs -l name=predictive-horizontal-pod-autoscaler -f
+kubectl logs -l name=hpa-plus -f
 ```
 
 7. Run this command to see the logs of the tuning service, it will report any time it is queried and it will print the
@@ -95,12 +95,12 @@ kubectl logs -l run=tuning -f
 8. Run this command to see the replica history for the autoscaler stored in a configmap and tracked by the autoscaler:
 
 ```bash
-kubectl get configmap predictive-horizontal-pod-autoscaler-dynamic-holt-winters-data -o=json | jq -r '.data.data | fromjson | .modelHistories["HoltWintersPrediction"].replicaHistory[] | .time,.replicas'
+kubectl get configmap hpa-plus-dynamic-holt-winters-data -o=json | jq -r '.data.data | fromjson | .modelHistories["HoltWintersPrediction"].replicaHistory[] | .time,.replicas'
 ```
 
-Every minute the load tester will increase the load on the application we are autoscaling for 30 seconds. The PHPA will
+Every minute the load tester will increase the load on the application we are autoscaling for 30 seconds. The HPA+ will
 initially without any data just act like a Horizontal Pod Autoscaler and will reactively scale up to meet this demand
-as best as it can after the demand has already started. After the load tester has run a couple of times the PHPA will
+as best as it can after the demand has already started. After the load tester has run a couple of times the HPA+ will
 have built up enough data that it can start to make predictions ahead of time using the Holt Winters model, and it
 will start calculating these predictions and proactively scaling up ahead of time to meet demand that it expects based
 on the data collected in the past.
@@ -110,7 +110,7 @@ on the data collected in the past.
 This example is split into four parts:
 
 - The deployment to autoscale
-- Predictive Horizontal Pod Autoscaler (PHPA)
+- HPA+
 - Tuning Service
 - Load Tester
 
@@ -120,9 +120,9 @@ The deployment to autoscale is a simple service that responds to HTTP requests, 
 image to return `OK!` to any HTTP GET requests. This deployment will have the number of pods assigned to it scaled up
 and down.
 
-### Predictive Horizontal Pod Autoscaler
+### HPA+
 
-The PHPA contains some configuration for how the scaling should be applied, the configuration defines how the
+The HPA+ contains some configuration for how the scaling should be applied, the configuration defines how the
 autoscaler will act:
 
 ```yaml
@@ -177,7 +177,7 @@ milliseconds (20 seconds).
 - `behavior.scaleDown.stabilizationWindowSeconds` handles how quickly an autoscaler can scale down, ensuring that it
 will pick the highest evaluation that has occurred within the last time period described, by default it will pick the
 highest evaluation over the past 5 minutes. In this case it will pick the highest evaluation over the past 30 seconds.
-- `metrics` defines the metrics that the PHPA should use to scale with, in this example it will try to keep average
+- `metrics` defines the metrics that the HPA+ should use to scale with, in this example it will try to keep average
 CPU utilization at 50% per pod.
 - `models` - predictive models to apply.
   - `type` - 'HoltWinters', using a Holt-Winters predictive model.
@@ -186,7 +186,7 @@ CPU utilization at 50% per pod.
   - `resetDuration` - The model's replica history will be cleared out if it's been longer than 5 minutes without any
   data recorded (e.g. if the cluster is turned off).
   - `holtWinters` - Holt-Winters specific configuration.
-    * `runtimeTuningFetchHook` - This is a [hook](https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/user-guide/hooks)
+    * `runtimeTuningFetchHook` - This is a [hook](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/hooks.md)
     that is used to dynamically fetch the `alpha`, `beta` and `gamma` values at runtime, in this example it is using a
     `HTTP` request to `http://tuning/holt_winters`.
     * `seasonalPeriods` - the length of a season in base unit sync periods, for this example sync period is `20000`

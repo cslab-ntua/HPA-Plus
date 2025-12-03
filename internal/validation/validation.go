@@ -22,10 +22,10 @@ import (
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 
-	jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
+	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 )
 
-// Validate performs validation on the PHPA, will return an error if the PHPA is not valid
+// Validate performs validation on the HPA+, will return an error if the HPA+ is not valid
 func Validate(instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler) error {
 	spec := instance.Spec
 

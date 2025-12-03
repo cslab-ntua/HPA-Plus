@@ -1,6 +1,6 @@
 apiVersion: v2
-name: phpa-operator
-description: The Predictive Horizontal Pod Autoscaler Operator allows deployment of Predictive Horizontal Pod Autoscalers
+name: hpa-plus-operator
+description: The HPA+ Operator allows deployment of HPA+ resources
 
 type: application
 

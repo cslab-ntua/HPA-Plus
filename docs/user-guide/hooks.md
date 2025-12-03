@@ -1,6 +1,6 @@
 # Hooks
 
-Hooks specify how user logic should be called by the Predictive Horizontal Pod Autoscaler.
+Hooks specify how user logic should be called by the HPA+.
 
 ## http
 

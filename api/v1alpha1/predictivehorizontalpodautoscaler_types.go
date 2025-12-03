@@ -254,7 +254,7 @@ type Arima struct {
 // Model represents a prediction model to use, e.g. a linear regression
 type Model struct {
 	// type is the type of the model, for example 'Linear'. To see a full list of supported model types visit
-	// https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/user-guide/models/.
+	// https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/models.md.
 	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA;XGBoost
 	Type string `json:"type"`
 
@@ -276,7 +276,7 @@ type Model struct {
 	// +optional
 	ResetDuration *metav1.Duration `json:"resetDuration"`
 
-	// calculationTimeout is how long the PHPA should allow for the model to calculate a value in milliseconds, if it
+	// calculationTimeout is how long HPA+ should allow for the model to calculate a value in milliseconds, if it
 	// takes longer than this timeout it should skip processing the model.
 	// Default varies based on model type:
 	// Linear is 30000 milliseconds (30 seconds)
@@ -326,10 +326,10 @@ type TimestampedReplicas struct {
 	Metric *float64 `json:"metric,omitempty"`
 }
 
-// PredictiveHorizontalPodAutoscalerData is the data storage format for the PHPA, this is stored in a ConfigMap
+// PredictiveHorizontalPodAutoscalerData is the data storage format for HPA+, this is stored in a ConfigMap
 type PredictiveHorizontalPodAutoscalerData struct {
 	// modelHistories is a mapping of model names to model histories. This allows looking up a model's model history,
-	// while allowing all of the model histories for a single PHPA to be stored in a single place.
+	// while allowing all of the model histories for a single HPA+ object to be stored in a single place.
 	ModelHistories map[string]ModelHistory `json:"modelHistories"`
 }
 
@@ -404,7 +404,7 @@ type PredictiveHorizontalPodAutoscalerSpec struct {
 	// +optional
 	Tolerance *float64 `json:"tolerance"`
 
-	// syncPeriod is equivalent to --horizontal-pod-autoscaler-sync-period; the frequency with which the PHPA
+	// syncPeriod is equivalent to --horizontal-pod-autoscaler-sync-period; the frequency with which HPA+
 	// calculates replica counts and scales in milliseconds.
 	// Default value 15000 milliseconds (15 seconds).
 	// +kubebuilder:validation:Minimum=1
@@ -418,7 +418,7 @@ type PredictiveHorizontalPodAutoscalerSpec struct {
 	// decisionType is the strategy to use when picking which replica count to use if you have multiple models, or even
 	// just choosing between the calculculated replicas and the predicted replicas of a single model. For details on
 	// which decisionTypes are available visit
-	// https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/reference/configuration/#decisiontype
+	// https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/reference/configuration.md#decisiontype
 	// Default strategy is 'maximum'
 	// +kubebuilder:validation:Enum=maximum;minimum;mean;median
 	// +optional
@@ -480,7 +480,7 @@ type PredictiveHorizontalPodAutoscalerStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:shortName=phpa
+// +kubebuilder:resource:shortName=hpaplus
 // +kubebuilder:printcolumn:name="Reference",type="string",JSONPath=`.status.reference`,description="The identifier for the resource being scaled in the format <api-version>/<api-kind/<name>"
 // +kubebuilder:printcolumn:name="Min Pods",type="integer",JSONPath=`.spec.minReplicas`,description="The minimum number of replicas of pods that the resource being managed by the autoscaler can have"
 // +kubebuilder:printcolumn:name="Max Pods",type="integer",JSONPath=`.spec.maxReplicas`,description="The maximum number of replicas of pods that the resource being managed by the autoscaler can have"

@@ -1,6 +1,6 @@
 # Configuration
 
-Predictive Horizontal Pod Autoscalers have a number of configuration options available.
+HPA+ resources have a number of configuration options available.
 
 ## minReplicas
 
@@ -31,7 +31,7 @@ Default value: `10`.
 syncPeriod: 10000
 ```
 
-Equivalent to `--horizontal-pod-autoscaler-sync-period`; the frequency with which the PHPA calculates replica counts and
+Equivalent to `--horizontal-pod-autoscaler-sync-period`; the frequency with which the HPA+ calculates replica counts and
 scales in milliseconds.
 
 Set in milliseconds.
@@ -102,7 +102,7 @@ includeHPA: true
 
 Controls whether the baseline Horizontal Pod Autoscaler (HPA) calculation should continue to participate in the
 decision strategy once the configured models have accumulated enough history to run. When `includeHPA` is `false`
-(the default) the PHPA falls back to the HPA result only while the model histories are still being populated; afterwards,
+(the default) the HPA+ falls back to the HPA result only while the model histories are still being populated; afterwards,
 the decision is made solely from the model predictions unless this flag is explicitly set to `true`.
 
 ## behavior

@@ -26,9 +26,9 @@ import (
 	"testing"
 	"time"
 
+	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/hook/http"
 	"github.com/google/go-cmp/cmp"
-	jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/hook/http"
 )
 
 type testHTTPClient struct {

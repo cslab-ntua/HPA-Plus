@@ -4,8 +4,8 @@ layout:
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
-projectName: predictive-horizontal-pod-autoscaler
-repo: github.com/jthomperoo/predictive-horizontal-pod-autoscaler
+projectName: hpa-plus
+repo: github.com/cslab-ntua/HPA-Plus
 resources:
 - api:
     crdVersion: v1
@@ -14,7 +14,7 @@ resources:
   domain: jamiethompson.me
   group: jamiethompson.me
   kind: PredictiveHorizontalPodAutoscaler
-  path: github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1
+  path: github.com/cslab-ntua/HPA-Plus/api/v1alpha1
   version: v1alpha1
   webhooks:
     defaulting: true

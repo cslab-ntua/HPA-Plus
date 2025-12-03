@@ -1,8 +1,8 @@
 REGISTRY = dimitrisde
-NAME = phpa-operator
+NAME = hpa-plus-operator
 VERSION = 0.13.3
 
-LOCAL_HELM_CHART_NAME=predictive-horizontal-pod-autoscaler-operator
+LOCAL_HELM_CHART_NAME=hpa-plus-operator
 
 run: deploy py_dependencies
 	go run github.com/cosmtrek/air
@@ -41,7 +41,7 @@ docker:
 generate: get_controller-gen
 	@echo "=============Generating Golang and YAML============="
 	controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	controller-gen rbac:roleName=predictive-horizontal-pod-autoscaler webhook crd:allowDangerousTypes=true \
+	controller-gen rbac:roleName=hpa-plus webhook crd:allowDangerousTypes=true \
 		paths="./..." \
 		output:crd:artifacts:config=helm/templates/crd \
 		output:rbac:artifacts:config=helm/templates/cluster \

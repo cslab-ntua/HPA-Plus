@@ -16,7 +16,7 @@ limitations under the License.
 
 package fake
 
-import jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
+import jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 
 // Execute (fake) provides a way to insert functionality into a hook executer
 type Execute struct {

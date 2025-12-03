@@ -2,5 +2,5 @@ Thanks for installing {{ .Chart.Name }} version {{ .Chart.Version }}.
 
 Your release is named {{ .Release.Name }}.
 
-To find out more/request features/report bugs, check out the Predictive Horizontal Pod Autoscaler repo here:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler
+To find out more/request features/report bugs, check out the HPA+ repo here:
+https://github.com/cslab-ntua/HPA-Plus

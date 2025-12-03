@@ -14,8 +14,8 @@ dist
 tmp
 testbin/*
 
-# Main PHPA operator binary
-predictive-horizontal-pod-autoscaler
+# Main HPA+ operator binary
+hpa-plus
 
 # Test binary, build with `go test -c`
 *.test
@@ -38,16 +38,16 @@ predictive-horizontal-pod-autoscaler
 # Pre-commit cache
 **/.cache/pre-commit
 .pre-commit-config.yaml
-test-arima-phpa.yaml
+test-arima-hpa-plus.yaml
 test-deployment.yaml
 scripts/
 test-load.yaml
 test-app-server-configmap.yaml
-test-arima-phpa.yaml
+test-arima-hpa-plus.yaml
 test-deployment.yaml
 test-load.yaml
 test-app-server-configmap.yaml
-test-arima-phpa.yaml
+test-arima-hpa-plus.yaml
 test-deployment.yaml
 **/.gocache/
 test_load.yaml

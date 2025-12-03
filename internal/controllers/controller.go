@@ -39,14 +39,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
+	"github.com/cslab-ntua/HPA-Plus/internal/scalebehavior"
+	"github.com/cslab-ntua/HPA-Plus/internal/validation"
 	"github.com/jthomperoo/k8shorizmetrics/v2"
-	jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/scalebehavior"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/validation"
 )
 
-// PHPA configuration constants
+// HPA+ configuration constants
 const (
 	defaultSyncPeriod       = 15 * time.Second
 	defaultErrorRetryPeriod = 10 * time.Second
@@ -60,7 +60,7 @@ const (
 	defaultPerSyncPeriod           = 1
 )
 
-// PHPA scale constraints
+// HPA+ scale constraints
 const (
 	defaultDecisionType = jamiethompsonmev1alpha1.DecisionMaximum
 	defaultMinReplicas  = 1
@@ -127,8 +127,8 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 
 	err = validation.Validate(instance)
 	if err != nil {
-		logger.Error(err, "invalid PredictiveHorizontalPodAutoscaler, disabling PHPA until changed to be valid")
-		// We stop processing here without requeueing since the PHPA is invalid, if changes are made to the spec that
+		logger.Error(err, "invalid PredictiveHorizontalPodAutoscaler, disabling HPA+ until changed to be valid")
+		// We stop processing here without requeueing since the HPA+ object is invalid, if changes are made to the spec that
 		// make it valid it will be reconciled again and the validation checked
 		return reconcile.Result{}, nil
 	}
@@ -141,8 +141,8 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
-	configMapName := fmt.Sprintf("predictive-horizontal-pod-autoscaler-%s-data", instance.Name)
-	phpaData := &jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData{}
+	configMapName := fmt.Sprintf("hpa-plus-%s-data", instance.Name)
+	hpaPlusData := &jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData{}
 	configMap := &corev1.ConfigMap{}
 
 	// Check if configmap exists, if not create a blank one
@@ -154,12 +154,12 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 		configMap)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			logger.V(1).Info("No configmap found for PHPA, creating a new one",
+			logger.V(1).Info("No configmap found for HPA+, creating a new one",
 				"scaleTargetRef", scaleTargetRef)
 
 			configMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("predictive-horizontal-pod-autoscaler-%s-data", instance.Name),
+					Name:      fmt.Sprintf("hpa-plus-%s-data", instance.Name),
 					Namespace: instance.Namespace,
 				},
 			}
@@ -171,9 +171,9 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 				UID:        instance.UID,
 			}})
 
-			phpaData.ModelHistories = map[string]jamiethompsonmev1alpha1.ModelHistory{}
+			hpaPlusData.ModelHistories = map[string]jamiethompsonmev1alpha1.ModelHistory{}
 
-			data, err := json.Marshal(phpaData)
+			data, err := json.Marshal(hpaPlusData)
 			if err != nil {
 				// Should not occur, panic
 				panic(err)
@@ -185,7 +185,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 
 			err = r.Client.Create(ctx, configMap)
 			if err != nil {
-				logger.Error(err, "failed to create PHPA configmap", "scaleTargetRef", scaleTargetRef)
+				logger.Error(err, "failed to create HPA+ configmap", "scaleTargetRef", scaleTargetRef)
 				return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 			}
 
@@ -193,13 +193,13 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 			// loop will kick in again
 			return reconcile.Result{}, nil
 		}
-		logger.Error(err, "failed to get PHPA config map and data", "scaleTargetRef", scaleTargetRef)
+		logger.Error(err, "failed to get HPA+ config map and data", "scaleTargetRef", scaleTargetRef)
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
-	err = json.Unmarshal([]byte(configMap.Data[configMapDataKey]), phpaData)
+	err = json.Unmarshal([]byte(configMap.Data[configMapDataKey]), hpaPlusData)
 	if err != nil {
-		logger.Error(err, "failed to parse PHPA data", "scaleTargetRef", scaleTargetRef)
+		logger.Error(err, "failed to parse HPA+ data", "scaleTargetRef", scaleTargetRef)
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
@@ -210,7 +210,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 
 	now := time.Now().UTC()
 
-	// Check the last scale of the PHPA, make sure we're not scaling too early
+	// Check the last scale of the HPA+, make sure we're not scaling too early
 	lastScaleTime := instance.Status.LastScaleTime
 	if lastScaleTime != nil && now.Add(-syncPeriod).Before(lastScaleTime.Time) {
 		timeUntilReconcile := instance.Status.LastScaleTime.Time.Add(syncPeriod).Sub(now)
@@ -249,12 +249,12 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 
 	// This function doesn't return any errors, since if it fails to process a model it will skip and continue
 	// processing without that model's results
-	predictedReplicas, modelPredictions, phpaData := r.processModels(ctx, instance, phpaData, now, scale.Spec.Replicas,
+	predictedReplicas, modelPredictions, hpaPlusData := r.processModels(ctx, instance, hpaPlusData, now, scale.Spec.Replicas,
 		calculatedReplicas, metricValue)
 
-	err = r.updateConfigMapData(ctx, configMap, phpaData)
+	err = r.updateConfigMapData(ctx, configMap, hpaPlusData)
 	if err != nil {
-		logger.Error(err, "failed to update PHPA configmap",
+		logger.Error(err, "failed to update HPA+ configmap",
 			"scaleTargetRef", scaleTargetRef)
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
@@ -399,10 +399,10 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 
 }
 
-// updateConfigMapData updates the PHPA's configmap and the data it holds
+// updateConfigMapData updates the HPA+'s configmap and the data it holds
 func (r *PredictiveHorizontalPodAutoscalerReconciler) updateConfigMapData(ctx context.Context, configMap *corev1.ConfigMap,
-	phpaData *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) error {
-	data, err := json.Marshal(phpaData)
+	hpaPlusData *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) error {
+	data, err := json.Marshal(hpaPlusData)
 	if err != nil {
 		// Should not occur, panic
 		panic(err)
@@ -424,7 +424,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) updateConfigMapData(ctx co
 // log if a model has failed to be processed, allowing the other models/the HPA calculated replicas to be used instead
 func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.Context,
 	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler,
-	phpaData *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData, now time.Time, currentReplicas int32,
+	hpaPlusData *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData, now time.Time, currentReplicas int32,
 	calculatedReplicas int32, metricValue *float64) ([]int32, map[string]int32, *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) {
 
 	logger := log.FromContext(ctx)
@@ -456,7 +456,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 			perSyncPeriod = *model.PerSyncPeriod
 		}
 
-		modelHistory, exists := phpaData.ModelHistories[model.Name]
+		modelHistory, exists := hpaPlusData.ModelHistories[model.Name]
 		if !exists || modelHistory.Type != model.Type {
 			// Create new if model doesn't exist or has a type mismatch
 			modelHistory = jamiethompsonmev1alpha1.ModelHistory{
@@ -470,7 +470,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 			if modelHistory.StartTime == nil {
 				startTime := nextInterval(now, model.StartInterval.Duration)
 				modelHistory.StartTime = &metav1.Time{Time: startTime}
-				phpaData.ModelHistories[model.Name] = modelHistory
+				hpaPlusData.ModelHistories[model.Name] = modelHistory
 
 				logger.V(1).Info("Skipping model for this sync period, start interval with no start time calculated, new start time calculated",
 					"scaleTargetRef", scaleTargetRef,
@@ -512,7 +512,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 					startTime := nextInterval(now, model.StartInterval.Duration)
 
 					modelHistory.StartTime = &metav1.Time{Time: startTime}
-					phpaData.ModelHistories[model.Name] = modelHistory
+					hpaPlusData.ModelHistories[model.Name] = modelHistory
 
 					logger.V(1).Info("Skipping model for this sync period, too much time has elapsed since the last data recorded, new start time calculated",
 						"scaleTargetRef", scaleTargetRef,
@@ -527,7 +527,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 					continue
 				}
 
-				phpaData.ModelHistories[model.Name] = modelHistory
+				hpaPlusData.ModelHistories[model.Name] = modelHistory
 				logger.V(1).Info("Clearing replica history, too much time has elapsed since the last data recorded",
 					"scaleTargetRef", scaleTargetRef,
 					"latestData", metav1.Time{Time: latest},
@@ -595,11 +595,11 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 		}
 
 		modelHistory.ReplicaHistory = prunedHistory
-		phpaData.ModelHistories[model.Name] = modelHistory
+		hpaPlusData.ModelHistories[model.Name] = modelHistory
 	}
 
 	// Delete any model data that exists without a corresponding model spec
-	for modelName := range phpaData.ModelHistories {
+	for modelName := range hpaPlusData.ModelHistories {
 		exists := false
 		for _, model := range instance.Spec.Models {
 			if modelName == model.Name {
@@ -609,11 +609,11 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 		}
 
 		if !exists {
-			delete(phpaData.ModelHistories, modelName)
+			delete(hpaPlusData.ModelHistories, modelName)
 		}
 	}
 
-	return predictedReplicas, modelPredictions, phpaData
+	return predictedReplicas, modelPredictions, hpaPlusData
 }
 
 // calculateReplicas does the HPA processing part of the autoscaling based on the metrics provided in the spec,
@@ -674,7 +674,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) calculateReplicas(
 	return calculatedReplicas, metricValue, nil
 }
 
-// preScaleStatusCheck makes sure that the PHPAs status fields are correct before scaling, e.g. the reference field
+// preScaleStatusCheck makes sure that the HPA+ status fields are correct before scaling, e.g. the reference field
 // is set
 func (r *PredictiveHorizontalPodAutoscalerReconciler) preScaleStatusCheck(ctx context.Context,
 	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler) error {

@@ -35,12 +35,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ## [v0.12.0] - 2023-01-15
 ### Changed
 - See the [migration guide from `v0.11.2`
-here](https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/user-guide/migration/v0_11_2-to-v0_12_0).
-- **BREAKING CHANGE** PHPA spec upgraded from `autoscaling/v2beta2` to `autoscaling/v2` for the following definitions:
+here](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/migration/v0_11_2-to-v0_12_0.md).
+- **BREAKING CHANGE** HPA+ spec upgraded from `autoscaling/v2beta2` to `autoscaling/v2` for the following definitions:
   - `CrossVersionObjectReference` in the `scaleTargetRef` field.
   - `MetricSpec` in the `metrics` field.
   - `MetricStatus` in the `currentMetrics` field.
-- Upgraded to [k8shorizmetrics `v2.0.0`](https://github.com/jthomperoo/k8shorizmetrics/releases/tag/v2.0.0).
+- Upgraded to k8shorizmetrics `v2.0.0`.
 - Upgraded from `autoscaling/v2beta2` to `autoscaling/v2`.
 - Upgraded to Go `v1.19`.
 ### Removed
@@ -62,11 +62,11 @@ client.
 
 ## [v0.11.0] - 2022-07-23
 ### Changed
-- See the [migration guide from `v0.10.0` here](https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/user-guide/migration/v0_10_0-to-v0_11_0).
+- See the [migration guide from `v0.10.0` here](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/migration/v0_10_0-to-v0_11_0.md).
 - BREAKING CHANGE: Major rewrite converting this project from a Custom Pod Autoscaler to have its own dedicated CRD
 and operator.
   - Configuration and deployment has changed completely, no longer need to install the Custom Pod Autoscaler Operator,
-  instead you need to install the Predictive Horizontal Pod Autoscaler as an operator.
+  instead you need to install the HPA+ as an operator.
   - No longer deployed as `CustomPodAutoscaler` custom resources, now deployed as `PredictiveHorizontalPodAutoscaler`
   custom resources.
 - BREAKING CHANGES: Several configuration options renamed for clarity.
@@ -90,16 +90,16 @@ available: <https://custom-pod-autoscaler.readthedocs.io/en/latest/reference/con
 
 ## [v0.10.0] - 2022-05-14
 ### Changed
-- Removed dependency on `jthomperoo/horizontal-pod-autoscaler` in favour of `jthomperoo/k8shorizmetrics`.
-- Bump `jthomperoo/custom-pod-autoscaler` to `v2.6.0`.
+- Removed dependency on the legacy horizontal-pod-autoscaler shim in favour of k8shorizmetrics.
+- Bump `custom-pod-autoscaler` to `v2.6.0`.
 - Upgrade to Go `v1.17`.
 
 ## [v0.9.0] - 2021-12-28
 ### Added
 - Support for `argoproj.io/v1alpha1` `Rollout` resource.
 ### Changed
-- Bump `jthomperoo/custom-pod-autoscaler` to `v2.3.0`
-- Bump `jthomperoo/horizontal-pod-autoscaler` to `v0.8.0`
+- Bump `custom-pod-autoscaler` to `v2.3.0`
+- Bump `horizontal-pod-autoscaler` to `v0.8.0`
 
 ## [v0.8.0] - 2021-08-15
 ### Changed
@@ -112,7 +112,7 @@ available: <https://custom-pod-autoscaler.readthedocs.io/en/latest/reference/con
 ### Added
 - Holt Winters values can now be fetched at runtime, rather than simply being hardcoded.
 ### Fixed
-- Fixed slow shutdown of PHPA due to ignoring SIGTERM from K8s.
+- Fixed slow shutdown of HPA+ due to ignoring SIGTERM from K8s.
 ### Changed
 - Switched from Golang to Python for calculating statistical predictions for Linear Regression and Holt-Winters.
 - Holt-Winters now calculated using statsmodels, opening up statsmodels configuration options for tuning.
@@ -173,38 +173,38 @@ Holt-Winters configuration.
 - Added the ability to use Linear Regression models to predict future scaling.
 
 [Unreleased]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.13.2...HEAD
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.13.2...HEAD
 [v0.13.2]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.13.1...v0.13.2
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.13.1...v0.13.2
 [v0.13.1]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.13.0...v0.13.1
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.13.0...v0.13.1
 [v0.13.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.12.0...v0.13.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.12.0...v0.13.0
 [v0.12.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.11.2...v0.12.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.11.2...v0.12.0
 [v0.11.2]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.11.1...v0.11.2
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.11.1...v0.11.2
 [v0.11.1]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.11.0...v0.11.1
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.11.0...v0.11.1
 [v0.11.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.10.0...v0.11.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.10.0...v0.11.0
 [v0.10.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.9.0...v0.10.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.9.0...v0.10.0
 [v0.9.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.8.0...v0.9.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.8.0...v0.9.0
 [v0.8.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.7.0...v0.8.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.7.0...v0.8.0
 [v0.7.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.6.0...v0.7.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.6.0...v0.7.0
 [v0.6.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.5.0...v0.6.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.5.0...v0.6.0
 [v0.5.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.4.0...v0.5.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.4.0...v0.5.0
 [v0.4.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.3.0...v0.4.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.3.0...v0.4.0
 [v0.3.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.2.0...v0.3.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.2.0...v0.3.0
 [v0.2.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/compare/v0.1.0...v0.2.0
+https://github.com/cslab-ntua/HPA-Plus/compare/v0.1.0...v0.2.0
 [v0.1.0]:
-https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/releases/tag/v0.1.0
+https://github.com/cslab-ntua/HPA-Plus/releases/tag/v0.1.0
