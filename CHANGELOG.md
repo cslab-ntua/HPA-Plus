@@ -5,6 +5,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+> _After inheriting the original Predictive Horizontal Pod Autoscaler we continued development under the HPA+ name.
+> Historical entries below remain untouched._
+
+### Added
+- Documented the fork’s new direction and build/test flow.
+- Introduced ARIMA/SARIMA and XGBoost models alongside the existing linear/Holt-Winters implementations, with extra parameters.
+
+### Changed
+- Rebranded the project (code, docs, Helm chart, manifests) to **HPA+**.
+- Reworked controller/data logic: fixed several bugs in replica history collection, decision-making, and only use the raw HPA result until model histories are populated.
+- Removed the baseline HPA output from being counted as an additional “model” during strategy calculations.
+
+### Fixed
+- Numerous issues in the inherited codebase around data collection, model usage, and controller behavior.
 
 ## [v0.13.2] - 2023-07-01
 ### Changed

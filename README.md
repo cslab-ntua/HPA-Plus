@@ -95,13 +95,32 @@ This HPA+ object acts like a Horizontal Pod Autoscaler and autoscales to try and
 
 ## Installation
 
-The operator for managing HPA+ can be installed using Helm:
+Because the project now lives in a private repository the recommended workflow is to build and deploy the operator from
+source:
 
-```bash
-VERSION=v0.13.2
-HELM_CHART=hpa-plus-operator
-helm install ${HELM_CHART} https://github.com/cslab-ntua/HPA-Plus/releases/download/${VERSION}/hpa-plus-${VERSION}.tgz
-```
+1. Build (and optionally push) the controller image.
+
+   ```bash
+   export REGISTRY=docker.io/<your-user>   # change as needed
+   export VERSION=$(git rev-parse --short HEAD)
+
+   docker build -t ${REGISTRY}/hpa-plus-operator:${VERSION} .
+   docker push ${REGISTRY}/hpa-plus-operator:${VERSION}    # optional if you use kind/minikube
+   ```
+
+2. Install the Helm chart directly from this repository, pointing it at the image you just built.
+
+   ```bash
+   helm upgrade --install hpa-plus-operator ./helm \
+     --namespace hpa-plus-system \
+     --create-namespace \
+     --set image.repository=${REGISTRY}/hpa-plus-operator \
+     --set image.tag=${VERSION} \
+     --set mode=cluster
+   ```
+
+3. Deploy one of the sample manifests (`testing/manifests/hpa-plus/*.yaml` or `examples/**/hpa-plus.yaml`) to exercise
+   the controller.
 
 ## Quick start
 
@@ -143,7 +162,7 @@ You can deploy an HPA+ example (see the [`examples/` directory](./examples) for 
 * `make run` - runs HPA+ locally against the cluster configured in your kubeconfig file.
 * `make docker` - builds the HPA+ image.
 * `make lint` - lints the code.
-* `make format` - beautifies the code, must be run to pass the CI.
+* `make format` - beautifies the code so that `make lint` stays happy.
 * `make test` - runs the unit tests.
 * `make doc` - hosts the documentation locally at <https://localhost:8000>.
 * `make coverage` - opens up any generated coverage reports in the browser.

@@ -31,34 +31,37 @@ k3d cluster create hpa-plus-test-cluster
 
 Installing HPA+ objects requires you to have installed the HPA+ operator onto your cluster.
 
-In this guide we are using `v0.13.2` of the operator, but check out the [installation
-guide](./installation.md) for more up-to-date instructions for later releases.
-
-Run the following commands to install the operator:
+Build/push the controller image and install the chart directly from this repository:
 
 ```bash
-VERSION=v0.13.2
-HELM_CHART=hpa-plus-operator
-helm install ${HELM_CHART} https://github.com/cslab-ntua/HPA-Plus/releases/download/${VERSION}/hpa-plus-${VERSION}.tgz
+export REGISTRY=docker.io/<your-user>
+export VERSION=$(git rev-parse --short HEAD)
+
+docker build -t ${REGISTRY}/hpa-plus-operator:${VERSION} .
+docker push ${REGISTRY}/hpa-plus-operator:${VERSION}
+
+helm upgrade --install hpa-plus-operator ./helm \
+  --namespace hpa-plus-system \
+  --create-namespace \
+  --set image.repository=${REGISTRY}/hpa-plus-operator \
+  --set image.tag=${VERSION} \
+  --set mode=cluster
 ```
 
 You can check the operator has been deployed properly by running:
 
 ```bash
-helm status hpa-plus-operator
+helm status hpa-plus-operator -n hpa-plus-system
 ```
 
-You should get a response like this:
+You should get a response similar to:
 
-```bash
+```
 NAME: hpa-plus-operator
-LAST DEPLOYED: Thu Jul 21 20:29:06 2022
-NAMESPACE: default
+LAST DEPLOYED: 2024-04-02 11:13:20
+NAMESPACE: hpa-plus-system
 STATUS: deployed
 REVISION: 1
-TEST SUITE: None
-NOTES:
-Thanks for installing HPA+.
 ```
 
 If you get a response that says release not found then the install has not worked correctly.
@@ -322,10 +325,9 @@ values and the target values predicted by the linear regression.
 Once you have finished testing the autoscaler, you can clean up any K8s resources by running:
 
 ```bash
-HELM_CHART=hpa-plus-operator
 kubectl delete -f deployment.yaml
 kubectl delete -f hpa-plus.yaml
-helm uninstall ${HELM_CHART}
+helm uninstall hpa-plus-operator -n hpa-plus-system
 ```
 
 If you are using k3d you can clean up the entire cluster by running:
