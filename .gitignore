@@ -53,3 +53,7 @@ test-deployment.yaml
 test_load.yaml
 .cache/
 vendor/
+.github/ISSUE_TEMPLATE/
+benchmarks/
+examples/
+testing/

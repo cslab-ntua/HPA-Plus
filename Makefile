@@ -41,7 +41,7 @@ docker:
 generate: get_controller-gen
 	@echo "=============Generating Golang and YAML============="
 	controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	controller-gen rbac:roleName=hpa-plus webhook crd:allowDangerousTypes=true \
+	controller-gen rbac:roleName=hpa-plus-operator webhook crd:allowDangerousTypes=true \
 		paths="./..." \
 		output:crd:artifacts:config=helm/templates/crd \
 		output:rbac:artifacts:config=helm/templates/cluster \

@@ -793,10 +793,10 @@ spec:
                       - order
                       type: object
                     calculationTimeout:
-                      description: 'calculationTimeout is how long the HPA+ should
-                        allow for the model to calculate a value in milliseconds,
-                        if it takes longer than this timeout it should skip processing
-                        the model. Default varies based on model type: Linear is 30000
+                      description: 'calculationTimeout is how long HPA+ should allow
+                        for the model to calculate a value in milliseconds, if it
+                        takes longer than this timeout it should skip processing the
+                        model. Default varies based on model type: Linear is 30000
                         milliseconds (30 seconds)'
                       minimum: 1
                       type: integer
@@ -1057,8 +1057,8 @@ spec:
                 type: object
               syncPeriod:
                 description: syncPeriod is equivalent to --horizontal-pod-autoscaler-sync-period;
-                  the frequency with which the HPA+ calculates replica counts and
-                  scales in milliseconds. Default value 15000 milliseconds (15 seconds).
+                  the frequency with which HPA+ calculates replica counts and scales
+                  in milliseconds. Default value 15000 milliseconds (15 seconds).
                 minimum: 1
                 type: integer
               tolerance:
