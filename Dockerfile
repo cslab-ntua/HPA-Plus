@@ -16,12 +16,13 @@
 FROM golang:1.20 as builder
 
 WORKDIR /workspace
-# Copy the Go Modules manifests
+# Always use vendored dependencies to avoid needing network access during build
+ENV GOFLAGS=-mod=vendor
+
+# Copy the Go Modules manifests and vendor directory so dependency layer stays cached
 COPY go.mod go.mod
 COPY go.sum go.sum
-# cache deps before building and copying source so that we don't need to re-download as much
-# and so that source changes don't invalidate our downloaded layer
-RUN go mod download
+COPY vendor/ vendor/
 
 # Copy the go source
 COPY . .
@@ -29,8 +30,13 @@ COPY . .
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o manager main.go
 
-FROM python:3.8-slim-buster
+FROM python:3.8-slim-bullseye
 WORKDIR /app
+
+# Install system dependencies for Python packages
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libgomp1 && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY algorithms/requirements.txt ./algorithms/requirements.txt

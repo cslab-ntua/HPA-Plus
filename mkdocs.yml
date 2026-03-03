@@ -1,4 +1,4 @@
-site_name: Predictive Horizontal Pod Autoscaler
+site_name: HPA+
 theme: material
 markdown_extensions:
   - mdx_truly_sane_lists

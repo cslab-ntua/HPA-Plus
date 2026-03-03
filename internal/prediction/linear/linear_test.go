@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
+	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/fake"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction/linear"
 	"github.com/google/go-cmp/cmp"
-	jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/fake"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/linear"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

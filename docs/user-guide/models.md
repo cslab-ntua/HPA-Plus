@@ -45,7 +45,7 @@ The **linear** component of the configuration handles configuration of the Linea
 are `> 6` evaluations, the oldest will be removed.
 
 For a more detailed example, [see the example in
-`/examples/simple-linear`](https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/tree/master/examples/simple-linear).
+`/examples/simple-linear`](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/simple-linear).
 
 ## Holt-Winters Time Series prediction
 
@@ -72,7 +72,8 @@ models:
 The **holtWinters** component of the configuration handles configuration of the Linear regression options:
 
 - **alpha**, **beta**, **gamma** - these are the smoothing coefficients for level, trend and seasonality respectively,
-requires tweaking and analysis to be able to optimise. See [here](https://github.com/jthomperoo/holtwinters) or
+requires tweaking and analysis to be able to optimise. See [the dynamic Holt-Winters
+example](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/dynamic-holt-winters) or
 [here](https://grisha.org/blog/2016/01/29/triple-exponential-smoothing-forecasting/) for more details.
 - **seasonalPeriods** - the length of a season in base unit sync periods, for example if your sync period was `10000`
 (10 seconds), and your repeated season was 60 seconds long, this value would be `6`.
@@ -88,7 +89,7 @@ is overestimating, but still pre-emptively scaling - storing more seasons and ad
 would reduce the overestimation and produce more accurate results.
 
 For a more detailed example, [see the example in
-`/examples/simple-holt-winters`](https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/tree/master/examples/simple-holt-winters).
+`/examples/simple-holt-winters`](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/simple-holt-winters).
 
 ### Advanced tuning
 
@@ -107,7 +108,7 @@ names of the variables in this documentation map to the camelcase names describe
 
 ### Holt-Winters Runtime Tuning
 
-The PHPA supports dynamically fetching the tuning values for the Holt-Winters algorithm (`alpha`, `beta`, and `gamma`).
+The HPA+ supports dynamically fetching the tuning values for the Holt-Winters algorithm (`alpha`, `beta`, and `gamma`).
 
 This is done using a `hook` system, to see more information of how the dynamic hook system works [visit the hooks
 user guide](./hooks.md)
@@ -139,17 +140,17 @@ models:
 
 > Note this uses the `parameterMode: body` instead of `parameterMode: query`, this is because for large amounts of
 > data the URL generated can become too long and invalid. See
-> [#89](https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/issues/89).
+> [#89](https://github.com/cslab-ntua/HPA-Plus/issues/89).
 
 The hook is defined with the name `runtimeTuningFetchHook`.
 
-The supported hook types for the PHPA are:
+The supported hook types for the HPA+ are:
 
 - HTTP requests
 
 The process is as follows:
 
-1. PHPA begins Holt-Winters calculation.
+1. HPA+ begins Holt-Winters calculation.
 2. The values are initially set to any hardcoded values supplied in the configuration.
 3. A runtime tuning configuration has been supplied, using this configuration a hook is executed (for example a HTTP
 request is sent).
@@ -213,7 +214,7 @@ models:
     seasonal: additive
 ```
 
-If any value is missing, the PHPA will report it as an error (e.g.
+If any value is missing, the HPA+ will report it as an error (e.g.
 `No alpha tuning value provided for Holt-Winters prediction`) and not calculate and scale.
 
 #### Request Format
@@ -302,4 +303,4 @@ rely on the hardcoded configuration value, this response would be valid:
 ```
 
 For a more detailed example, [see the example in
-`/examples/dynamic-holt-winters`](https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/tree/master/examples/dynamic-holt-winters).
+`/examples/dynamic-holt-winters`](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/dynamic-holt-winters).

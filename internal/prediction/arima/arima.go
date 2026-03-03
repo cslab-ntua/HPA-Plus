@@ -21,7 +21,7 @@ import (
 	"errors"
 	"strconv"
 
-	jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
+	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 )
 
 const (

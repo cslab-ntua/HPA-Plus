@@ -11,7 +11,7 @@ Deciding which metrics to use is done by using `MetricSpecs`, which are a key pa
       averageUtilization: 50
 ```
 
-To send these specs to the Predictive HPA, add a config option called `metrics` to the PHPA, with a multiline string
+To send these specs to the HPA+, add a config option called `metrics` to the HPA+, with a multiline string
 containing the metric list. For example:
 
 ```yaml
@@ -24,11 +24,11 @@ metrics:
       averageUtilization: 50
 ```
 
-This allows porting over existing Kubernetes HPA metric configurations to the Predictive Horizontal Pod Autoscaler.
+This allows porting over existing Kubernetes HPA metric configurations to the HPA+.
 Equivalent to K8s HPA metric specs; which are [demonstrated in this HPA
 walkthrough](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/#autoscaling-on-multiple-metrics-and-custom-metrics).
 Can hold multiple values as it is an array.
 
 See the [Horizontal Pod Autoscaler
 documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for a full list of supported
-metrics (the Predictive Horizontal Pod Autoscaler intends to be functionally equivalent).
+metrics (the HPA+ intends to be functionally equivalent).

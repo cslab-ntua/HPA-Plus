@@ -1,1 +1,6 @@
 mode: cluster
+
+image:
+  repository: dimitrisde/hpa-plus-operator
+  tag: xgboost
+  pullPolicy: Always

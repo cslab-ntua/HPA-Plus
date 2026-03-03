@@ -41,14 +41,15 @@ import (
 	"github.com/jthomperoo/k8shorizmetrics/v2/metricsclient"
 	"github.com/jthomperoo/k8shorizmetrics/v2/podsclient"
 
-	jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/algorithm"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/controllers"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/hook/http"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/arima"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/holtwinters"
-	"github.com/jthomperoo/predictive-horizontal-pod-autoscaler/internal/prediction/linear"
+	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/algorithm"
+	"github.com/cslab-ntua/HPA-Plus/internal/controllers"
+	"github.com/cslab-ntua/HPA-Plus/internal/hook/http"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction/arima"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction/holtwinters"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction/linear"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction/xgboost"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -130,6 +131,7 @@ func main() {
 
 	if err = (&controllers.PredictiveHorizontalPodAutoscalerReconciler{
 		Client:      mgr.GetClient(),
+		RESTMapper:  mgr.GetRESTMapper(),
 		Scheme:      mgr.GetScheme(),
 		ScaleClient: scaleClient,
 		Gatherer:    *k8shorizmetrics.NewGatherer(metricsclient, podsclient, cpuInitializationPeriod, initialReadinessDelay),
@@ -144,6 +146,9 @@ func main() {
 					Runner:      pyRunner,
 				},
 				&arima.Predict{
+					Runner: pyRunner,
+				},
+				&xgboost.Predict{
 					Runner: pyRunner,
 				},
 			},

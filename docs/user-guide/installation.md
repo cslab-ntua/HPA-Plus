@@ -1,17 +1,28 @@
 # Installation
 
-You can install Predictive Horizontal Pod Autoscalers (PHPAs) on your cluster after you have installed the Predictive
-Horizontal Pod Autoscaler Operator (PHPA operator) onto your cluster.
+You can install HPA+ on your cluster after you have installed the HPA+ operator onto your cluster.
 
-The PHPA operator can be installed using Helm, run this command to install the operator onto your cluster with
-cluster-wide scope:
+1. Build or retag the controller image with the registry you plan to use:
 
-```bash
-VERSION=v0.13.2
-HELM_CHART=predictive-horizontal-pod-autoscaler-operator
-helm install ${HELM_CHART} https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/releases/download/${VERSION}/predictive-horizontal-pod-autoscaler-${VERSION}.tgz
-```
+   ```bash
+   export REGISTRY=docker.io/<your-user>
+   export VERSION=$(git rev-parse --short HEAD)
 
-After you have done that you can install PHPAs onto your cluster, check out the [examples for PHPAs you can
-deploy](https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/tree/master/examples) or follow the [getting
+   docker build -t ${REGISTRY}/hpa-plus-operator:${VERSION} .
+   docker push ${REGISTRY}/hpa-plus-operator:${VERSION}
+   ```
+
+2. Install the Helm chart from this repository while overriding the image fields:
+
+   ```bash
+   helm upgrade --install hpa-plus-operator ./helm \
+     --namespace hpa-plus-system \
+     --create-namespace \
+     --set image.repository=${REGISTRY}/hpa-plus-operator \
+     --set image.tag=${VERSION} \
+     --set mode=cluster
+   ```
+
+After you have done that you can install HPA+ objects onto your cluster, check out the [examples you can
+deploy](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples) or follow the [getting
 started guide](./getting-started.md).

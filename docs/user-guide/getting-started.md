@@ -1,10 +1,10 @@
 # Getting Started
 
-This guide will walk through the first steps for deploying a simple Predictive Horizontal Pod Autoscaler (PHPA). This
-guide will demonstrate how to deploy a PHPA that uses a linear regression to predict future load based on CPU usage.
+This guide walks through the first steps for deploying a simple HPA+ object. It demonstrates how to deploy an HPA+ that
+uses a linear regression to predict future load based on CPU usage.
 
 To see the final result of this guide, check out the [Simple Linear Regression
-example](https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/tree/master/examples/simple-linear).
+example](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/simple-linear).
 
 ## Prerequisites
 
@@ -24,41 +24,44 @@ step and move on to the next step.
 To provision a new cluster using k3d run the following command:
 
 ```bash
-k3d cluster create phpa-test-cluster
+k3d cluster create hpa-plus-test-cluster
 ```
 
-## Install the Predictive Horizontal Pod Autoscaler Operator onto your cluster
+## Install the HPA+ Operator onto your cluster
 
-Installing PHPAs requires you to have installed the PHPA operator first onto your cluster.
+Installing HPA+ objects requires you to have installed the HPA+ operator onto your cluster.
 
-In this guide we are using `v0.13.2` of the PHPA operator, but check out the [installation
-guide](./installation.md) for more up to date instructions for later releases.
-
-Run the following commands to install the PHPA operator:
+Build/push the controller image and install the chart directly from this repository:
 
 ```bash
-VERSION=v0.13.2
-HELM_CHART=predictive-horizontal-pod-autoscaler-operator
-helm install ${HELM_CHART} https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/releases/download/${VERSION}/predictive-horizontal-pod-autoscaler-${VERSION}.tgz
+export REGISTRY=docker.io/<your-user>
+export VERSION=$(git rev-parse --short HEAD)
+
+docker build -t ${REGISTRY}/hpa-plus-operator:${VERSION} .
+docker push ${REGISTRY}/hpa-plus-operator:${VERSION}
+
+helm upgrade --install hpa-plus-operator ./helm \
+  --namespace hpa-plus-system \
+  --create-namespace \
+  --set image.repository=${REGISTRY}/hpa-plus-operator \
+  --set image.tag=${VERSION} \
+  --set mode=cluster
 ```
 
-You can check the PHPA operator has been deployed properly by running:
+You can check the operator has been deployed properly by running:
 
 ```bash
-helm status predictive-horizontal-pod-autoscaler-operator
+helm status hpa-plus-operator -n hpa-plus-system
 ```
 
-You should get a response like this:
+You should get a response similar to:
 
-```bash
-NAME: predictive-horizontal-pod-autoscaler-operator
-LAST DEPLOYED: Thu Jul 21 20:29:06 2022
-NAMESPACE: default
+```
+NAME: hpa-plus-operator
+LAST DEPLOYED: 2024-04-02 11:13:20
+NAMESPACE: hpa-plus-system
 STATUS: deployed
 REVISION: 1
-TEST SUITE: None
-NOTES:
-Thanks for installing predictive-horizontal-pod-autoscaler.
 ```
 
 If you get a response that says release not found then the install has not worked correctly.
@@ -194,7 +197,7 @@ The predictive elements are not only for scaling downwards, they could also pred
 required number of replicas, for example with a sequence of increasing calculated replicas (`[1, 3, 5]`) it could
 preemptively scale to `7` after applying a linear regression.
 
-The key elements of the PHPA YAML defined above are:
+The key elements of the HPA+ YAML defined above are:
 
 - The autoscaler is targeting our test application; identifying it by the fact it is a `Deployment` with the name
 `php-apache`:
@@ -270,13 +273,13 @@ metrics:
 Now deploy the autoscaler to the K8s cluster by running:
 
 ```bash
-kubectl apply -f phpa.yaml
+kubectl apply -f hpa-plus.yaml
 ```
 
 You can check the autoscaler has been deployed by running:
 
 ```bash
-kubectl get phpa simple-linear
+kubectl get hpaplus simple-linear
 ```
 
 ## Apply load and monitor the autoscaling process
@@ -284,7 +287,7 @@ kubectl get phpa simple-linear
 You can monitor the autoscaling process by running:
 
 ```bash
-kubectl logs -l name=predictive-horizontal-pod-autoscaler -f
+kubectl logs -l name=hpa-plus -f
 ```
 
 This is looking at the operators logs, these are the brains of the autoscaling program and will report how all
@@ -294,10 +297,10 @@ You can see the targets calculated by the HPA logic before the linear regression
 the autoscaler's config map:
 
 ```bash
-kubectl get configmap predictive-horizontal-pod-autoscaler-simple-linear-data -o=json | jq -r '.data.data | fromjson | .modelHistories["simple-linear"].replicaHistory[] | .time,.replicas'
+kubectl get configmap hpa-plus-simple-linear-data -o=json | jq -r '.data.data | fromjson | .modelHistories["simple-linear"].replicaHistory[] | .time,.replicas'
 ```
 
-This prints out all of the timestamped replica counts that the PHPA will use for its prediction.
+This prints out all of the timestamped replica counts that HPA+ will use for its prediction.
 
 You can increase the load by starting a new container, and looping to send a bunch of HTTP requests to our test
 application:
@@ -322,21 +325,20 @@ values and the target values predicted by the linear regression.
 Once you have finished testing the autoscaler, you can clean up any K8s resources by running:
 
 ```bash
-HELM_CHART=predictive-horizontal-pod-autoscaler-operator
 kubectl delete -f deployment.yaml
-kubectl delete -f phpa.yaml
-helm uninstall ${HELM_CHART}
+kubectl delete -f hpa-plus.yaml
+helm uninstall hpa-plus-operator -n hpa-plus-system
 ```
 
 If you are using k3d you can clean up the entire cluster by running:
 
 ```bash
-k3d cluster delete phpa-test-cluster
+k3d cluster delete hpa-plus-test-cluster
 ```
 
 ## Conclusion
 
-This guide is intended to provide a simple walkthrough of how to install and use the PHPA, the concepts outlined here
+This guide is intended to provide a simple walkthrough of how to install and use HPA+, the concepts outlined here
 can be used to deploy autoscalers with different predictive models. Check out the [examples in the project Git
 repository to see more
-samples](https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler/tree/master/examples).
+samples](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples).

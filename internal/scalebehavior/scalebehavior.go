@@ -14,8 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scalebehavior provides functions for managing the scaling behavior of the PHPA.
-// This applies HPA scaling behaviors (downscale stabilization, scale rules), PHPA scaling strategies, and min/max
+// Package scalebehavior provides functions for managing the scaling behavior of the HPA+.
+// This applies HPA scaling behaviors (downscale stabilization, scale rules), HPA+ scaling strategies, and min/max
 // replicas.
 // Much of the code for this package has been directly copied from the Kubernetes source code here:
 // https://github.com/kubernetes/kubernetes/blob/3e26e104bdf9d0dc3c4046d6350b93557c67f3f4/pkg/controller/podautoscaler/horizontal.go
@@ -29,7 +29,7 @@ import (
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 
-	jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
+	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 )
 
 func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplicas []int32) int32 {

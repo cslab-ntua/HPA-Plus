@@ -20,7 +20,7 @@ package prediction
 import (
 	"fmt"
 
-	jamiethompsonmev1alpha1 "github.com/jthomperoo/predictive-horizontal-pod-autoscaler/api/v1alpha1"
+	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 )
 
 // Predicter is an interface providing methods for making a prediction based on a model, a time to predict and values

@@ -1,4 +1,4 @@
-module github.com/jthomperoo/predictive-horizontal-pod-autoscaler
+module github.com/cslab-ntua/HPA-Plus
 
 go 1.20
 

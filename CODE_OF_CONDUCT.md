@@ -1,4 +1,4 @@
-# Code of Conduct - Predictive Horizontal Pod Autoscaler
+# Code of Conduct - HPA+
 
 ## Our Pledge
 

@@ -13,7 +13,7 @@ spec:
     listKind: PredictiveHorizontalPodAutoscalerList
     plural: predictivehorizontalpodautoscalers
     shortNames:
-    - phpa
+    - hpaplus
     singular: predictivehorizontalpodautoscaler
   scope: Namespaced
   versions:
@@ -190,7 +190,7 @@ spec:
                   replica count to use if you have multiple models, or even just choosing
                   between the calculculated replicas and the predicted replicas of
                   a single model. For details on which decisionTypes are available
-                  visit https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/reference/configuration/#decisiontype
+                  visit https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/reference/configuration.md#decisiontype
                   Default strategy is 'maximum'
                 enum:
                 - maximum
@@ -198,6 +198,12 @@ spec:
                 - mean
                 - median
                 type: string
+              includeHPA:
+                description: includeHPA controls whether the baseline HPA calculation
+                  should be part of the decision strategy after models have accumulated
+                  enough history to run. By default it is disabled so that only model
+                  predictions are considered once available.
+                type: boolean
               initialReadinessDelay:
                 description: initialReadinessDelay is equivalent to --horizontal-pod-autoscaler-initial-readiness-delay;
                   the period after pod start during which readiness changes will be
@@ -787,10 +793,10 @@ spec:
                       - order
                       type: object
                     calculationTimeout:
-                      description: 'calculationTimeout is how long the PHPA should
-                        allow for the model to calculate a value in milliseconds,
-                        if it takes longer than this timeout it should skip processing
-                        the model. Default varies based on model type: Linear is 30000
+                      description: 'calculationTimeout is how long HPA+ should allow
+                        for the model to calculate a value in milliseconds, if it
+                        takes longer than this timeout it should skip processing the
+                        model. Default varies based on model type: Linear is 30000
                         milliseconds (30 seconds)'
                       minimum: 1
                       type: integer
@@ -961,12 +967,71 @@ spec:
                       type: string
                     type:
                       description: type is the type of the model, for example 'Linear'.
-                        To see a full list of supported model types visit https://predictive-horizontal-pod-autoscaler.readthedocs.io/en/latest/user-guide/models/.
+                        To see a full list of supported model types visit https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/models.md.
                       enum:
                       - Linear
                       - HoltWinters
                       - ARIMA
+                      - XGBoost
                       type: string
+                    xgboost:
+                      description: xgboost is the configuration to use for the XGBoost
+                        model, it will only be used if the type is set to 'XGBoost'
+                      properties:
+                        colsampleBytree:
+                          maximum: 1
+                          minimum: 0
+                          type: number
+                        gamma:
+                          type: number
+                        historySize:
+                          description: historySize is how many timestamped replica
+                            counts should be stored for this model, older entries
+                            are pruned.
+                          minimum: 1
+                          type: integer
+                        lags:
+                          description: lags controls how many previous replica counts
+                            are used as features for training.
+                          minimum: 1
+                          type: integer
+                        learningRate:
+                          minimum: 0
+                          type: number
+                        lookAhead:
+                          description: lookAhead is how far ahead (in milliseconds)
+                            the prediction should forecast.
+                          minimum: 1
+                          type: integer
+                        maxDepth:
+                          minimum: 1
+                          type: integer
+                        minChildWeight:
+                          minimum: 0
+                          type: number
+                        nEstimators:
+                          minimum: 1
+                          type: integer
+                        objective:
+                          description: objective defines the XGBoost objective function,
+                            defaults to reg:squarederror.
+                          type: string
+                        regAlpha:
+                          type: number
+                        regLambda:
+                          type: number
+                        subsample:
+                          maximum: 1
+                          minimum: 0
+                          type: number
+                        windowSize:
+                          minimum: 1
+                          type: integer
+                      required:
+                      - historySize
+                      - lags
+                      - lookAhead
+                      type: object
                   required:
                   - name
                   - type
@@ -992,8 +1057,8 @@ spec:
                 type: object
               syncPeriod:
                 description: syncPeriod is equivalent to --horizontal-pod-autoscaler-sync-period;
-                  the frequency with which the PHPA calculates replica counts and
-                  scales in milliseconds. Default value 15000 milliseconds (15 seconds).
+                  the frequency with which HPA+ calculates replica counts and scales
+                  in milliseconds. Default value 15000 milliseconds (15 seconds).
                 minimum: 1
                 type: integer
               tolerance:
@@ -1474,6 +1539,10 @@ spec:
                   description: TimestampedReplicas is a replica count paired with
                     the time that the replica count was created at.
                   properties:
+                    metric:
+                      description: metric is the associated metric value (e.g. CPU
+                        utilization percentage) recorded at the time.
+                      type: number
                     replicas:
                       description: replicas is the replica count at the time.
                       format: int32
@@ -1496,6 +1565,10 @@ spec:
                   description: TimestampedReplicas is a replica count paired with
                     the time that the replica count was created at.
                   properties:
+                    metric:
+                      description: metric is the associated metric value (e.g. CPU
+                        utilization percentage) recorded at the time.
+                      type: number
                     replicas:
                       description: replicas is the replica count at the time.
                       format: int32
@@ -1519,6 +1592,10 @@ spec:
                   description: TimestampedReplicas is a replica count paired with
                     the time that the replica count was created at.
                   properties:
+                    metric:
+                      description: metric is the associated metric value (e.g. CPU
+                        utilization percentage) recorded at the time.
+                      type: number
                     replicas:
                       description: replicas is the replica count at the time.
                       format: int32
@@ -1541,6 +1618,10 @@ spec:
                   description: TimestampedReplicas is a replica count paired with
                     the time that the replica count was created at.
                   properties:
+                    metric:
+                      description: metric is the associated metric value (e.g. CPU
+                        utilization percentage) recorded at the time.
+                      type: number
                     replicas:
                       description: replicas is the replica count at the time.
                       format: int32
