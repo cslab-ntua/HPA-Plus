@@ -187,9 +187,9 @@ func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 		return nil, err
 	}
 
-	// Sort by date created
+	// Sort by date created, oldest first to preserve chronological order
 	sort.Slice(replicaHistory, func(i, j int) bool {
-		return !replicaHistory[i].Time.Before(replicaHistory[j].Time)
+		return replicaHistory[i].Time.Before(replicaHistory[j].Time)
 	})
 
 	// If there are too many stored seasons, remove the oldest ones
@@ -197,12 +197,19 @@ func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 	// This rounds down, so if you have 7 replica data, with seasonal period of 3 and only 2 stored seasons it will
 	// round the 7 / 3 (2.34) down to 2, then it will do 2 - 2 resulting in not removing any seasons
 	// This is deliberate to allow full seasons to build up before pruning the old ones
-	numberOfSeasonsToRemove := len(replicaHistory)/model.HoltWinters.SeasonalPeriods - model.HoltWinters.StoredSeasons
-	numberOfReplicasToRemove := len(replicaHistory) - numberOfSeasonsToRemove*model.HoltWinters.SeasonalPeriods
-
-	for i := len(replicaHistory) - 1; i >= numberOfReplicasToRemove; i-- {
-		replicaHistory = append(replicaHistory[:i], replicaHistory[i+1:]...)
+	seasonLength := model.HoltWinters.SeasonalPeriods
+	numberOfSeasons := len(replicaHistory) / seasonLength
+	numberOfSeasonsToRemove := numberOfSeasons - model.HoltWinters.StoredSeasons
+	if numberOfSeasonsToRemove <= 0 {
+		return replicaHistory, nil
 	}
+
+	numberOfReplicasToRemove := numberOfSeasonsToRemove * seasonLength
+	if numberOfReplicasToRemove >= len(replicaHistory) {
+		return []jamiethompsonmev1alpha1.TimestampedReplicas{}, nil
+	}
+
+	replicaHistory = replicaHistory[numberOfReplicasToRemove:]
 
 	return replicaHistory, nil
 }

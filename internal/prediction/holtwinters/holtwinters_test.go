@@ -1001,28 +1001,28 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 			description: "6 in history, seasonal period 2, 3 stored seasons, don't prune",
 			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
 				{
-					Replicas: 6,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
-				},
-				{
-					Replicas: 5,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
-				},
-				{
-					Replicas: 4,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
-				},
-				{
-					Replicas: 3,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
+					Replicas: 1,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(1) * time.Second)},
 				},
 				{
 					Replicas: 2,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(2) * time.Second)},
 				},
 				{
-					Replicas: 1,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(1) * time.Second)},
+					Replicas: 3,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
+				},
+				{
+					Replicas: 4,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
+				},
+				{
+					Replicas: 5,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
+				},
+				{
+					Replicas: 6,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
 				},
 			},
 			expectedErr: nil,
@@ -1064,32 +1064,32 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 			description: "7 in history, seasonal period 2, 3 stored seasons, don't prune",
 			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
 				{
-					Replicas: 7,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(7) * time.Second)},
-				},
-				{
-					Replicas: 6,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
-				},
-				{
-					Replicas: 5,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
-				},
-				{
-					Replicas: 4,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
-				},
-				{
-					Replicas: 3,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
+					Replicas: 1,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(1) * time.Second)},
 				},
 				{
 					Replicas: 2,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(2) * time.Second)},
 				},
 				{
-					Replicas: 1,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(1) * time.Second)},
+					Replicas: 3,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
+				},
+				{
+					Replicas: 4,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
+				},
+				{
+					Replicas: 5,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
+				},
+				{
+					Replicas: 6,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
+				},
+				{
+					Replicas: 7,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(7) * time.Second)},
 				},
 			},
 			expectedErr: nil,
@@ -1135,28 +1135,28 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 			description: "8 in history, seasonal period 2, 3 stored seasons, prune oldest season",
 			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
 				{
-					Replicas: 8,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(8) * time.Second)},
-				},
-				{
-					Replicas: 7,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(7) * time.Second)},
-				},
-				{
-					Replicas: 6,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
-				},
-				{
-					Replicas: 5,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
+					Replicas: 3,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
 				},
 				{
 					Replicas: 4,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
 				},
 				{
-					Replicas: 3,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
+					Replicas: 5,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
+				},
+				{
+					Replicas: 6,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
+				},
+				{
+					Replicas: 7,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(7) * time.Second)},
+				},
+				{
+					Replicas: 8,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(8) * time.Second)},
 				},
 			},
 			expectedErr: nil,
@@ -1206,28 +1206,28 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 			description: "8 in history, unsorted, seasonal period 2, 3 stored seasons, prune oldest season",
 			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
 				{
-					Replicas: 8,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(8) * time.Second)},
-				},
-				{
-					Replicas: 7,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(7) * time.Second)},
-				},
-				{
-					Replicas: 6,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
-				},
-				{
-					Replicas: 5,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
+					Replicas: 3,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
 				},
 				{
 					Replicas: 4,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
 				},
 				{
-					Replicas: 3,
-					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
+					Replicas: 5,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(5) * time.Second)},
+				},
+				{
+					Replicas: 6,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
+				},
+				{
+					Replicas: 7,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(7) * time.Second)},
+				},
+				{
+					Replicas: 8,
+					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(8) * time.Second)},
 				},
 			},
 			expectedErr: nil,

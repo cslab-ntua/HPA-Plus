@@ -25,6 +25,7 @@ import (
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -54,7 +55,7 @@ const (
 
 // HPA calculation configuration constants
 const (
-	defaultCPUInitializationPeriod = 30
+	defaultCPUInitializationPeriod = 300
 	defaultInitialReadinessDelay   = 30
 	defaultTolerance               = 0.1
 	defaultPerSyncPeriod           = 1
@@ -90,6 +91,7 @@ const (
 // PredictiveHorizontalPodAutoscalerReconciler reconciles a PredictiveHorizontalPodAutoscaler object
 type PredictiveHorizontalPodAutoscalerReconciler struct {
 	client.Client
+	RESTMapper  meta.RESTMapper
 	ScaleClient scale.ScalesGetter
 	Scheme      *runtime.Scheme
 	Gatherer    k8shorizmetrics.Gatherer
@@ -103,7 +105,7 @@ type PredictiveHorizontalPodAutoscalerReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list
 //+kubebuilder:rbac:groups=core,resources=replicationcontrollers/scale,verbs=get;update;patch
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=apps,resources=deployments/scale;replicaset/scale;statefulset/scale,verbs=get;update;patch
+//+kubebuilder:rbac:groups=apps,resources=deployments/scale;replicasets/scale;statefulsets/scale,verbs=get;update;patch
 //+kubebuilder:rbac:groups=metrics.k8s.io,resources=*,verbs=get;list
 //+kubebuilder:rbac:groups=custom.metrics.k8s.io,resources=*,verbs=get;list
 //+kubebuilder:rbac:groups=external.metrics.k8s.io,resources=*,verbs=get;list
@@ -189,9 +191,8 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 				return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 			}
 
-			// After creating the config map lets wait until the owner references are set up, then the reconcile
-			// loop will kick in again
-			return reconcile.Result{}, nil
+			// Ensure we continue processing even if no follow-up watch event is emitted for this ConfigMap.
+			return reconcile.Result{RequeueAfter: defaultSyncPeriod}, nil
 		}
 		logger.Error(err, "failed to get HPA+ config map and data", "scaleTargetRef", scaleTargetRef)
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
@@ -228,10 +229,13 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
-	targetGR := schema.GroupResource{
-		Group:    resourceGV.Group,
-		Resource: scaleTargetRef.Kind,
+	targetGK := schema.GroupKind{Group: resourceGV.Group, Kind: scaleTargetRef.Kind}
+	mapping, err := r.RESTMapper.RESTMapping(targetGK, resourceGV.Version)
+	if err != nil {
+		logger.Error(err, "failed to map target kind to resource", "scaleTargetRef", scaleTargetRef)
+		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
+	targetGR := mapping.Resource.GroupResource()
 
 	scale, err := r.ScaleClient.Scales(instance.Namespace).Get(ctx, targetGR, scaleTargetRef.Name, metav1.GetOptions{})
 	if err != nil {
@@ -239,17 +243,19 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
+	currentReplicas := scale.Status.Replicas
+
 	calculatedReplicas, metricValue, err := r.calculateReplicas(instance, scale)
 	if err != nil {
 		logger.Error(err, "failed to calculate replicas based on metrics",
 			"scaleTargetRef", scaleTargetRef,
-			"currentReplicas", scale.Spec.Replicas)
+			"currentReplicas", currentReplicas)
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
 	// This function doesn't return any errors, since if it fails to process a model it will skip and continue
 	// processing without that model's results
-	predictedReplicas, modelPredictions, hpaPlusData := r.processModels(ctx, instance, hpaPlusData, now, scale.Spec.Replicas,
+	predictedReplicas, modelPredictions, hpaPlusData := r.processModels(ctx, instance, hpaPlusData, now, currentReplicas,
 		calculatedReplicas, metricValue)
 
 	err = r.updateConfigMapData(ctx, configMap, hpaPlusData)
@@ -300,8 +306,6 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 		"inputs", modelPredictions,
 		"targetReplicas", targetReplicas)
 
-	currentReplicas := scale.Spec.Replicas
-
 	timestampedReplicaValue := jamiethompsonmev1alpha1.TimestampedReplicas{
 		Time:     &metav1.Time{Time: now},
 		Replicas: targetReplicas,
@@ -343,7 +347,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 		if err != nil {
 			logger.Error(err, "failed to update scale resource",
 				"scaleTargetRef", scaleTargetRef,
-				"currentReplicas", scale.Spec.Replicas,
+				"currentReplicas", currentReplicas,
 				"targetReplicas", targetReplicas)
 			return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 		}
@@ -373,18 +377,19 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 				scaleDownLongestPolicyPeriod,
 				scaleTime)
 		}
+
+		instance.Status.LastScaleTime = &metav1.Time{Time: scaleTime}
 	}
 
-	instance.Status.LastScaleTime = &metav1.Time{Time: now}
 	instance.Status.DesiredReplicas = targetReplicas
-	instance.Status.CurrentReplicas = scale.Spec.Replicas
+	instance.Status.CurrentReplicas = currentReplicas
 	instance.Status.ScaleDownReplicaHistory = scaleDownReplicaHistory
 	instance.Status.ScaleUpReplicaHistory = scaleUpReplicaHistory
 	err = r.Client.Status().Update(ctx, instance)
 	if err != nil {
 		logger.Error(err, "failed to update status of resource",
 			"scaleTargetRef", scaleTargetRef,
-			"currentReplicas", scale.Spec.Replicas,
+			"currentReplicas", currentReplicas,
 			"targetReplicas", targetReplicas,
 			"scaleTime", now)
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
@@ -392,7 +397,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 
 	logger.V(0).Info("Scaled resource",
 		"scaleTargetRef", scaleTargetRef,
-		"currentReplicas", scale.Spec.Replicas,
+		"currentReplicas", currentReplicas,
 		"targetReplicas", targetReplicas)
 
 	return reconcile.Result{RequeueAfter: syncPeriod}, nil
@@ -665,7 +670,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) calculateReplicas(
 	}
 
 	// Calculate the targetReplicas using these metrics
-	currentReplicas := scale.Spec.Replicas
+	currentReplicas := scale.Status.Replicas
 	calculatedReplicas, err := r.Evaluator.EvaluateWithOptions(metrics, currentReplicas, tolerance)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to evaluate metrics and calculate target replica count: %w", err)
@@ -799,7 +804,16 @@ func requiredHistorySize(model *jamiethompsonmev1alpha1.Model) int {
 		return defaultArimaHistorySize
 	case jamiethompsonmev1alpha1.TypeHoltWinters:
 		if model.HoltWinters != nil {
-			return model.HoltWinters.SeasonalPeriods * model.HoltWinters.StoredSeasons
+			required := model.HoltWinters.SeasonalPeriods * model.HoltWinters.StoredSeasons
+			statsmodelsMin := 2 * model.HoltWinters.SeasonalPeriods
+			statsmodelsHeuristic := 10 + 2*(model.HoltWinters.SeasonalPeriods/2)
+			if statsmodelsMin > required {
+				required = statsmodelsMin
+			}
+			if statsmodelsHeuristic > required {
+				required = statsmodelsHeuristic
+			}
+			return required
 		}
 	}
 	return 0

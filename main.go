@@ -131,6 +131,7 @@ func main() {
 
 	if err = (&controllers.PredictiveHorizontalPodAutoscalerReconciler{
 		Client:      mgr.GetClient(),
+		RESTMapper:  mgr.GetRESTMapper(),
 		Scheme:      mgr.GetScheme(),
 		ScaleClient: scaleClient,
 		Gatherer:    *k8shorizmetrics.NewGatherer(metricsclient, podsclient, cpuInitializationPeriod, initialReadinessDelay),

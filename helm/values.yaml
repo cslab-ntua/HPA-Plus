@@ -2,5 +2,5 @@ mode: cluster
 
 image:
   repository: dimitrisde/hpa-plus-operator
-  tag: arima
+  tag: xgboost
   pullPolicy: Always
