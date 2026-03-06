@@ -36,8 +36,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/scale"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
@@ -413,8 +415,13 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) updateConfigMapData(ctx co
 		panic(err)
 	}
 
+	newData := string(data)
+	if configMap.Data != nil && configMap.Data[configMapDataKey] == newData {
+		return nil
+	}
+
 	configMap.Data = map[string]string{
-		configMapDataKey: string(data),
+		configMapDataKey: newData,
 	}
 
 	err = r.Client.Update(ctx, configMap)
@@ -830,7 +837,9 @@ func modelHasSufficientHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 // SetupWithManager sets up the controller with the Manager.
 func (r *PredictiveHorizontalPodAutoscalerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler{}).
-		Owns(&corev1.ConfigMap{}).
+		For(
+			&jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler{},
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+		).
 		Complete(r)
 }
