@@ -9,6 +9,18 @@
 HPA+ is a Horizontal Pod Autoscaler (HPA) with predictive capabilities, allowing you to autoscale using statistical
 models so you can react ahead of time.
 
+## Project lineage and attribution
+
+HPA+ is an extension of the original Predictive Horizontal Pod Autoscaler (PHPA).
+
+The upstream project is maintained at:
+<https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler>
+
+We explicitly acknowledge and credit Jamie Thompson (GitHub: `jthomperoo`) as the original writer and maintainer of
+PHPA, along with all upstream contributors who designed, implemented, and evolved the project over time. HPA+ builds
+on that foundation and continues development for our current use cases, while preserving attribution to the original
+work and its Apache-2.0 licensed codebase.
+
 ## Why would I use it?
 
 HPA+ can deliver better scaling results by making proactive decisions to scale up ahead of demand, meaning that a
