@@ -127,6 +127,9 @@ func validateModels(models []jamiethompsonmev1alpha1.Model) error {
 					return fmt.Errorf("invalid model '%s', SARIMA enabled but seasonalPeriods is missing or invalid", model.Name)
 				}
 			}
+			if arima.RefitEvery != nil && *arima.RefitEvery <= 0 {
+				return fmt.Errorf("invalid model '%s', ARIMA refitEvery must be greater than 0 when provided", model.Name)
+			}
 		}
 
 		if model.Type == jamiethompsonmev1alpha1.TypeXGBoost {

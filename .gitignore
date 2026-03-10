@@ -57,3 +57,10 @@ vendor/
 benchmarks/
 examples/
 testing/
+arima_utilization.png
+.gitignore
+decision_trace_cpu_hpa.png
+decision_trace_cpu.png
+decision_trace_cpu_arima.png
+history.csv
+plain_hpa_utilization.png

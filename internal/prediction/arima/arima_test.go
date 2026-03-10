@@ -17,6 +17,7 @@ limitations under the License.
 package arima_test
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -38,6 +39,22 @@ func boolPtr(b bool) *bool {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+type fakeIncrementalRunner struct {
+	RunSessionWithValueReactor func(sessionID, algorithmPath, value string, timeout int) (string, error)
+	ResetSessionReactor        func(sessionID string) error
+}
+
+func (f *fakeIncrementalRunner) RunSessionWithValue(sessionID, algorithmPath, value string, timeout int) (string, error) {
+	return f.RunSessionWithValueReactor(sessionID, algorithmPath, value, timeout)
+}
+
+func (f *fakeIncrementalRunner) ResetSession(sessionID string) error {
+	if f.ResetSessionReactor == nil {
+		return nil
+	}
+	return f.ResetSessionReactor(sessionID)
 }
 
 func TestPredict_GetPrediction(t *testing.T) {
@@ -434,6 +451,244 @@ func TestPredict_PruneHistory(t *testing.T) {
 				t.Errorf("remove IDs mismatch (-want +got):\n%s", cmp.Diff(test.expected, result))
 			}
 		})
+	}
+}
+
+func TestPredict_GetPrediction_IncrementalSuccess(t *testing.T) {
+	incrementalEnabled := true
+	calledOneShot := false
+	p := &arima.Predict{
+		Runner: &fake.Run{
+			RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
+				calledOneShot = true
+				return "0", nil
+			},
+		},
+		IncrementalRunner: &fakeIncrementalRunner{
+			RunSessionWithValueReactor: func(sessionID, algorithmPath, value string, timeout int) (string, error) {
+				response, err := json.Marshal(map[string]interface{}{
+					"ok":         true,
+					"prediction": 7,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return string(response), nil
+			},
+		},
+	}
+
+	model := &jamiethompsonmev1alpha1.Model{
+		Name: "default/test-scaler/traffic-predictor",
+		Type: jamiethompsonmev1alpha1.TypeArima,
+		Arima: &jamiethompsonmev1alpha1.Arima{
+			Order:              []int{1, 0, 0},
+			LookAhead:          60000,
+			IncrementalUpdates: &incrementalEnabled,
+		},
+	}
+
+	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{
+			Replicas: 1,
+			Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
+		},
+		{
+			Replicas: 2,
+			Time:     &metav1.Time{Time: time.Time{}.Add(2 * time.Second)},
+		},
+		{
+			Replicas: 3,
+			Time:     &metav1.Time{Time: time.Time{}.Add(3 * time.Second)},
+		},
+	}
+
+	prediction, err := p.GetPrediction(model, replicaHistory)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prediction != 7 {
+		t.Fatalf("expected prediction 7, got %d", prediction)
+	}
+	if calledOneShot {
+		t.Fatalf("expected incremental path to be used without one-shot fallback")
+	}
+}
+
+func TestPredict_GetPrediction_IncrementalFallbackToOneShot(t *testing.T) {
+	incrementalEnabled := true
+	calledOneShot := false
+	p := &arima.Predict{
+		Runner: &fake.Run{
+			RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
+				calledOneShot = true
+				return "5", nil
+			},
+		},
+		IncrementalRunner: &fakeIncrementalRunner{
+			RunSessionWithValueReactor: func(sessionID, algorithmPath, value string, timeout int) (string, error) {
+				return "", errors.New("worker unavailable")
+			},
+		},
+	}
+
+	model := &jamiethompsonmev1alpha1.Model{
+		Name: "default/test-scaler/traffic-predictor",
+		Type: jamiethompsonmev1alpha1.TypeArima,
+		Arima: &jamiethompsonmev1alpha1.Arima{
+			Order:              []int{1, 0, 0},
+			LookAhead:          60000,
+			IncrementalUpdates: &incrementalEnabled,
+		},
+	}
+
+	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{
+			Replicas: 1,
+			Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
+		},
+		{
+			Replicas: 2,
+			Time:     &metav1.Time{Time: time.Time{}.Add(2 * time.Second)},
+		},
+		{
+			Replicas: 3,
+			Time:     &metav1.Time{Time: time.Time{}.Add(3 * time.Second)},
+		},
+	}
+
+	prediction, err := p.GetPrediction(model, replicaHistory)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prediction != 5 {
+		t.Fatalf("expected fallback one-shot prediction 5, got %d", prediction)
+	}
+	if !calledOneShot {
+		t.Fatalf("expected one-shot fallback to run")
+	}
+}
+
+func TestPredict_GetPrediction_IncrementalUsesSessionID(t *testing.T) {
+	incrementalEnabled := true
+	capturedSessionID := ""
+	p := &arima.Predict{
+		Runner: &fake.Run{
+			RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
+				return "0", nil
+			},
+		},
+		IncrementalRunner: &fakeIncrementalRunner{
+			RunSessionWithValueReactor: func(sessionID, algorithmPath, value string, timeout int) (string, error) {
+				capturedSessionID = sessionID
+				response, err := json.Marshal(map[string]interface{}{
+					"ok":         true,
+					"prediction": 9,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return string(response), nil
+			},
+		},
+	}
+
+	model := &jamiethompsonmev1alpha1.Model{
+		Name:      "traffic-predictor",
+		SessionID: "default/test-scaler/traffic-predictor",
+		Type:      jamiethompsonmev1alpha1.TypeArima,
+		Arima: &jamiethompsonmev1alpha1.Arima{
+			Order:              []int{1, 0, 0},
+			LookAhead:          60000,
+			IncrementalUpdates: &incrementalEnabled,
+		},
+	}
+
+	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{
+			Replicas: 1,
+			Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
+		},
+		{
+			Replicas: 2,
+			Time:     &metav1.Time{Time: time.Time{}.Add(2 * time.Second)},
+		},
+		{
+			Replicas: 3,
+			Time:     &metav1.Time{Time: time.Time{}.Add(3 * time.Second)},
+		},
+	}
+
+	prediction, err := p.GetPrediction(model, replicaHistory)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prediction != 9 {
+		t.Fatalf("expected prediction 9, got %d", prediction)
+	}
+	if capturedSessionID != model.SessionID {
+		t.Fatalf("expected session ID %q, got %q", model.SessionID, capturedSessionID)
+	}
+}
+
+func TestPredict_GetPrediction_IncrementalMissingTimestampFallsBack(t *testing.T) {
+	incrementalEnabled := true
+	calledOneShot := false
+	calledIncremental := false
+
+	p := &arima.Predict{
+		Runner: &fake.Run{
+			RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
+				calledOneShot = true
+				return "4", nil
+			},
+		},
+		IncrementalRunner: &fakeIncrementalRunner{
+			RunSessionWithValueReactor: func(sessionID, algorithmPath, value string, timeout int) (string, error) {
+				calledIncremental = true
+				return "", nil
+			},
+		},
+	}
+
+	model := &jamiethompsonmev1alpha1.Model{
+		Name:      "traffic-predictor",
+		SessionID: "default/test-scaler/traffic-predictor",
+		Type:      jamiethompsonmev1alpha1.TypeArima,
+		Arima: &jamiethompsonmev1alpha1.Arima{
+			Order:              []int{1, 0, 0},
+			LookAhead:          60000,
+			IncrementalUpdates: &incrementalEnabled,
+		},
+	}
+
+	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{
+			Replicas: 1,
+			Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
+		},
+		{
+			Replicas: 2,
+			Time:     nil,
+		},
+		{
+			Replicas: 3,
+			Time:     &metav1.Time{Time: time.Time{}.Add(3 * time.Second)},
+		},
+	}
+
+	prediction, err := p.GetPrediction(model, replicaHistory)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prediction != 4 {
+		t.Fatalf("expected fallback prediction 4, got %d", prediction)
+	}
+	if !calledOneShot {
+		t.Fatalf("expected one-shot path to be used")
+	}
+	if calledIncremental {
+		t.Fatalf("did not expect incremental worker call when timestamps are missing")
 	}
 }
 

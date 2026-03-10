@@ -249,6 +249,19 @@ type Arima struct {
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	HistorySize *int `json:"historySize"`
+
+	// incrementalUpdates enables stateful ARIMA/SARIMA updates between syncs.
+	// When enabled, HPA+ can update an existing fitted state with only new observations instead of
+	// refitting from scratch on every run.
+	// Default is false.
+	// +optional
+	IncrementalUpdates *bool `json:"incrementalUpdates,omitempty"`
+
+	// refitEvery controls how many incremental updates should occur before forcing a full model refit.
+	// When omitted, full refits are only triggered by state resets (e.g. config changes / process restarts).
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	RefitEvery *int `json:"refitEvery,omitempty"`
 }
 
 // Model represents a prediction model to use, e.g. a linear regression
@@ -261,6 +274,11 @@ type Model struct {
 	// name is the name of the model, this can be any arbitrary name and is just used to distinguish between models if
 	// you have multiple and to keep track of model data if you modify your model parameters.
 	Name string `json:"name"`
+
+	// sessionID is an internal-only identifier used by the controller/prediction path to scope
+	// stateful model runtime sessions (e.g. incremental ARIMA workers).
+	// It is intentionally excluded from CRD serialization.
+	SessionID string `json:"-"`
 
 	// startInterval is the next interval to start applying this model at. This allows you to make sure a model starts
 	// recording and being calculated only after a certain interval has passed, e.g. a Holt Winters model that only

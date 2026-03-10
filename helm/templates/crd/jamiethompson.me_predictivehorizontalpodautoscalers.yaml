@@ -738,6 +738,12 @@ spec:
                             replica counts for this model. Default is 50 if not specified.
                           minimum: 1
                           type: integer
+                        incrementalUpdates:
+                          description: incrementalUpdates enables stateful ARIMA/SARIMA
+                            updates between syncs. When enabled, HPA+ can update an
+                            existing fitted state with only new observations instead
+                            of refitting from scratch on every run. Default is false.
+                          type: boolean
                         informationCriterion:
                           description: 'informationCriterion is used when autoArima
                             is true: ''aic'' (default) or ''bic'''
@@ -766,6 +772,13 @@ spec:
                           maxItems: 3
                           minItems: 3
                           type: array
+                        refitEvery:
+                          description: refitEvery controls how many incremental updates
+                            should occur before forcing a full model refit. When omitted,
+                            full refits are only triggered by state resets (e.g. config
+                            changes / process restarts).
+                          minimum: 1
+                          type: integer
                         seasonalOrder:
                           description: seasonalOrder is the seasonal ARIMA order parameters
                             [P, D, Q].

@@ -2,5 +2,5 @@ mode: cluster
 
 image:
   repository: dimitrisde/hpa-plus-operator
-  tag: xgboost
+  tag: reconcile-cadence
   pullPolicy: Always
