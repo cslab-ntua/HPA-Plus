@@ -565,7 +565,9 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 			logger.V(1).Info("Using model to calculate predicted target replicas",
 				"scaleTargetRef", scaleTargetRef,
 				"model", model.Name)
-			replicas, err := r.Predicter.GetPrediction(&model, modelHistory.ReplicaHistory)
+			scopedModel := model
+			scopedModel.SessionID = fmt.Sprintf("%s/%s/%s", instance.Namespace, instance.Name, model.Name)
+			replicas, err := r.Predicter.GetPrediction(&scopedModel, modelHistory.ReplicaHistory)
 			if err != nil {
 				// Skip this model, errored out
 				logger.Error(err, "failed to get predicted replica count",

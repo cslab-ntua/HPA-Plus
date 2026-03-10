@@ -127,6 +127,10 @@ func main() {
 	initialReadinessDelay := time.Duration(30) * time.Second
 	tolerance := 0.1
 	pyRunner := algorithm.NewAlgorithmPython()
+	persistentPyRunner := algorithm.NewPersistentAlgorithmPython()
+	defer func() {
+		_ = persistentPyRunner.CloseAll()
+	}()
 	httpExec := &http.Execute{}
 
 	if err = (&controllers.PredictiveHorizontalPodAutoscalerReconciler{
@@ -146,7 +150,8 @@ func main() {
 					Runner:      pyRunner,
 				},
 				&arima.Predict{
-					Runner: pyRunner,
+					Runner:            pyRunner,
+					IncrementalRunner: persistentPyRunner,
 				},
 				&xgboost.Predict{
 					Runner: pyRunner,
