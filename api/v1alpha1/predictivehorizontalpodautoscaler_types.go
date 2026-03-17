@@ -123,7 +123,9 @@ type HoltWinters struct {
 	RuntimeTuningFetchHook *HookDefinition `json:"runtimeTuningFetchHook"`
 }
 
-// XGBoost represents a gradient boosted regression tree configuration driven by XGBoost
+// XGBoost represents a gradient boosted regression tree configuration driven by XGBoost.
+// The runtime predictor trains on aggregate CPU usage history and converts the predicted
+// CPU demand back into replicas using the current pod CPU request and target utilization.
 type XGBoost struct {
 	// historySize is how many timestamped replica counts should be stored for this model, older entries are pruned.
 	// +kubebuilder:validation:Minimum=1
@@ -133,7 +135,7 @@ type XGBoost struct {
 	// +kubebuilder:validation:Minimum=1
 	LookAhead int `json:"lookAhead"`
 
-	// lags controls how many previous replica counts are used as features for training.
+	// lags controls how many previous CPU usage samples are used as features for training.
 	// +kubebuilder:validation:Minimum=1
 	Lags int `json:"lags"`
 
@@ -280,6 +282,14 @@ type Model struct {
 	// It is intentionally excluded from CRD serialization.
 	SessionID string `json:"-"`
 
+	// cpuRequestPerPodMillicores is an internal-only value used by CPU-history based predictors
+	// to convert a forecasted aggregate CPU demand back into a replica count.
+	CPURequestPerPodMillicores int64 `json:"-"`
+
+	// targetCPUUtilizationPercentage is an internal-only value used by CPU-history based predictors
+	// to convert a forecasted aggregate CPU demand back into a replica count.
+	TargetCPUUtilizationPercentage int32 `json:"-"`
+
 	// startInterval is the next interval to start applying this model at. This allows you to make sure a model starts
 	// recording and being calculated only after a certain interval has passed, e.g. a Holt Winters model that only
 	// runs at the top of every hour.
@@ -342,6 +352,15 @@ type TimestampedReplicas struct {
 	// metric is the associated metric value (e.g. CPU utilization percentage) recorded at the time.
 	// +optional
 	Metric *float64 `json:"metric,omitempty"`
+	// totalCPUUsageMillicores is the aggregate CPU usage across the target workload at the recorded time.
+	// +optional
+	TotalCPUUsageMillicores *int64 `json:"totalCpuUsageMillicores,omitempty"`
+	// requestPerPodMillicores is the per-pod CPU request context used when the sample was recorded.
+	// +optional
+	RequestPerPodMillicores *int64 `json:"requestPerPodMillicores,omitempty"`
+	// targetCPUUtilizationPercentage is the CPU target utilization used when the sample was recorded.
+	// +optional
+	TargetCPUUtilizationPercentage *int32 `json:"targetCpuUtilizationPercentage,omitempty"`
 }
 
 // PredictiveHorizontalPodAutoscalerData is the data storage format for HPA+, this is stored in a ConfigMap
@@ -365,6 +384,9 @@ type ModelHistory struct {
 	// no data will be recorded and the model will be skipped.
 	// +optional
 	StartTime *metav1.Time `json:"startTime"`
+	// lastModelRunTime is the latest sampled timestamp that this model has already consumed for prediction.
+	// +optional
+	LastModelRunTime *metav1.Time `json:"lastModelRunTime,omitempty"`
 }
 
 // PredictiveHorizontalPodAutoscalerSpec defines the desired state of PredictiveHorizontalPodAutoscaler

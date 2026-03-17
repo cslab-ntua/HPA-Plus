@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Train-and-predict loop for XGBoost using recent replica history (and optional metric history)
-to forecast the next replica count.
+Train-and-predict loop for XGBoost using recent aggregate CPU history
+(and optional metric history) to forecast the next CPU usage value.
 """
 
 import csv
@@ -42,6 +42,9 @@ class TimestampedReplica:
     time: Optional[str]
     replicas: int
     metric: Optional[float] = None
+    total_cpu_usage_millicores: Optional[int] = None
+    request_per_pod_millicores: Optional[int] = None
+    target_cpu_utilization_percentage: Optional[int] = None
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)
@@ -148,6 +151,17 @@ def sort_history(replica_history: List[TimestampedReplica],
     return sorted_replicas, sorted_metrics
 
 
+def extract_cpu_usage_series(replica_history: List[TimestampedReplica]) -> List[float]:
+    """Extract aggregate CPU usage history from sorted replica history."""
+    series = []
+    for replica in replica_history:
+        if replica.total_cpu_usage_millicores is None:
+            print("Missing totalCpuUsageMillicores in replica history, exiting", file=sys.stderr)
+            sys.exit(1)
+        series.append(float(replica.total_cpu_usage_millicores))
+    return series
+
+
 def build_feature_row(rep_window: List[float], metric_window: Optional[List[float]]) -> List[float]:
     """Compose a single feature row from replica and metric windows."""
     row: List[float] = []
@@ -193,28 +207,28 @@ def build_training_matrix(series: List[float], metrics: Optional[List[float]], l
 
 def forecast(model: xgb.XGBRegressor, history: List[float], metrics: Optional[List[float]], lags: int,
              steps: int, rolling_window: int) -> float:
-    """Iteratively forecast forward and return the final predicted replica count."""
-    rep_series = list(history)
+    """Iteratively forecast forward and return the final predicted CPU usage."""
+    cpu_series = list(history)
     metric_series = list(metrics) if metrics else None
 
     for _ in range(steps):
-        if len(rep_series) < lags:
-            return rep_series[-1]
+        if len(cpu_series) < lags:
+            return cpu_series[-1]
 
-        rep_window = rep_series[-lags:]
+        cpu_window = cpu_series[-lags:]
         metric_window = metric_series[-lags:] if metric_series else None
 
-        rep_slice = rep_window[-rolling_window:]
+        cpu_slice = cpu_window[-rolling_window:]
         metric_slice = metric_window[-rolling_window:] if metric_window else None
-        features = np.array([build_feature_row(rep_slice, metric_slice)])
+        features = np.array([build_feature_row(cpu_slice, metric_slice)])
 
         next_val = float(model.predict(features)[0])
-        rep_series.append(next_val)
+        cpu_series.append(next_val)
 
         if metric_series is not None:
             metric_series.append(metric_series[-1])  # hold-last-metric assumption for future steps
 
-    return rep_series[-1]
+    return cpu_series[-1]
 
 
 def emit_prediction(value: float) -> None:
@@ -228,9 +242,9 @@ def maybe_dump_features(X_train: np.ndarray, rolling_window: int, metrics_used: 
     path = os.environ.get("XGB_FEATURE_DUMP", "/tmp/xgb_features.csv")
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
-    replica_header = [f"rep_lag_{i}" for i in range(rolling_window)]
-    replica_diff_header = [f"rep_diff_{i}" for i in range(rolling_window - 1)] if rolling_window > 1 else []
-    header = replica_header + replica_diff_header + ["rep_mean", "rep_std"]
+    cpu_header = [f"cpu_lag_{i}" for i in range(rolling_window)]
+    cpu_diff_header = [f"cpu_diff_{i}" for i in range(rolling_window - 1)] if rolling_window > 1 else []
+    header = cpu_header + cpu_diff_header + ["cpu_mean", "cpu_std"]
 
     if metrics_used:
         metric_header = [f"metric_lag_{i}" for i in range(rolling_window)]
@@ -250,7 +264,7 @@ def main() -> None:
     validate_input(alg_input)
 
     sorted_history, sorted_metrics = sort_history(alg_input.replica_history, alg_input.metric_history)
-    series = [float(item.replicas) for item in sorted_history]
+    series = extract_cpu_usage_series(sorted_history)
 
     # Fallback: not enough data to train
     if len(series) <= alg_input.lags:

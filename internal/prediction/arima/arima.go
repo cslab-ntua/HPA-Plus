@@ -22,11 +22,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
+	ctrlLog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -109,25 +113,48 @@ type Predict struct {
 
 // GetPrediction uses ARIMA to predict what the replica count should be based on historical evaluations
 func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+	result, err := p.GetPredictionResult(model, replicaHistory)
+	if err != nil {
+		return 0, err
+	}
+	return result.Replicas, nil
+}
+
+// GetPredictionResult uses ARIMA to predict what the replica count should be based on historical evaluations.
+func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (prediction.Result, error) {
 	if model.Arima == nil {
-		return 0, errors.New("no ARIMA configuration provided for model")
+		return prediction.Result{}, errors.New("no ARIMA configuration provided for model")
 	}
 
-	if len(replicaHistory) == 0 {
-		return 0, errors.New("no evaluations provided for ARIMA model")
+	trainingHistory := filterHistoryForTraining(model, replicaHistory)
+	if len(trainingHistory) == 0 {
+		return prediction.Result{}, errors.New("no CPU usage evaluations provided for ARIMA model")
 	}
 
 	// ARIMA requires at least 3 data points to work properly
-	if len(replicaHistory) < 3 {
+	if len(trainingHistory) < 3 {
 		// Return the most recent replica count as a fallback
-		return replicaHistory[len(replicaHistory)-1].Replicas, nil
+		return prediction.Result{
+			Replicas:      trainingHistory[len(trainingHistory)-1].Replicas,
+			ConsumedUntil: prediction.LatestTimestamp(trainingHistory),
+		}, nil
 	}
 
+	var replicas int32
+	var err error
 	if !p.incrementalEnabled(model) || p.IncrementalRunner == nil {
-		return p.getPredictionOneShot(model, replicaHistory)
+		replicas, err = p.getPredictionOneShot(model, trainingHistory)
+	} else {
+		replicas, err = p.getPredictionIncremental(model, trainingHistory)
+	}
+	if err != nil {
+		return prediction.Result{}, err
 	}
 
-	return p.getPredictionIncremental(model, replicaHistory)
+	return prediction.Result{
+		Replicas:      replicas,
+		ConsumedUntil: prediction.LatestTimestamp(trainingHistory),
+	}, nil
 }
 
 func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {
@@ -141,18 +168,24 @@ func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 		defaultHistorySize = *model.Arima.HistorySize
 	}
 
-	if len(replicaHistory) <= defaultHistorySize {
+	trainingHistoryCount := countTrainingEntries(model, replicaHistory)
+	if trainingHistoryCount == 0 {
+		if len(replicaHistory) <= defaultHistorySize {
+			return replicaHistory, nil
+		}
+
+		start := len(replicaHistory) - defaultHistorySize
+		if start < 0 {
+			start = 0
+		}
+		return replicaHistory[start:], nil
+	}
+
+	if trainingHistoryCount <= defaultHistorySize {
 		return replicaHistory, nil
 	}
 
-	// Keep only the newest HistorySize observations while preserving chronological order
-	start := len(replicaHistory) - defaultHistorySize
-	if start < 0 {
-		start = 0
-	}
-	replicaHistory = replicaHistory[start:]
-
-	return replicaHistory, nil
+	return pruneHistoryByTrainingEntries(model, replicaHistory, defaultHistorySize), nil
 }
 
 // GetType returns the type of the Prediction model
@@ -178,12 +211,17 @@ func (p *Predict) getPredictionOneShot(model *jamiethompsonmev1alpha1.Model, rep
 		return 0, err
 	}
 
-	prediction, err := strconv.Atoi(value)
+	predictedUsage, err := parsePredictedCPUUsage(value)
 	if err != nil {
 		return 0, err
 	}
 
-	return int32(prediction), nil
+	replicas, err := convertPredictedCPUUsageToReplicas(model, predictedUsage)
+	if err != nil {
+		return 0, err
+	}
+	logRawForecast(model, predictedUsage, replicas)
+	return replicas, nil
 }
 
 func (p *Predict) getPredictionIncremental(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
@@ -220,7 +258,7 @@ func (p *Predict) getPredictionIncremental(model *jamiethompsonmev1alpha1.Model,
 	}
 
 	if needsFullRefit {
-		prediction, err := p.runIncremental(sessionID, incrementalRequest{
+		predictedUsage, err := p.runIncremental(sessionID, incrementalRequest{
 			Action:         "fit_forecast",
 			Config:         &parameters,
 			ReplicaHistory: replicaHistory,
@@ -236,7 +274,12 @@ func (p *Predict) getPredictionIncremental(model *jamiethompsonmev1alpha1.Model,
 			s.LastProcessedTime = latestHistoryTime
 			s.UpdatesSinceRefit = 0
 		})
-		return prediction, nil
+		replicas, err := convertPredictedCPUUsageToReplicas(model, predictedUsage)
+		if err != nil {
+			return 0, err
+		}
+		logRawForecast(model, predictedUsage, replicas)
+		return replicas, nil
 	}
 
 	newEntries := filterHistoryAfter(replicaHistory, state.LastProcessedTime)
@@ -249,7 +292,7 @@ func (p *Predict) getPredictionIncremental(model *jamiethompsonmev1alpha1.Model,
 		request.ReplicaHistory = newEntries
 	}
 
-	prediction, err := p.runIncremental(sessionID, request, timeout)
+	predictedUsage, err := p.runIncremental(sessionID, request, timeout)
 	if err != nil {
 		p.resetState(sessionID)
 		return p.getPredictionOneShot(model, replicaHistory)
@@ -264,10 +307,15 @@ func (p *Predict) getPredictionIncremental(model *jamiethompsonmev1alpha1.Model,
 		}
 	})
 
-	return prediction, nil
+	replicas, err := convertPredictedCPUUsageToReplicas(model, predictedUsage)
+	if err != nil {
+		return 0, err
+	}
+	logRawForecast(model, predictedUsage, replicas)
+	return replicas, nil
 }
 
-func (p *Predict) runIncremental(sessionID string, request incrementalRequest, timeout int) (int32, error) {
+func (p *Predict) runIncremental(sessionID string, request incrementalRequest, timeout int) (int64, error) {
 	body, err := json.Marshal(request)
 	if err != nil {
 		return 0, err
@@ -293,7 +341,7 @@ func (p *Predict) runIncremental(sessionID string, request incrementalRequest, t
 		return 0, errors.New("incremental ARIMA worker returned no prediction")
 	}
 
-	return int32(*response.Prediction), nil
+	return int64(*response.Prediction), nil
 }
 
 func (p *Predict) incrementalEnabled(model *jamiethompsonmev1alpha1.Model) bool {
@@ -436,4 +484,121 @@ func (p *Predict) resetState(sessionID string) {
 	if p.incrementalStateByID != nil {
 		delete(p.incrementalStateByID, sessionID)
 	}
+}
+
+func filterHistoryForTraining(
+	model *jamiethompsonmev1alpha1.Model,
+	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+) []jamiethompsonmev1alpha1.TimestampedReplicas {
+	filtered := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 0, len(replicaHistory))
+	for _, entry := range replicaHistory {
+		if !trainingEntryUsable(model, entry) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
+func countTrainingEntries(
+	model *jamiethompsonmev1alpha1.Model,
+	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+) int {
+	count := 0
+	for _, entry := range replicaHistory {
+		if trainingEntryUsable(model, entry) {
+			count++
+		}
+	}
+	return count
+}
+
+func pruneHistoryByTrainingEntries(
+	model *jamiethompsonmev1alpha1.Model,
+	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+	maxTrainingEntries int,
+) []jamiethompsonmev1alpha1.TimestampedReplicas {
+	if maxTrainingEntries <= 0 {
+		return []jamiethompsonmev1alpha1.TimestampedReplicas{}
+	}
+
+	trainingEntriesSeen := 0
+	start := len(replicaHistory)
+	for idx := len(replicaHistory) - 1; idx >= 0; idx-- {
+		if trainingEntryUsable(model, replicaHistory[idx]) {
+			trainingEntriesSeen++
+		}
+		if trainingEntriesSeen >= maxTrainingEntries {
+			start = idx
+			break
+		}
+	}
+
+	if start <= 0 {
+		return replicaHistory
+	}
+
+	return replicaHistory[start:]
+}
+
+func trainingEntryUsable(model *jamiethompsonmev1alpha1.Model,
+	entry jamiethompsonmev1alpha1.TimestampedReplicas) bool {
+	if entry.TotalCPUUsageMillicores == nil {
+		return false
+	}
+	return true
+}
+
+func parsePredictedCPUUsage(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, errors.New("empty ARIMA prediction output")
+	}
+
+	predictedUsage, err := strconv.ParseInt(value, 10, 64)
+	if err == nil {
+		return predictedUsage, nil
+	}
+
+	predictedUsageFloat, floatErr := strconv.ParseFloat(value, 64)
+	if floatErr != nil {
+		return 0, err
+	}
+
+	return int64(math.Ceil(predictedUsageFloat)), nil
+}
+
+func convertPredictedCPUUsageToReplicas(model *jamiethompsonmev1alpha1.Model, predictedUsage int64) (int32, error) {
+	if model.CPURequestPerPodMillicores <= 0 {
+		return 0, errors.New("missing CPU request per pod for ARIMA CPU-history prediction")
+	}
+	if model.TargetCPUUtilizationPercentage <= 0 {
+		return 0, errors.New("missing target CPU utilization for ARIMA CPU-history prediction")
+	}
+
+	if predictedUsage < 0 {
+		predictedUsage = 0
+	}
+
+	targetPerPod := float64(model.CPURequestPerPodMillicores) * (float64(model.TargetCPUUtilizationPercentage) / 100.0)
+	if targetPerPod <= 0 {
+		return 0, errors.New("invalid CPU target conversion values for ARIMA CPU-history prediction")
+	}
+
+	return int32(math.Ceil(float64(predictedUsage) / targetPerPod)), nil
+}
+
+func logRawForecast(model *jamiethompsonmev1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
+	sessionID := model.Name
+	if model.SessionID != "" {
+		sessionID = model.SessionID
+	}
+
+	ctrlLog.Log.WithName("arima").Info(
+		"ARIMA raw CPU forecast ready",
+		"sessionID", sessionID,
+		"modelName", model.Name,
+		"predictedUsageMillicores", predictedUsage,
+		"predictedReplicas", predictedReplicas,
+	)
 }

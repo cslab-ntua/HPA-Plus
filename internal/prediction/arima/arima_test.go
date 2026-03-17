@@ -24,6 +24,7 @@ import (
 
 	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/fake"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/arima"
 	"github.com/google/go-cmp/cmp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,6 +40,22 @@ func boolPtr(b bool) *bool {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+func int64Ptr(i int64) *int64 {
+	return &i
+}
+
+func attachCPUUsage(history []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
+	result := make([]jamiethompsonmev1alpha1.TimestampedReplicas, len(history))
+	for i, entry := range history {
+		result[i] = entry
+		if result[i].TotalCPUUsageMillicores == nil {
+			value := int64(result[i].Replicas)
+			result[i].TotalCPUUsageMillicores = &value
+		}
+	}
+	return result
 }
 
 type fakeIncrementalRunner struct {
@@ -84,7 +101,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 		{
 			description: "Fail no evaluations",
 			expected:    0,
-			expectedErr: errors.New("no evaluations provided for ARIMA model"),
+			expectedErr: errors.New("no CPU usage evaluations provided for ARIMA model"),
 			predicter:   &arima.Predict{},
 			model: &jamiethompsonmev1alpha1.Model{
 				Type: jamiethompsonmev1alpha1.TypeArima,
@@ -167,7 +184,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 		{
 			description: "Fail algorithm returns non-integer castable value",
 			expected:    0,
-			expectedErr: errors.New(`strconv.Atoi: parsing "invalid": invalid syntax`),
+			expectedErr: errors.New(`strconv.ParseInt: parsing "invalid": invalid syntax`),
 			predicter: &arima.Predict{
 				Runner: &fake.Run{
 					RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
@@ -291,7 +308,11 @@ func TestPredict_GetPrediction(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
-			result, err := test.predicter.GetPrediction(test.model, test.replicaHistory)
+			if test.model != nil && test.model.Arima != nil {
+				test.model.CPURequestPerPodMillicores = 1
+				test.model.TargetCPUUtilizationPercentage = 100
+			}
+			result, err := test.predicter.GetPrediction(test.model, attachCPUUsage(test.replicaHistory))
 			if !cmp.Equal(&err, &test.expectedErr, equateErrorMessage) {
 				t.Errorf("error mismatch (-want +got):\n%s", cmp.Diff(test.expectedErr, err, equateErrorMessage))
 				return
@@ -438,6 +459,66 @@ func TestPredict_PruneHistory(t *testing.T) {
 				return result
 			}(),
 		},
+		{
+			description: "Prune by CPU-valid history count",
+			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+				{
+					Replicas:                3,
+					Time:                    &metav1.Time{Time: time.Time{}.Add(3 * time.Second)},
+					TotalCPUUsageMillicores: int64Ptr(3),
+				},
+				{
+					Replicas: 4,
+					Time:     &metav1.Time{Time: time.Time{}.Add(4 * time.Second)},
+				},
+				{
+					Replicas:                5,
+					Time:                    &metav1.Time{Time: time.Time{}.Add(5 * time.Second)},
+					TotalCPUUsageMillicores: int64Ptr(5),
+				},
+				{
+					Replicas:                6,
+					Time:                    &metav1.Time{Time: time.Time{}.Add(6 * time.Second)},
+					TotalCPUUsageMillicores: int64Ptr(6),
+				},
+			},
+			expectedErr: nil,
+			model: &jamiethompsonmev1alpha1.Model{
+				Arima: &jamiethompsonmev1alpha1.Arima{
+					HistorySize: intPtr(3),
+				},
+			},
+			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+				{
+					Replicas:                1,
+					Time:                    &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
+					TotalCPUUsageMillicores: int64Ptr(1),
+				},
+				{
+					Replicas: 2,
+					Time:     &metav1.Time{Time: time.Time{}.Add(2 * time.Second)},
+				},
+				{
+					Replicas:                3,
+					Time:                    &metav1.Time{Time: time.Time{}.Add(3 * time.Second)},
+					TotalCPUUsageMillicores: int64Ptr(3),
+				},
+				{
+					Replicas: 4,
+					Time:     &metav1.Time{Time: time.Time{}.Add(4 * time.Second)},
+				},
+				{
+					Replicas:                5,
+					Time:                    &metav1.Time{Time: time.Time{}.Add(5 * time.Second)},
+					TotalCPUUsageMillicores: int64Ptr(5),
+				},
+				{
+					Replicas:                6,
+					Time:                    &metav1.Time{Time: time.Time{}.Add(6 * time.Second)},
+					TotalCPUUsageMillicores: int64Ptr(6),
+				},
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
@@ -479,8 +560,10 @@ func TestPredict_GetPrediction_IncrementalSuccess(t *testing.T) {
 	}
 
 	model := &jamiethompsonmev1alpha1.Model{
-		Name: "default/test-scaler/traffic-predictor",
-		Type: jamiethompsonmev1alpha1.TypeArima,
+		Name:                           "default/test-scaler/traffic-predictor",
+		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		CPURequestPerPodMillicores:     1,
+		TargetCPUUtilizationPercentage: 100,
 		Arima: &jamiethompsonmev1alpha1.Arima{
 			Order:              []int{1, 0, 0},
 			LookAhead:          60000,
@@ -503,7 +586,7 @@ func TestPredict_GetPrediction_IncrementalSuccess(t *testing.T) {
 		},
 	}
 
-	prediction, err := p.GetPrediction(model, replicaHistory)
+	prediction, err := p.GetPrediction(model, attachCPUUsage(replicaHistory))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -533,8 +616,10 @@ func TestPredict_GetPrediction_IncrementalFallbackToOneShot(t *testing.T) {
 	}
 
 	model := &jamiethompsonmev1alpha1.Model{
-		Name: "default/test-scaler/traffic-predictor",
-		Type: jamiethompsonmev1alpha1.TypeArima,
+		Name:                           "default/test-scaler/traffic-predictor",
+		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		CPURequestPerPodMillicores:     1,
+		TargetCPUUtilizationPercentage: 100,
 		Arima: &jamiethompsonmev1alpha1.Arima{
 			Order:              []int{1, 0, 0},
 			LookAhead:          60000,
@@ -557,7 +642,7 @@ func TestPredict_GetPrediction_IncrementalFallbackToOneShot(t *testing.T) {
 		},
 	}
 
-	prediction, err := p.GetPrediction(model, replicaHistory)
+	prediction, err := p.GetPrediction(model, attachCPUUsage(replicaHistory))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -594,9 +679,11 @@ func TestPredict_GetPrediction_IncrementalUsesSessionID(t *testing.T) {
 	}
 
 	model := &jamiethompsonmev1alpha1.Model{
-		Name:      "traffic-predictor",
-		SessionID: "default/test-scaler/traffic-predictor",
-		Type:      jamiethompsonmev1alpha1.TypeArima,
+		Name:                           "traffic-predictor",
+		SessionID:                      "default/test-scaler/traffic-predictor",
+		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		CPURequestPerPodMillicores:     1,
+		TargetCPUUtilizationPercentage: 100,
 		Arima: &jamiethompsonmev1alpha1.Arima{
 			Order:              []int{1, 0, 0},
 			LookAhead:          60000,
@@ -619,7 +706,7 @@ func TestPredict_GetPrediction_IncrementalUsesSessionID(t *testing.T) {
 		},
 	}
 
-	prediction, err := p.GetPrediction(model, replicaHistory)
+	prediction, err := p.GetPrediction(model, attachCPUUsage(replicaHistory))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -652,9 +739,11 @@ func TestPredict_GetPrediction_IncrementalMissingTimestampFallsBack(t *testing.T
 	}
 
 	model := &jamiethompsonmev1alpha1.Model{
-		Name:      "traffic-predictor",
-		SessionID: "default/test-scaler/traffic-predictor",
-		Type:      jamiethompsonmev1alpha1.TypeArima,
+		Name:                           "traffic-predictor",
+		SessionID:                      "default/test-scaler/traffic-predictor",
+		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		CPURequestPerPodMillicores:     1,
+		TargetCPUUtilizationPercentage: 100,
 		Arima: &jamiethompsonmev1alpha1.Arima{
 			Order:              []int{1, 0, 0},
 			LookAhead:          60000,
@@ -677,7 +766,7 @@ func TestPredict_GetPrediction_IncrementalMissingTimestampFallsBack(t *testing.T
 		},
 	}
 
-	prediction, err := p.GetPrediction(model, replicaHistory)
+	prediction, err := p.GetPrediction(model, attachCPUUsage(replicaHistory))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -689,6 +778,116 @@ func TestPredict_GetPrediction_IncrementalMissingTimestampFallsBack(t *testing.T
 	}
 	if calledIncremental {
 		t.Fatalf("did not expect incremental worker call when timestamps are missing")
+	}
+}
+
+func TestPredict_GetPrediction_ConvertsPredictedCPUUsageToReplicas(t *testing.T) {
+	p := &arima.Predict{
+		Runner: &fake.Run{
+			RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
+				return "2240", nil
+			},
+		},
+	}
+
+	model := &jamiethompsonmev1alpha1.Model{
+		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		CPURequestPerPodMillicores:     800,
+		TargetCPUUtilizationPercentage: 70,
+		Arima: &jamiethompsonmev1alpha1.Arima{
+			Order:     []int{1, 0, 0},
+			LookAhead: 60000,
+		},
+	}
+
+	replicaHistory := attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+		{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
+		{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
+		{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}},
+	})
+
+	prediction, err := p.GetPrediction(model, replicaHistory)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prediction != 4 {
+		t.Fatalf("expected prediction 4, got %d", prediction)
+	}
+}
+
+func TestPredict_GetPrediction_ParsesFloatCPUUsageOutput(t *testing.T) {
+	p := &arima.Predict{
+		Runner: &fake.Run{
+			RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
+				return "2240.0", nil
+			},
+		},
+	}
+
+	model := &jamiethompsonmev1alpha1.Model{
+		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		CPURequestPerPodMillicores:     800,
+		TargetCPUUtilizationPercentage: 70,
+		Arima: &jamiethompsonmev1alpha1.Arima{
+			Order:     []int{1, 0, 0},
+			LookAhead: 60000,
+		},
+	}
+
+	replicaHistory := attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+		{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
+		{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
+		{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}},
+	})
+
+	prediction, err := p.GetPrediction(model, replicaHistory)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prediction != 4 {
+		t.Fatalf("expected prediction 4, got %d", prediction)
+	}
+}
+
+func TestPredict_GetPredictionResult_ConsumedUntilUsesTrainingHistory(t *testing.T) {
+	p := &arima.Predict{
+		Runner: &fake.Run{
+			RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
+				return "2240", nil
+			},
+		},
+	}
+
+	model := &jamiethompsonmev1alpha1.Model{
+		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		CPURequestPerPodMillicores:     800,
+		TargetCPUUtilizationPercentage: 70,
+		Arima: &jamiethompsonmev1alpha1.Arima{
+			Order:     []int{1, 0, 0},
+			LookAhead: 60000,
+		},
+	}
+
+	first := metav1.Time{Time: time.Time{}.Add(1 * time.Second)}
+	second := metav1.Time{Time: time.Time{}.Add(2 * time.Second)}
+	third := metav1.Time{Time: time.Time{}.Add(3 * time.Second)}
+	fourth := metav1.Time{Time: time.Time{}.Add(4 * time.Second)}
+	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{Replicas: 2, Time: &first, TotalCPUUsageMillicores: int64Ptr(1120)},
+		{Replicas: 3, Time: &second, TotalCPUUsageMillicores: int64Ptr(1680)},
+		{Replicas: 4, Time: &third, TotalCPUUsageMillicores: int64Ptr(2240)},
+		{Replicas: 5, Time: &fourth},
+	}
+
+	result, err := p.GetPredictionResult(model, replicaHistory)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Replicas != 4 {
+		t.Fatalf("expected prediction 4, got %d", result.Replicas)
+	}
+	if diff := cmp.Diff(prediction.LatestTimestamp(replicaHistory[:3]), result.ConsumedUntil); diff != "" {
+		t.Fatalf("unexpected consumed timestamp (-want +got):\n%s", diff)
 	}
 }
 

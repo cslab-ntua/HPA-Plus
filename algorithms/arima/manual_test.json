@@ -4,19 +4,23 @@
   "replicaHistory": [
     {
       "time": "2023-01-01T12:00:00Z",
-      "replicas": 2
+      "replicas": 2,
+      "totalCpuUsageMillicores": 2
     },
     {
       "time": "2023-01-01T12:01:00Z",
-      "replicas": 3
+      "replicas": 3,
+      "totalCpuUsageMillicores": 3
     },
     {
       "time": "2023-01-01T12:02:00Z",
-      "replicas": 4
+      "replicas": 4,
+      "totalCpuUsageMillicores": 4
     },
     {
       "time": "2023-01-01T12:03:00Z",
-      "replicas": 5
+      "replicas": 5,
+      "totalCpuUsageMillicores": 5
     }
   ]
 }

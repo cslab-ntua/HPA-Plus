@@ -34,7 +34,7 @@ func Validate(instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscale
 		return err
 	}
 
-	err = validateModels(spec.Models)
+	err = validateModels(spec)
 	if err != nil {
 		return err
 	}
@@ -65,8 +65,18 @@ func validateMinMax(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 	return nil
 }
 
-func validateModels(models []jamiethompsonmev1alpha1.Model) error {
-	for _, model := range models {
+func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerSpec) error {
+	hasCPUUtilizationMetric := false
+	for _, metric := range spec.Metrics {
+		if metric.Type == autoscalingv2.ResourceMetricSourceType &&
+			metric.Resource != nil &&
+			metric.Resource.Name == "cpu" &&
+			metric.Resource.Target.AverageUtilization != nil {
+			hasCPUUtilizationMetric = true
+		}
+	}
+
+	for _, model := range spec.Models {
 		if model.Type == jamiethompsonmev1alpha1.TypeHoltWinters {
 			hw := model.HoltWinters
 			if hw == nil {
@@ -94,6 +104,9 @@ func validateModels(models []jamiethompsonmev1alpha1.Model) error {
 		}
 
 		if model.Type == jamiethompsonmev1alpha1.TypeArima && model.Arima != nil {
+			if !hasCPUUtilizationMetric {
+				return fmt.Errorf("invalid model '%s', ARIMA CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
+			}
 			arima := model.Arima
 			if len(arima.Order) != 3 {
 				return fmt.Errorf("invalid model '%s', ARIMA order must have exactly 3 parameters [p, d, q], got %d",
@@ -137,6 +150,9 @@ func validateModels(models []jamiethompsonmev1alpha1.Model) error {
 			if xb == nil {
 				return fmt.Errorf("invalid model '%s', type is '%s' but no XGBoost configuration provided",
 					model.Name, model.Type)
+			}
+			if !hasCPUUtilizationMetric {
+				return fmt.Errorf("invalid model '%s', XGBoost CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
 			}
 			if xb.HistorySize < 1 {
 				return fmt.Errorf("invalid model '%s', XGBoost historySize must be >= 1", model.Name)

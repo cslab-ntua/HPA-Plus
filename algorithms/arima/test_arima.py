@@ -16,8 +16,30 @@
 Tests the ARIMA algorithm by calling it from the shell, giving different stdin and checking the return
 code and stderr and stdout.
 """
+import json
 import subprocess
 import sys
+
+
+def with_cpu_usage(stdin: str) -> str:
+    """
+    Populate totalCpuUsageMillicores for valid JSON inputs so the ARIMA script can
+    be tested against CPU-history mode without rewriting every fixture inline.
+    """
+    try:
+        payload = json.loads(stdin)
+    except json.JSONDecodeError:
+        return stdin
+
+    replica_history = payload.get("replicaHistory")
+    if not isinstance(replica_history, list):
+        return stdin
+
+    for entry in replica_history:
+        if isinstance(entry, dict) and "totalCpuUsageMillicores" not in entry and "replicas" in entry:
+            entry["totalCpuUsageMillicores"] = entry["replicas"]
+
+    return json.dumps(payload)
 
 
 def test_arima(subtests):
@@ -112,7 +134,7 @@ def test_arima(subtests):
     }, {
         "description": "Invalid timestamp provided",
         "expected_status_code": 1,
-        "expected_stderr": "Invalid datetime format: time data 'invalid' does not match format '%Y-%m-%dT%H:%M:%SZ'\n",
+        "expected_stderr": "Invalid datetime format: Invalid isoformat string: 'invalid'\n",
         "expected_stdout": "",
         "stdin": """{
                 "order": [1, 1, 1],
@@ -251,7 +273,7 @@ def test_arima(subtests):
     for i, test_case in enumerate(test_cases):
         with subtests.test(msg=test_case["description"], i=i):
             result = subprocess.run([sys.executable, "./algorithms/arima/arima.py"],
-                                    input=test_case["stdin"].encode("utf-8"),
+                                    input=with_cpu_usage(test_case["stdin"]).encode("utf-8"),
                                     capture_output=True,
                                     check=False)
 
