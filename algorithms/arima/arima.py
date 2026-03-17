@@ -51,11 +51,13 @@ warnings.filterwarnings('ignore', message='No frequency information was provided
 #   "series": [
 #       {
 #           "time": "2020-02-01T00:55:33Z",
-#           "replicas": 3
+#           "replicas": 3,
+#           "totalCpuUsageMillicores": 1800
 #       },
 #       {
 #           "time": "2020-02-01T00:56:33Z",
-#           "replicas": 6
+#           "replicas": 6,
+#           "totalCpuUsageMillicores": 2100
 #       }
 #   ],
 #   "current_time": "2020-02-01T00:57:33Z"
@@ -70,6 +72,7 @@ class TimestampedReplica:
     """
     time: str
     replicas: int
+    total_cpu_usage_millicores: Optional[int] = None
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)
@@ -97,7 +100,10 @@ class AlgorithmInput:
 def parse_time(time_str: str) -> float:
     """Parse ISO 8601 time string to timestamp"""
     try:
-        return datetime.timestamp(datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%SZ"))
+        normalized = time_str
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        return datetime.fromisoformat(normalized).timestamp()
     except ValueError as ex:
         print(f"Invalid datetime format: {str(ex)}", file=sys.stderr)
         sys.exit(1)
@@ -164,6 +170,17 @@ def calculate_median_interval_ms(timestamps: List[float]) -> int:
     median_ms = int(round(median_seconds * 1000))
 
     return max(median_ms, 1)
+
+
+def extract_cpu_usage_series(replica_history: List[TimestampedReplica]) -> List[float]:
+    """Extract aggregate CPU usage series from history."""
+    series = []
+    for replica in replica_history:
+        if replica.total_cpu_usage_millicores is None:
+            print("Missing totalCpuUsageMillicores in replica history, exiting", file=sys.stderr)
+            sys.exit(1)
+        series.append(float(replica.total_cpu_usage_millicores))
+    return series
 
 
 def determine_forecast_steps(look_ahead_ms: int, timestamps: List[float]) -> int:
@@ -240,6 +257,44 @@ def auto_select_arima(series: List[int], algorithm_input: AlgorithmInput) -> Tup
     return best_config
 
 
+def build_model(series: List[float], algorithm_input: AlgorithmInput,
+                arima_order: Tuple[int, int, int],
+                exog: Optional[List[List[float]]] = None):
+    """Build an ARIMA/SARIMA model, switching to SARIMAX when exogenous regressors are used."""
+    use_sarima = algorithm_input.use_sarima or algorithm_input.seasonal_order is not None or algorithm_input.seasonal_periods is not None
+
+    if use_sarima or exog is not None:
+        seasonal_order = tuple(algorithm_input.seasonal_order or [0, 0, 0])
+        seasonal_periods = algorithm_input.seasonal_periods or 0
+        return sm.tsa.SARIMAX(
+            series,
+            exog=exog,
+            order=arima_order,
+            seasonal_order=seasonal_order + (seasonal_periods,),
+            trend=algorithm_input.trend,
+            enforce_stationarity=algorithm_input.enforce_stationarity,
+            enforce_invertibility=algorithm_input.enforce_invertibility,
+            concentrate_scale=algorithm_input.concentrate_scale
+        )
+
+    model_kwargs = {
+        'order': arima_order,
+        'trend': algorithm_input.trend,
+        'enforce_stationarity': algorithm_input.enforce_stationarity,
+        'enforce_invertibility': algorithm_input.enforce_invertibility,
+        'concentrate_scale': algorithm_input.concentrate_scale
+    }
+    return sm.tsa.ARIMA(series, **model_kwargs)
+
+
+def fit_model(model):
+    """Fit a statsmodels ARIMA-family model while handling older signatures."""
+    try:
+        return model.fit(disp=False)
+    except TypeError:
+        return model.fit()
+
+
 stdin = sys.stdin.read()
 
 if stdin is None or stdin == "":
@@ -260,8 +315,8 @@ validate_arima_input(algorithm_input)
 
 replica_history, timestamps = sort_history_by_time(algorithm_input.replica_history)
 
-# Extract time series data from replica history
-series = [replica.replicas for replica in replica_history]
+# Extract time series data from aggregate CPU usage history
+series = extract_cpu_usage_series(replica_history)
 
 try:
     # Auto-select ARIMA parameters if requested
@@ -272,39 +327,10 @@ try:
     else:
         arima_order = tuple(algorithm_input.order)
 
-    use_sarima = algorithm_input.use_sarima or algorithm_input.seasonal_order is not None or algorithm_input.seasonal_periods is not None
-
-    if use_sarima:
-        seasonal_order = tuple(algorithm_input.seasonal_order or [0, 0, 0])
-        seasonal_periods = algorithm_input.seasonal_periods or 0
-        model = sm.tsa.SARIMAX(
-            series,
-            order=arima_order,
-            seasonal_order=seasonal_order + (seasonal_periods,),
-            trend=algorithm_input.trend,
-            enforce_stationarity=algorithm_input.enforce_stationarity,
-            enforce_invertibility=algorithm_input.enforce_invertibility,
-            concentrate_scale=algorithm_input.concentrate_scale
-        )
-    else:
-        model_kwargs = {
-            'order': arima_order,
-            'trend': algorithm_input.trend,
-            'enforce_stationarity': algorithm_input.enforce_stationarity,
-            'enforce_invertibility': algorithm_input.enforce_invertibility,
-            'concentrate_scale': algorithm_input.concentrate_scale
-        }
-        model = sm.tsa.ARIMA(series, **model_kwargs)
-
-    fit_kwargs = {}
-    try:
-        fitted_model = model.fit(disp=False)
-    except TypeError:
-        # Older statsmodels signatures may not accept disp, fall back without it
-        fitted_model = model.fit()
-
     # Forecast ahead for the specified number of steps (based on timestamps when available)
     forecast_steps = determine_forecast_steps(algorithm_input.look_ahead, timestamps)
+    model = build_model(series, algorithm_input, arima_order)
+    fitted_model = fit_model(model)
     forecast = fitted_model.forecast(steps=forecast_steps)
 
     # Return the forecast value at the requested horizon, rounded up to nearest integer
@@ -313,18 +339,10 @@ try:
     else:
         prediction = series[-1]
 
-    if len(series) >= 4:
-        diffs = [series[i] - series[i - 1] for i in range(len(series) - 3, len(series))]
-        if all(diff > 0 for diff in diffs):
-            recent_trend = diffs[-1]
-            min_growth = series[-1] + recent_trend * forecast_steps
-            if prediction < min_growth:
-                prediction = min_growth
-
-    print(prediction, end="")
+    print(int(prediction), end="")
 
 except Exception as ex:
     print(f"ARIMA model fitting failed: {str(ex)}, falling back to last observed value", file=sys.stderr)
     # Fallback to the last observed value if ARIMA fails
-    fallback_value = series[-1] if series else 1
-    print(fallback_value, end="")
+    fallback_value = math.ceil(series[-1]) if series else 1
+    print(int(fallback_value), end="")

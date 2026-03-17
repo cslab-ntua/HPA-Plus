@@ -159,6 +159,16 @@ def build_model(series: List[float], config: Dict):
     )
 
 
+def extract_cpu_usage_series(replica_history: List[Dict]) -> List[float]:
+    series = []
+    for replica in replica_history:
+        value = replica.get("totalCpuUsageMillicores")
+        if value is None:
+            raise ValueError("missing totalCpuUsageMillicores in replicaHistory entry")
+        series.append(float(value))
+    return series
+
+
 def fit_model(series: List[float], config: Dict):
     model = build_model(series, config)
     try:
@@ -196,17 +206,14 @@ def handle_fit_forecast(request: Dict) -> Dict:
         raise ValueError("ARIMA requires at least 3 observations")
 
     sorted_history, timestamps = sort_history_by_time(history)
-    series = [float(replica["replicas"]) for replica in sorted_history]
-
+    series = extract_cpu_usage_series(sorted_history)
     _state_result = fit_model(series, config)
     _state_series = series
     _state_timestamps = timestamps
     _state_config = config
 
-    return {
-        "ok": True,
-        "prediction": forecast_prediction(),
-    }
+    prediction = forecast_prediction()
+    return {"ok": True, "prediction": prediction}
 
 
 def handle_append_forecast(request: Dict) -> Dict:
@@ -221,16 +228,13 @@ def handle_append_forecast(request: Dict) -> Dict:
     new_history = request.get("replicaHistory", [])
     if len(new_history) > 0:
         sorted_history, timestamps = sort_history_by_time(new_history)
-        new_series = [float(replica["replicas"]) for replica in sorted_history]
-
+        new_series = extract_cpu_usage_series(sorted_history)
         _state_result = _state_result.extend(new_series)
         _state_series.extend(new_series)
         _state_timestamps.extend(timestamps)
 
-    return {
-        "ok": True,
-        "prediction": forecast_prediction(),
-    }
+    prediction = forecast_prediction()
+    return {"ok": True, "prediction": prediction}
 
 
 def handle_forecast(request: Dict) -> Dict:
@@ -239,7 +243,8 @@ def handle_forecast(request: Dict) -> Dict:
     config = normalize_config(request.get("config", {}))
     validate_config(config)
     ensure_matching_config(config)
-    return {"ok": True, "prediction": forecast_prediction()}
+    prediction = forecast_prediction()
+    return {"ok": True, "prediction": prediction}
 
 
 def handle_reset() -> Dict:

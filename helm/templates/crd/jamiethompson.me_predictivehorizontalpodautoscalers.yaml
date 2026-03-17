@@ -1004,7 +1004,7 @@ spec:
                           minimum: 1
                           type: integer
                         lags:
-                          description: lags controls how many previous replica counts
+                          description: lags controls how many previous CPU usage samples
                             are used as features for training.
                           minimum: 1
                           type: integer
@@ -1560,11 +1560,26 @@ spec:
                       description: replicas is the replica count at the time.
                       format: int32
                       type: integer
+                    requestPerPodMillicores:
+                      description: requestPerPodMillicores is the per-pod CPU request
+                        context used when the sample was recorded.
+                      format: int64
+                      type: integer
+                    targetCpuUtilizationPercentage:
+                      description: targetCPUUtilizationPercentage is the CPU target
+                        utilization used when the sample was recorded.
+                      format: int32
+                      type: integer
                     time:
                       description: time is the time that the replica count was created
                         at.
                       format: date-time
                       type: string
+                    totalCpuUsageMillicores:
+                      description: totalCPUUsageMillicores is the aggregate CPU usage
+                        across the target workload at the recorded time.
+                      format: int64
+                      type: integer
                   required:
                   - replicas
                   - time
@@ -1586,11 +1601,26 @@ spec:
                       description: replicas is the replica count at the time.
                       format: int32
                       type: integer
+                    requestPerPodMillicores:
+                      description: requestPerPodMillicores is the per-pod CPU request
+                        context used when the sample was recorded.
+                      format: int64
+                      type: integer
+                    targetCpuUtilizationPercentage:
+                      description: targetCPUUtilizationPercentage is the CPU target
+                        utilization used when the sample was recorded.
+                      format: int32
+                      type: integer
                     time:
                       description: time is the time that the replica count was created
                         at.
                       format: date-time
                       type: string
+                    totalCpuUsageMillicores:
+                      description: totalCPUUsageMillicores is the aggregate CPU usage
+                        across the target workload at the recorded time.
+                      format: int64
+                      type: integer
                   required:
                   - replicas
                   - time
@@ -1613,11 +1643,26 @@ spec:
                       description: replicas is the replica count at the time.
                       format: int32
                       type: integer
+                    requestPerPodMillicores:
+                      description: requestPerPodMillicores is the per-pod CPU request
+                        context used when the sample was recorded.
+                      format: int64
+                      type: integer
+                    targetCpuUtilizationPercentage:
+                      description: targetCPUUtilizationPercentage is the CPU target
+                        utilization used when the sample was recorded.
+                      format: int32
+                      type: integer
                     time:
                       description: time is the time that the replica count was created
                         at.
                       format: date-time
                       type: string
+                    totalCpuUsageMillicores:
+                      description: totalCPUUsageMillicores is the aggregate CPU usage
+                        across the target workload at the recorded time.
+                      format: int64
+                      type: integer
                   required:
                   - replicas
                   - time
@@ -1639,11 +1684,26 @@ spec:
                       description: replicas is the replica count at the time.
                       format: int32
                       type: integer
+                    requestPerPodMillicores:
+                      description: requestPerPodMillicores is the per-pod CPU request
+                        context used when the sample was recorded.
+                      format: int64
+                      type: integer
+                    targetCpuUtilizationPercentage:
+                      description: targetCPUUtilizationPercentage is the CPU target
+                        utilization used when the sample was recorded.
+                      format: int32
+                      type: integer
                     time:
                       description: time is the time that the replica count was created
                         at.
                       format: date-time
                       type: string
+                    totalCpuUsageMillicores:
+                      description: totalCPUUsageMillicores is the aggregate CPU usage
+                        across the target workload at the recorded time.
+                      format: int64
+                      type: integer
                   required:
                   - replicas
                   - time

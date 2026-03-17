@@ -23,6 +23,7 @@ import (
 	"strconv"
 
 	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 )
 
 const (
@@ -54,18 +55,30 @@ type Predict struct {
 
 // GetPrediction uses a linear regression to predict what the replica count should be based on historical evaluations
 func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+	result, err := p.GetPredictionResult(model, replicaHistory)
+	if err != nil {
+		return 0, err
+	}
+	return result.Replicas, nil
+}
+
+// GetPredictionResult uses a linear regression to predict what the replica count should be based on historical evaluations
+func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (prediction.Result, error) {
 	if model.Linear == nil {
-		return 0, errors.New("no Linear configuration provided for model")
+		return prediction.Result{}, errors.New("no Linear configuration provided for model")
 	}
 
 	if len(replicaHistory) == 0 {
-		return 0, errors.New("no evaluations provided for Linear regression model")
+		return prediction.Result{}, errors.New("no evaluations provided for Linear regression model")
 	}
 
 	if len(replicaHistory) == 1 {
 		// If only 1 evaluation is provided do not try and calculate using the linear regression model, just return
 		// the target replicas from the only evaluation
-		return replicaHistory[0].Replicas, nil
+		return prediction.Result{
+			Replicas:      replicaHistory[0].Replicas,
+			ConsumedUntil: prediction.LatestTimestamp(replicaHistory),
+		}, nil
 	}
 
 	parameters, err := json.Marshal(linearRegressionParameters{
@@ -84,15 +97,18 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 
 	value, err := p.Runner.RunAlgorithmWithValue(algorithmPath, string(parameters), timeout)
 	if err != nil {
-		return 0, err
+		return prediction.Result{}, err
 	}
 
-	prediction, err := strconv.Atoi(value)
+	predictedReplicas, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, err
+		return prediction.Result{}, err
 	}
 
-	return int32(prediction), nil
+	return prediction.Result{
+		Replicas:      int32(predictedReplicas),
+		ConsumedUntil: prediction.LatestTimestamp(replicaHistory),
+	}, nil
 }
 
 func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {

@@ -2,5 +2,5 @@ mode: cluster
 
 image:
   repository: dimitrisde/hpa-plus-operator
-  tag: reconcile-cadence
+  tag: xgboost-cpu-history-20260313-rawlog
   pullPolicy: Always

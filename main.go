@@ -133,7 +133,7 @@ func main() {
 	}()
 	httpExec := &http.Execute{}
 
-	if err = (&controllers.PredictiveHorizontalPodAutoscalerReconciler{
+	reconciler := &controllers.PredictiveHorizontalPodAutoscalerReconciler{
 		Client:      mgr.GetClient(),
 		RESTMapper:  mgr.GetRESTMapper(),
 		Scheme:      mgr.GetScheme(),
@@ -158,8 +158,14 @@ func main() {
 				},
 			},
 		},
-	}).SetupWithManager(mgr); err != nil {
+	}
+
+	if err = reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PredictiveHorizontalPodAutoscaler")
+		os.Exit(1)
+	}
+	if err = mgr.Add(controllers.NewHistorySampler(reconciler)); err != nil {
+		setupLog.Error(err, "unable to add history sampler")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

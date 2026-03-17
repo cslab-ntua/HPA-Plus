@@ -17,6 +17,14 @@ def run_algo(payload: dict) -> subprocess.CompletedProcess:
     )
 
 
+def with_cpu_usage(payload: dict) -> dict:
+    updated = json.loads(json.dumps(payload))
+    for entry in updated.get("replicaHistory", []):
+        if "totalCpuUsageMillicores" not in entry and "replicas" in entry:
+            entry["totalCpuUsageMillicores"] = entry["replicas"]
+    return updated
+
+
 def test_falls_back_when_not_enough_history():
     payload = {
         "lookAhead": 1000,
@@ -26,7 +34,7 @@ def test_falls_back_when_not_enough_history():
             {"time": "2023-01-01T00:00:01Z", "replicas": 4},
         ],
     }
-    result = run_algo(payload)
+    result = run_algo(with_cpu_usage(payload))
     assert result.returncode == 0, result.stderr.decode()
     assert result.stdout.decode().strip() == "4"
 
@@ -43,7 +51,7 @@ def test_runs_and_outputs_integer_prediction():
             {"time": "2023-01-01T00:00:04Z", "replicas": 6},
         ],
     }
-    result = run_algo(payload)
+    result = run_algo(with_cpu_usage(payload))
     assert result.returncode == 0, result.stderr.decode()
     output = result.stdout.decode().strip()
     assert output.isdigit(), f"expected integer output, got {output!r}"

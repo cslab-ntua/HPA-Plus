@@ -24,6 +24,7 @@ import (
 
 	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/hook"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 )
 
 const algorithmPath = "algorithms/holt_winters/holt_winters.py"
@@ -71,21 +72,30 @@ type runTimeTuningFetchHookResult struct {
 
 // GetPrediction uses holt winters to predict what the replica count should be based on historical evaluations
 func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
-	err := p.validate(model)
+	result, err := p.GetPredictionResult(model, replicaHistory)
 	if err != nil {
 		return 0, err
+	}
+	return result.Replicas, nil
+}
+
+// GetPredictionResult uses holt winters to predict what the replica count should be based on historical evaluations
+func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (prediction.Result, error) {
+	err := p.validate(model)
+	if err != nil {
+		return prediction.Result{}, err
 	}
 
 	// Statsmodels requires at least 2 * seasonal_periods to make a prediction with Holt Winters
 	// https://github.com/statsmodels/statsmodels/blob/77bb1d276c7d11bc8657497b4307aa7575c3e65c/statsmodels/tsa/exponential_smoothing/initialization.py#L57-L61
 	if len(replicaHistory) < 2*model.HoltWinters.SeasonalPeriods {
-		return 0, nil
+		return prediction.Result{}, nil
 	}
 
 	// Statsmodels requires at least 10 + 2 * (seasonal_periods // 2) to make a prediction with Holt Winters
 	// https://github.com/statsmodels/statsmodels/blob/77bb1d276c7d11bc8657497b4307aa7575c3e65c/statsmodels/tsa/exponential_smoothing/initialization.py#L66-L71
 	if len(replicaHistory) < 10+2*(model.HoltWinters.SeasonalPeriods/2) {
-		return 0, nil
+		return prediction.Result{}, nil
 	}
 
 	alpha := model.HoltWinters.Alpha
@@ -107,14 +117,14 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 		// Request runtime tuning values
 		hookResult, err := p.HookExecute.ExecuteWithValue(model.HoltWinters.RuntimeTuningFetchHook, string(request))
 		if err != nil {
-			return 0, err
+			return prediction.Result{}, err
 		}
 
 		// Parse result
 		var result runTimeTuningFetchHookResult
 		err = json.Unmarshal([]byte(hookResult), &result)
 		if err != nil {
-			return 0, err
+			return prediction.Result{}, err
 		}
 
 		if result.Alpha != nil {
@@ -129,13 +139,13 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 	}
 
 	if alpha == nil {
-		return 0, errors.New("no alpha tuning value provided for Holt-Winters prediction")
+		return prediction.Result{}, errors.New("no alpha tuning value provided for Holt-Winters prediction")
 	}
 	if beta == nil {
-		return 0, errors.New("no beta tuning value provided for Holt-Winters prediction")
+		return prediction.Result{}, errors.New("no beta tuning value provided for Holt-Winters prediction")
 	}
 	if gamma == nil {
-		return 0, errors.New("no gamma tuning value provided for Holt-Winters prediction")
+		return prediction.Result{}, errors.New("no gamma tuning value provided for Holt-Winters prediction")
 	}
 
 	// Collect data for historical series
@@ -170,15 +180,18 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 
 	value, err := p.Runner.RunAlgorithmWithValue(algorithmPath, string(parameters), timeout)
 	if err != nil {
-		return 0, err
+		return prediction.Result{}, err
 	}
 
-	prediction, err := strconv.Atoi(value)
+	predictedReplicas, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, err
+		return prediction.Result{}, err
 	}
 
-	return int32(prediction), nil
+	return prediction.Result{
+		Replicas:      int32(predictedReplicas),
+		ConsumedUntil: prediction.LatestTimestamp(replicaHistory),
+	}, nil
 }
 
 func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {
