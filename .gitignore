@@ -64,3 +64,9 @@ decision_trace_cpu.png
 decision_trace_cpu_arima.png
 history.csv
 plain_hpa_utilization.png
+decision_trace_utilization_hpa_lightgbm_raw.png
+decision_trace_utilization_hpa_lightgbm.png
+.gitignore
+decision_trace_utilization_comparison.png
+decision_trace_utilization_hpa_xgboost.png
+decision_trace_cpu_xgboost.png

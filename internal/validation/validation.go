@@ -163,18 +163,95 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 			if xb.Lags < 1 {
 				return fmt.Errorf("invalid model '%s', XGBoost lags must be >= 1", model.Name)
 			}
+			if xb.Lags > xb.HistorySize {
+				return fmt.Errorf("invalid model '%s', XGBoost lags (%d) cannot exceed historySize (%d)",
+					model.Name, xb.Lags, xb.HistorySize)
+			}
 			if xb.WindowSize != nil && *xb.WindowSize < 1 {
 				return fmt.Errorf("invalid model '%s', XGBoost windowSize must be >= 1", model.Name)
 			}
-			if xb.WindowSize != nil && *xb.WindowSize > xb.HistorySize {
-				return fmt.Errorf("invalid model '%s', XGBoost windowSize (%d) cannot exceed historySize (%d)",
-					model.Name, *xb.WindowSize, xb.HistorySize)
+			if xb.WindowSize != nil && *xb.WindowSize > xb.Lags {
+				return fmt.Errorf("invalid model '%s', XGBoost windowSize (%d) cannot exceed lags (%d)",
+					model.Name, *xb.WindowSize, xb.Lags)
 			}
-			if xb.Subsample != nil && (*xb.Subsample < 0 || *xb.Subsample > 1) {
-				return fmt.Errorf("invalid model '%s', XGBoost subsample must be between 0 and 1", model.Name)
+			if xb.MaxDepth != nil && *xb.MaxDepth < 1 {
+				return fmt.Errorf("invalid model '%s', XGBoost maxDepth must be >= 1", model.Name)
 			}
-			if xb.ColsampleBytree != nil && (*xb.ColsampleBytree < 0 || *xb.ColsampleBytree > 1) {
-				return fmt.Errorf("invalid model '%s', XGBoost colsampleBytree must be between 0 and 1", model.Name)
+			if xb.NEstimators != nil && *xb.NEstimators < 1 {
+				return fmt.Errorf("invalid model '%s', XGBoost nEstimators must be >= 1", model.Name)
+			}
+			if xb.LearningRate != nil && *xb.LearningRate <= 0 {
+				return fmt.Errorf("invalid model '%s', XGBoost learningRate must be > 0", model.Name)
+			}
+			if xb.Subsample != nil && (*xb.Subsample <= 0 || *xb.Subsample > 1) {
+				return fmt.Errorf("invalid model '%s', XGBoost subsample must be in (0, 1]", model.Name)
+			}
+			if xb.ColsampleBytree != nil && (*xb.ColsampleBytree <= 0 || *xb.ColsampleBytree > 1) {
+				return fmt.Errorf("invalid model '%s', XGBoost colsampleBytree must be in (0, 1]", model.Name)
+			}
+			if xb.RegLambda != nil && *xb.RegLambda < 0 {
+				return fmt.Errorf("invalid model '%s', XGBoost regLambda must be >= 0", model.Name)
+			}
+			if xb.RegAlpha != nil && *xb.RegAlpha < 0 {
+				return fmt.Errorf("invalid model '%s', XGBoost regAlpha must be >= 0", model.Name)
+			}
+		}
+
+		if model.Type == jamiethompsonmev1alpha1.TypeLightGBM {
+			lgb := model.LightGBM
+			if lgb == nil {
+				return fmt.Errorf("invalid model '%s', type is '%s' but no LightGBM configuration provided",
+					model.Name, model.Type)
+			}
+			if !hasCPUUtilizationMetric {
+				return fmt.Errorf("invalid model '%s', LightGBM CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
+			}
+			if lgb.HistorySize < 1 {
+				return fmt.Errorf("invalid model '%s', LightGBM historySize must be >= 1", model.Name)
+			}
+			if lgb.LookAhead < 1 {
+				return fmt.Errorf("invalid model '%s', LightGBM lookAhead must be >= 1", model.Name)
+			}
+			if lgb.Lags < 1 {
+				return fmt.Errorf("invalid model '%s', LightGBM lags must be >= 1", model.Name)
+			}
+			if lgb.Lags > lgb.HistorySize {
+				return fmt.Errorf("invalid model '%s', LightGBM lags (%d) cannot exceed historySize (%d)",
+					model.Name, lgb.Lags, lgb.HistorySize)
+			}
+			if lgb.WindowSize != nil && *lgb.WindowSize < 1 {
+				return fmt.Errorf("invalid model '%s', LightGBM windowSize must be >= 1", model.Name)
+			}
+			if lgb.WindowSize != nil && *lgb.WindowSize > lgb.Lags {
+				return fmt.Errorf("invalid model '%s', LightGBM windowSize (%d) cannot exceed lags (%d)",
+					model.Name, *lgb.WindowSize, lgb.Lags)
+			}
+			if lgb.MaxDepth != nil && *lgb.MaxDepth != -1 && *lgb.MaxDepth < 1 {
+				return fmt.Errorf("invalid model '%s', LightGBM maxDepth must be -1 or >= 1", model.Name)
+			}
+			if lgb.NEstimators != nil && *lgb.NEstimators < 1 {
+				return fmt.Errorf("invalid model '%s', LightGBM nEstimators must be >= 1", model.Name)
+			}
+			if lgb.LearningRate != nil && *lgb.LearningRate <= 0 {
+				return fmt.Errorf("invalid model '%s', LightGBM learningRate must be > 0", model.Name)
+			}
+			if lgb.Subsample != nil && (*lgb.Subsample <= 0 || *lgb.Subsample > 1) {
+				return fmt.Errorf("invalid model '%s', LightGBM subsample must be in (0, 1]", model.Name)
+			}
+			if lgb.ColsampleBytree != nil && (*lgb.ColsampleBytree <= 0 || *lgb.ColsampleBytree > 1) {
+				return fmt.Errorf("invalid model '%s', LightGBM colsampleBytree must be in (0, 1]", model.Name)
+			}
+			if lgb.NumLeaves != nil && *lgb.NumLeaves < 2 {
+				return fmt.Errorf("invalid model '%s', LightGBM numLeaves must be >= 2", model.Name)
+			}
+			if lgb.MinChildSamples != nil && *lgb.MinChildSamples < 1 {
+				return fmt.Errorf("invalid model '%s', LightGBM minChildSamples must be >= 1", model.Name)
+			}
+			if lgb.RegLambda != nil && *lgb.RegLambda < 0 {
+				return fmt.Errorf("invalid model '%s', LightGBM regLambda must be >= 0", model.Name)
+			}
+			if lgb.RegAlpha != nil && *lgb.RegAlpha < 0 {
+				return fmt.Errorf("invalid model '%s', LightGBM regAlpha must be >= 0", model.Name)
 			}
 		}
 	}

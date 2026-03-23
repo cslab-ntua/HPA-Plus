@@ -45,8 +45,11 @@ versions we will try to fix them, but there is no guarantee of support.
 
 * Functionally identical to Horizontal Pod Autoscaler for calculating replica counts without prediction.
 * Choice of statistical models to apply over Horizontal Pod Autoscaler replica counting logic.
+  * ARIMA
   * Holt-Winters Smoothing
   * Linear Regression
+  * XGBoost
+  * LightGBM
 * Allows customisation of Kubernetes autoscaling options without master node access. Can therefore work on managed
 solutions such as EKS or GCP.
   * CPU Initialization Period.

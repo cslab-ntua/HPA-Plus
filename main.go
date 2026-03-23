@@ -48,6 +48,7 @@ import (
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/arima"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/holtwinters"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction/lightgbm"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/linear"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/xgboost"
 	//+kubebuilder:scaffold:imports
@@ -154,6 +155,9 @@ func main() {
 					IncrementalRunner: persistentPyRunner,
 				},
 				&xgboost.Predict{
+					Runner: pyRunner,
+				},
+				&lightgbm.Predict{
 					Runner: pyRunner,
 				},
 			},
