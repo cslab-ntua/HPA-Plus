@@ -1,306 +1,222 @@
 # Models
 
-## Shared Configuration
+This page documents the model families that are implemented in the current repository.
 
-All models share these properties:
+It is intentionally short. For exact field names and validation details, check [`api/v1alpha1/predictivehorizontalpodautoscaler_types.go`](../../api/v1alpha1/predictivehorizontalpodautoscaler_types.go) and the sample manifests under [`testing/manifests/hpa-plus/`](../../testing/manifests/hpa-plus/).
 
-- **type** - The type of the model, for example 'Linear'.
-- **name** - The name of the model, must be unique and not shared by multiple models.
-- **perSyncPeriod** - The frequency that the model is used to recalculate and store values - tied to the sync period as
-a base unit, with a value of `1` resulting in the model being recalculated every sync period, a value of `2` meaning
-recalculated every other sync period, `3` waits for two sync periods after every calculation and so on.
-- **calculationTimeout** - The timeout for calculating using an algorithm, if this timeout is exceeded the calculation
-is skipped. Defaults set based on the algorithm used, see below.
-- **startInterval** - The [duration](https://pkg.go.dev/time#ParseDuration) that the model should start to apply from.
-For example a value of `1m` would mean the model would only start to apply at the top of the next minute. This is
-useful if you have seasonal data that you need the model synced to, such as Holt-Winters, which allows you to do things
-like making sure the model defines the start of a Holt-Winters season as starting at midnight (with the season being)
-and lasting the whole day.
-- **resetDuration** - The [duration](https://pkg.go.dev/time#ParseDuration) that the model can go for without recording
-any data before the data is too old and is cleared out. A new start time will be calculated from the `startInterval`
-if it's provided at this point too.
+## How Models Fit Into HPA+
 
-All models use `syncPeriod` as a base unit, so if the sync period is defined as `10000` (10 seconds), the models will
-base their timings and calculations as multiples of 10 seconds.
+Each entry under `spec.models` contributes a predicted replica count.
 
-## Linear Regression
+Outside the model block:
 
-The linear regression model uses a default calculation timeout of `30000` (30 seconds).
+- `includeHPA` decides whether the plain HPA baseline is also included in the final decision.
+- `decisionType` decides how multiple inputs are combined (`maximum`, `minimum`, `mean`, `median`).
+- `syncPeriod` controls how often the controller evaluates metrics and models.
+
+In practice this means a model is only one part of the final scaling behavior. Stabilization windows, min/max replicas, and the underlying HPA metric target still matter.
+
+## Shared Model Fields
+
+All model entries support these common fields:
+
+- `type`: model family. Supported values in this repo are `Linear`, `HoltWinters`, `ARIMA`, `XGBoost`, and `LightGBM`.
+- `name`: unique model name within the PHPA object.
+- `perSyncPeriod`: run cadence in units of `syncPeriod`. `1` means every sync, `2` means every other sync.
+- `calculationTimeout`: max time, in milliseconds, allowed for one prediction run.
+- `startInterval`: optional delayed start boundary for time-aligned models.
+- `resetDuration`: optional idle timeout after which model state/history is reset.
+
+## Two Input Families
+
+The models in this repo fall into two groups:
+
+- Replica-history models: `Linear`, `HoltWinters`
+  - These learn from the sequence of computed replica values over time.
+- CPU-history models: `ARIMA`, `XGBoost`, `LightGBM`
+  - These learn from aggregate CPU usage history stored in the PHPA ConfigMap and convert predicted CPU demand back into replicas using the current CPU request per pod and target utilization.
+
+If a CPU-history model does not yet have enough usable CPU samples, the controller falls back to the HPA path until the history is warm.
+
+## Linear
+
+Use this when you want the lightest-weight predictive layer and only need short-horizon trend following.
 
 Example:
+
 ```yaml
 models:
   - type: Linear
     name: simple-linear
     perSyncPeriod: 1
-    calculationTimeout: 25000
     linear:
       lookAhead: 10000
       historySize: 6
 ```
-The **linear** component of the configuration handles configuration of the Linear regression options:
 
-- **lookAhead** - sets up the model to try to predict `10 seconds` ahead of time (time in milliseconds).
-- **historySize** - sets up the model to store the past `6` evaluations and to use these for predictions. If there
-are `> 6` evaluations, the oldest will be removed.
+Key fields:
 
-For a more detailed example, [see the example in
-`/examples/simple-linear`](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/simple-linear).
+- `linear.lookAhead`: forecast horizon in milliseconds.
+- `linear.historySize`: number of stored replica-history samples.
 
-## Holt-Winters Time Series prediction
+See [`examples/simple-linear/hpa-plus.yaml`](../../examples/simple-linear/hpa-plus.yaml).
 
-The Holt-Winters time series model uses a default calculation timeout of `30000` (30 seconds).
+## Holt-Winters
+
+Use this when the workload has a strong repeating seasonal pattern and you want explicit trend/seasonality controls.
 
 Example:
-```yaml
-models:
-- type: HoltWinters
-  name: simple-holt-winters
-  perSyncPeriod: 1
-  startInterval: 60s
-  startIntervalResetDuration: 5m
-  holtWinters:
-    alpha: 0.9
-    beta: 0.9
-    gamma: 0.9
-    seasonalPeriods: 6
-    storedSeasons: 4
-    trend: additive
-    seasonal: additive
-```
-
-The **holtWinters** component of the configuration handles configuration of the Linear regression options:
-
-- **alpha**, **beta**, **gamma** - these are the smoothing coefficients for level, trend and seasonality respectively,
-requires tweaking and analysis to be able to optimise. See [the dynamic Holt-Winters
-example](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/dynamic-holt-winters) or
-[here](https://grisha.org/blog/2016/01/29/triple-exponential-smoothing-forecasting/) for more details.
-- **seasonalPeriods** - the length of a season in base unit sync periods, for example if your sync period was `10000`
-(10 seconds), and your repeated season was 60 seconds long, this value would be `6`.
-- **storedSeasons** - the number of seasons to store, for example `4`, if there are `>4` seasons stored, the oldest
-season will be removed.
-- **trend** - Either `add`/`additive` or `mul`/`multiplicative`, defines the method for the trend element.
-- **seasonal** - Either `add`/`additive` or `mul`/`multiplicative`, defines the method for the seasonal element.
-
-This is the model in action, taken from the `simple-holt-winters` example:
-![Predicted values overestimating but still fitting actual values](../img/holt_winters_prediction_vs_actual.svg)
-The red value is the predicted values, the blue value is the actual values. From this you can see that the prediction
-is overestimating, but still pre-emptively scaling - storing more seasons and adjusting alpha, beta and gamma values
-would reduce the overestimation and produce more accurate results.
-
-For a more detailed example, [see the example in
-`/examples/simple-holt-winters`](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/simple-holt-winters).
-
-### Advanced tuning
-
-There are more configuration options for the Holt-Winters algorithm, which in this project uses the
-[statsmodels](https://www.statsmodels.org/) Python package. These are the additional configuration options, which are
-documented by the [Holt-Winters Exponential Smoothing statsmodels
-documentation](https://www.statsmodels.org/dev/generated/statsmodels.tsa.holtwinters.ExponentialSmoothing.html) - the
-names of the variables in this documentation map to the camelcase names described here.
-
-- **dampedTrend** - Boolean value to determine if the trend should be damped.
-- **initializationMethod** - Which initialization method to use, see statsmodels for details, either `estimated`,
-`heuristic`, `known`, or `legacy-heuristic`
-- **initialLevel** - The initial level value, required if `initializationMethod` is `known`.
-- **initialTrend** - The initial trend value, required if `initializationMethod` is `known`.
-- **initialSeasonal** - The initial seasonal value, required if `initializationMethod` is `known`.
-
-### Holt-Winters Runtime Tuning
-
-The HPA+ supports dynamically fetching the tuning values for the Holt-Winters algorithm (`alpha`, `beta`, and `gamma`).
-
-This is done using a `hook` system, to see more information of how the dynamic hook system works [visit the hooks
-user guide](./hooks.md)
-
-For example, a hook using a HTTP request to fetch the values of runtime is configured as:
 
 ```yaml
 models:
-- type: HoltWinters
-  name: simple-holt-winters
-  perSyncPeriod: 1
-  startInterval: 60s
-  startIntervalResetDuration: 5m
-  holtWinters:
-    runtimeTuningFetchHook:
-      type: "http"
-      timeout: 2500
-      http:
-        method: "GET"
-        url: "http://tuning/holt_winters"
-        successCodes:
-          - 200
-        parameterMode: body
-    seasonalPeriods: 6
-    storedSeasons: 4
-    trend: additive
-    seasonal: additive
+  - type: HoltWinters
+    name: seasonal-predictor
+    perSyncPeriod: 1
+    startInterval: 60s
+    holtWinters:
+      alpha: 0.9
+      beta: 0.9
+      gamma: 0.9
+      seasonalPeriods: 6
+      storedSeasons: 4
+      trend: additive
+      seasonal: additive
 ```
 
-> Note this uses the `parameterMode: body` instead of `parameterMode: query`, this is because for large amounts of
-> data the URL generated can become too long and invalid. See
-> [#89](https://github.com/cslab-ntua/HPA-Plus/issues/89).
+Key fields:
 
-The hook is defined with the name `runtimeTuningFetchHook`.
+- `holtWinters.alpha`, `beta`, `gamma`: smoothing factors.
+- `holtWinters.seasonalPeriods`: season length in sync periods.
+- `holtWinters.storedSeasons`: how many seasons to retain.
+- `holtWinters.trend`, `seasonal`: additive or multiplicative behavior.
+- `holtWinters.runtimeTuningFetchHook`: optional hook-based runtime tuning.
 
-The supported hook types for the HPA+ are:
+See:
 
-- HTTP requests
+- [`examples/simple-holt-winters/hpa-plus.yaml`](../../examples/simple-holt-winters/hpa-plus.yaml)
+- [`examples/dynamic-holt-winters/hpa-plus.yaml`](../../examples/dynamic-holt-winters/hpa-plus.yaml)
+- [hooks.md](./hooks.md)
 
-The process is as follows:
+## ARIMA
 
-1. HPA+ begins Holt-Winters calculation.
-2. The values are initially set to any hardcoded values supplied in the configuration.
-3. A runtime tuning configuration has been supplied, using this configuration a hook is executed (for example a HTTP
-request is sent).
-  - This hook will provide as input data in JSON that includes the current model, and an array of timestamped
-  previous scaling decisions (referred to as `evaluations`, [see below](#request-format)).
-  - The response should conform to the expected JSON structure ([see below](#response-format)).
-4. If the hook execution is successful, and the response is valid, the tuning values are extracted and any provided
-values overwrite the hardcoded values.
-5. If all required tuning values are provided the tuning values are used to calculate.
+Use this when you want a classical time-series model with explicit order control, optional SARIMA seasonality, or incremental updates between syncs.
 
-The tuning values can be both hardcoded and fetched at runtime, for example the `alpha` value could be calculated at
-runtime, and the `beta` and `gamma` values could be hardcoded in configuration:
+Example:
 
 ```yaml
 models:
-- type: HoltWinters
-  name: simple-holt-winters
-  perSyncPeriod: 1
-  holtWinters:
-    runtimeTuningFetchHook:
-      type: "http"
-      timeout: 2500
-      http:
-        method: "GET"
-        url: "http://tuning/holt_winters"
-        successCodes:
-          - 200
-        parameterMode: body
-    beta: 0.9
-    gamma: 0.9
-    seasonalPeriods: 6
-    storedSeasons: 4
-    trend: additive
-    seasonal: additive
+  - type: ARIMA
+    name: traffic-predictor
+    perSyncPeriod: 1
+    calculationTimeout: 180000
+    arima:
+      order: [2, 0, 3]
+      lookAhead: 60000
+      historySize: 400
+      autoArima: false
+      trend: "c"
+      useSarima: false
+      incrementalUpdates: true
+      refitEvery: 20
 ```
 
-Or the values could be provided, and if they are not returned by the external source the hardcoded values will be used
-as a backup:
+Key fields:
+
+- `arima.order`: `[p, d, q]`.
+- `arima.lookAhead`: forecast horizon in milliseconds.
+- `arima.historySize`: retained CPU-history samples.
+- `arima.autoArima`: let the model choose order automatically.
+- `arima.useSarima`, `seasonalOrder`, `seasonalPeriods`: seasonal ARIMA path.
+- `arima.incrementalUpdates`, `refitEvery`: stateful incremental runtime behavior.
+
+See [`arima.yaml`](../../testing/manifests/hpa-plus/arima.yaml).
+
+## XGBoost
+
+Use this when you want a tree-based model over CPU history with more nonlinear fitting capacity than the simpler statistical models.
+
+Example:
 
 ```yaml
 models:
-- type: HoltWinters
-  name: simple-holt-winters
-  perSyncPeriod: 1
-  holtWinters:
-    runtimeTuningFetchHook:
-      type: "http"
-      timeout: 2500
-      http:
-        method: "GET"
-        url: "http://tuning/holt_winters"
-        successCodes:
-          - 200
-        parameterMode: body
-    alpha: 0.9
-    beta: 0.9
-    gamma: 0.9
-    seasonalPeriods: 6
-    storedSeasons: 4
-    trend: additive
-    seasonal: additive
+  - type: XGBoost
+    name: cpu-predictor
+    perSyncPeriod: 1
+    calculationTimeout: 60000
+    xgboost:
+      historySize: 400
+      lookAhead: 60000
+      lags: 128
+      windowSize: 128
+      nEstimators: 200
+      maxDepth: 5
+      learningRate: 0.05
+      subsample: 1.0
+      colsampleBytree: 1.0
+      minChildWeight: 5
+      regLambda: 1
 ```
 
-If any value is missing, the HPA+ will report it as an error (e.g.
-`No alpha tuning value provided for Holt-Winters prediction`) and not calculate and scale.
+Key fields:
 
-#### Request Format
+- `xgboost.historySize`: retained CPU-history samples.
+- `xgboost.lags`, `windowSize`: feature-history depth.
+- `xgboost.nEstimators`, `maxDepth`, `learningRate`: core boosting controls.
+- `xgboost.subsample`, `colsampleBytree`: row/feature sampling.
+- `xgboost.minChildWeight`, `gamma`, `regLambda`, `regAlpha`: regularization controls.
 
-The data that the external source will recieve will be formatted as:
+See [`xgboost.yaml`](../../testing/manifests/hpa-plus/xgboost.yaml).
 
-```json
-{
-  "model": {
-    "type": "HoltWinters",
-    "name": "HoltWintersPrediction",
-    "perInterval": 1,
-    "linear": null,
-    "holtWinters": {
-      "alpha": null,
-      "beta": null,
-      "gamma": null,
-      "runtimeTuningFetchHook": {
-        "type": "http",
-        "timeout": 2500,
-        "shell": null,
-        "http": {
-          "method": "GET",
-          "url": "http://tuning/holt_winters",
-          "successCodes": [
-            200
-          ],
-          "parameterMode": "body"
-        }
-      },
-      "seasonalPeriods": 6,
-      "storedSeasons": 4,
-      "trend": "additive"
-    }
-  },
-  "replicaHistory": [
-    {
-      "time": "2020-10-19T19:12:20Z",
-      "replicas": 0
-    },
-    {
-      "time": "2020-10-19T19:12:40Z",
-      "replicas": 0
-    },
-    {
-      "time": "2020-10-19T19:13:00Z",
-      "replicas": 0
-    },
-  ]
-}
+## LightGBM
+
+Use this when you want the same CPU-history approach as XGBoost but with the LightGBM tree implementation and its own tuning knobs.
+
+Example:
+
+```yaml
+models:
+  - type: LightGBM
+    name: cpu-predictor
+    perSyncPeriod: 1
+    calculationTimeout: 60000
+    lightgbm:
+      historySize: 400
+      lookAhead: 60000
+      lags: 128
+      windowSize: 128
+      nEstimators: 200
+      maxDepth: -1
+      learningRate: 0.1
+      subsample: 1.0
+      colsampleBytree: 1.0
+      numLeaves: 31
+      minChildSamples: 20
+      regLambda: 0
+      regAlpha: 0
 ```
 
-This provides information around the model being used, how it is configured, and previous replica values
-(`replicaHistory`). This data could be used to help calculate the tuning values, or it could be ignored.
+Key fields:
 
-#### Response Format
+- `lightgbm.historySize`: retained CPU-history samples.
+- `lightgbm.lags`, `windowSize`: feature-history depth.
+- `lightgbm.nEstimators`, `maxDepth`, `learningRate`: core boosting controls.
+- `lightgbm.subsample`, `colsampleBytree`: row/feature sampling.
+- `lightgbm.numLeaves`, `minChildSamples`: LightGBM tree-shape controls.
+- `lightgbm.regLambda`, `regAlpha`: regularization controls.
 
-The response that the external tuning source should return must be in JSON, and in the following format:
+See [`lightgbm.yaml`](../../testing/manifests/hpa-plus/lightgbm.yaml).
 
-```json
-{
-  "alpha": <alpha_value>,
-  "beta": <beta_value>,
-  "gamma": <gamma_value>
-}
-```
+## Picking A Starting Point
 
-This is a simple JSON structure, for example:
+Use this rule of thumb:
 
-```json
-{
-  "alpha": 0.9,
-  "beta": 0.6,
-  "gamma": 0.8
-}
-```
+- Start with `Linear` if you want the simplest predictive behavior.
+- Use `HoltWinters` if the workload is strongly seasonal and interpretable season controls matter.
+- Use `ARIMA` if you want a classical time-series model with explicit order control or incremental updates.
+- Use `XGBoost` or `LightGBM` if you are tuning against recorded CPU history and want higher-capacity nonlinear models.
 
-Each of these values is optional, for example perhaps only the `alpha` and `beta` should be runtime, and `gamma` should
-rely on the hardcoded configuration value, this response would be valid:
+For the tree-based models in this repo, the practical workflow is:
 
-```json
-{
-  "alpha": 0.9,
-  "beta": 0.6
-}
-```
-
-For a more detailed example, [see the example in
-`/examples/dynamic-holt-winters`](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/dynamic-holt-winters).
+1. Capture realistic runtime history.
+2. Benchmark candidate parameter grids with the scripts under [`scripts/`](../../scripts/).
+3. Apply the chosen settings in the corresponding manifest under [`testing/manifests/hpa-plus/`](../../testing/manifests/hpa-plus/).

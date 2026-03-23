@@ -6,8 +6,11 @@
 
 # HPA+
 
-HPA+ is a Horizontal Pod Autoscaler (HPA) with predictive capabilities, allowing you to autoscale using statistical
-models so you can react ahead of time.
+HPA+ is a benchmark-first predictive autoscaling operator for Kubernetes.
+
+The point of this repository is not just “run a forecasting model next to HPA.” It is to keep the HPA control shape,
+capture runtime history, benchmark competing predictive strategies against that history, and then ship the chosen model
+back into the running autoscaler.
 
 ## Project lineage and attribution
 
@@ -21,29 +24,53 @@ PHPA, along with all upstream contributors who designed, implemented, and evolve
 on that foundation and continues development for our current use cases, while preserving attribution to the original
 work and its Apache-2.0 licensed codebase.
 
-## Why would I use it?
+## What This Repository Is
 
-HPA+ can deliver better scaling results by making proactive decisions to scale up ahead of demand, meaning that a
-resource does not have to wait for performance to degrade before autoscaling kicks in.
+This repo contains:
 
-## What systems would need it?
+- a Kubernetes operator and Helm chart for `PredictiveHorizontalPodAutoscaler`
+- multiple prediction backends, from simple trend-following to boosted trees
+- sample manifests for repeatable experiments
+- scripts for trace capture, benchmark sweeps, and graphing
+- a workflow oriented around tuning from real workload history instead of picking model settings blindly
 
-Any systems that have regular/predictable demand peaks/troughs.
+## Where It Helps
+
+HPA+ is useful when reactive-only scaling is systematically late for the workload you care about.
 
 Some use cases:
 
-* A service that sees demand peak between 3pm and 5pm every week day, this is a regular and predictable load which
-could be pre-empted.
-* A service which sees a surge in demand at 12pm every day for 10 minutes, this is such a short time interval that
-by the time a regular HPA made the decision to scale up there could already be major performance/availablity issues.
+- services with repeated daily or weekly ramps
+- short spikes where the normal HPA loop reacts after saturation has already started
+- workloads with expensive warm-up time, where being slightly early is cheaper than being slightly late
+- teams that want to compare multiple predictive models against the same captured history before standardizing on one
 
-HPA+ is not a silver bullet, and requires tuning using real data for there to be any benefits of using it. A poorly
-tuned HPA+ setup could easily end up being worse than a normal HPA.
+## Where It Does Not Help
 
-## How does it work?
+HPA+ is not a blanket upgrade over HPA.
 
-This project works by doing the same calculations as the Horizontal Pod Autoscaler does to determine how many replicas
-a resource should have, then applies statistical models against the calculated replica count and the replica history.
+It is a bad fit when:
+
+- demand is mostly random and not learnable from recent history
+- there is not enough runtime history to warm the model families you want to use
+- there is no appetite to benchmark and tune against real traces
+- operational simplicity matters more than shaving reaction time
+
+If you skip the tuning step, predictive autoscaling can easily be worse than plain HPA.
+
+## Control Loop
+
+At each sync, the operator:
+
+1. computes the baseline desired replicas using HPA-style metric evaluation
+2. records the runtime history needed by the configured model family
+3. runs the selected model or models against that history
+4. optionally keeps the plain HPA baseline in the decision set via `includeHPA`
+5. combines the candidate outputs using `decisionType`
+6. applies the normal scale constraints such as behavior policies, stabilization windows, and min/max replicas
+
+So HPA+ does not replace the HPA mental model. It inserts prediction into the decision path and keeps the rest of the
+autoscaling envelope intact.
 
 ## Supported Kubernetes versions
 
@@ -53,22 +80,18 @@ was only available in `v1.23` and above.
 The autoscaler is only tested against the latest Kubernetes version - if there are bugs that affect older Kubernetes
 versions we will try to fix them, but there is no guarantee of support.
 
-## Features
+## Model Families In This Repo
 
-* Functionally identical to Horizontal Pod Autoscaler for calculating replica counts without prediction.
-* Choice of statistical models to apply over Horizontal Pod Autoscaler replica counting logic.
-  * Holt-Winters Smoothing
-  * Linear Regression
-* Allows customisation of Kubernetes autoscaling options without master node access. Can therefore work on managed
-solutions such as EKS or GCP.
-  * CPU Initialization Period.
-  * Downscale Stabilization.
-  * Sync Period.
+- `Linear` and `HoltWinters` operate over replica-history style inputs
+- `ARIMA`, `XGBoost`, and `LightGBM` operate over aggregate CPU-history inputs
+- the repository includes both sample manifests and benchmark tooling for the tree-based models
 
-## What does HPA+ look like?
+See [models.md](./docs/user-guide/models.md) for the current repo-specific model guide.
 
-HPA+ objects are designed to be as similar in configuration to Horizontal Pod Autoscalers as possible, with extra
-configuration options.
+## Resource Shape
+
+The custom resource keeps the HPA shape on purpose. `scaleTargetRef`, `metrics`, `behavior`, `minReplicas`, and
+`maxReplicas` stay familiar; prediction is introduced through `spec.models`.
 
 HPA+ has its own custom resource:
 
@@ -102,8 +125,8 @@ spec:
         historySize: 6
 ```
 
-This HPA+ object acts like a Horizontal Pod Autoscaler and autoscales to try and keep the target resource's CPU utilization at
-50%, but with the extra predictive layer of a linear regression model applied to the results.
+This object still behaves like a CPU-targeted autoscaler. The difference is that the controller now records history for
+the `Linear` model and lets that model contribute to the final replica decision.
 
 ## Installation
 
@@ -133,6 +156,14 @@ source:
 
 3. Deploy one of the sample manifests (`testing/manifests/hpa-plus/*.yaml` or `examples/**/hpa-plus.yaml`) to exercise
    the controller.
+
+## Common workflows
+
+For the local benchmarking and sample environment used in this repository:
+
+* Bootstrap the LightGBM sample environment with [`scripts/bootstrap_lightgbm_environment.sh`](./scripts/bootstrap_lightgbm_environment.sh).
+* Run the wider LightGBM benchmark matrix with [`scripts/run_lightgbm_benchmark_matrix.sh`](./scripts/run_lightgbm_benchmark_matrix.sh).
+* Compare decision-trace utilization with [`scripts/compare_decision_trace_utilization.py`](./scripts/compare_decision_trace_utilization.py) and plot raw utilization traces with [`scripts/plot_decision_trace_utilization_compare.py`](./scripts/plot_decision_trace_utilization_compare.py).
 
 ## Quick start
 

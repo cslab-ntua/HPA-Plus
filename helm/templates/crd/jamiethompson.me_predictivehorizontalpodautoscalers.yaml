@@ -920,6 +920,66 @@ spec:
                       - storedSeasons
                       - trend
                       type: object
+                    lightgbm:
+                      description: lightgbm is the configuration to use for the LightGBM
+                        model, it will only be used if the type is set to 'LightGBM'
+                      properties:
+                        colsampleBytree:
+                          maximum: 1
+                          minimum: 0
+                          type: number
+                        historySize:
+                          description: historySize is how many timestamped replica
+                            counts should be stored for this model, older entries
+                            are pruned.
+                          minimum: 1
+                          type: integer
+                        lags:
+                          description: lags controls how many previous CPU usage samples
+                            are used as features for training.
+                          minimum: 1
+                          type: integer
+                        learningRate:
+                          minimum: 0
+                          type: number
+                        lookAhead:
+                          description: lookAhead is how far ahead (in milliseconds)
+                            the prediction should forecast.
+                          minimum: 1
+                          type: integer
+                        maxDepth:
+                          description: maxDepth follows LightGBM semantics; use -1
+                            for no depth limit.
+                          type: integer
+                        minChildSamples:
+                          minimum: 1
+                          type: integer
+                        nEstimators:
+                          minimum: 1
+                          type: integer
+                        numLeaves:
+                          minimum: 2
+                          type: integer
+                        objective:
+                          description: objective defines the LightGBM objective function,
+                            defaults to regression.
+                          type: string
+                        regAlpha:
+                          type: number
+                        regLambda:
+                          type: number
+                        subsample:
+                          maximum: 1
+                          minimum: 0
+                          type: number
+                        windowSize:
+                          minimum: 1
+                          type: integer
+                      required:
+                      - historySize
+                      - lags
+                      - lookAhead
+                      type: object
                     linear:
                       description: linear is the configuration to use for the linear
                         regression model, it will only be used if the type is set
@@ -986,6 +1046,7 @@ spec:
                       - HoltWinters
                       - ARIMA
                       - XGBoost
+                      - LightGBM
                       type: string
                     xgboost:
                       description: xgboost is the configuration to use for the XGBoost
@@ -1017,7 +1078,9 @@ spec:
                           minimum: 1
                           type: integer
                         maxDepth:
-                          minimum: 1
+                          description: maxDepth follows LightGBM semantics; use -1
+                            for no depth limit.
+                          minimum: -1
                           type: integer
                         minChildWeight:
                           minimum: 0

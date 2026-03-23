@@ -561,7 +561,9 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 		} else {
 			if !historyReady {
 				currentHistorySize := len(modelHistory.ReplicaHistory)
-				if model.Type == jamiethompsonmev1alpha1.TypeArima || model.Type == jamiethompsonmev1alpha1.TypeXGBoost {
+				if model.Type == jamiethompsonmev1alpha1.TypeArima ||
+					model.Type == jamiethompsonmev1alpha1.TypeXGBoost ||
+					model.Type == jamiethompsonmev1alpha1.TypeLightGBM {
 					currentHistorySize = countCPUHistory(modelHistory.ReplicaHistory)
 				}
 				logger.V(1).Info("Skipping model for this sync period, not enough history recorded to satisfy history size",
@@ -858,6 +860,10 @@ func requiredHistorySize(model *jamiethompsonmev1alpha1.Model) int {
 		if model.XGBoost != nil {
 			return model.XGBoost.HistorySize
 		}
+	case jamiethompsonmev1alpha1.TypeLightGBM:
+		if model.LightGBM != nil {
+			return model.LightGBM.HistorySize
+		}
 	case jamiethompsonmev1alpha1.TypeArima:
 		if model.Arima != nil && model.Arima.HistorySize != nil {
 			return *model.Arima.HistorySize
@@ -885,7 +891,9 @@ func modelHasSufficientHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 	if required <= 0 {
 		return true
 	}
-	if model.Type == jamiethompsonmev1alpha1.TypeArima || model.Type == jamiethompsonmev1alpha1.TypeXGBoost {
+	if model.Type == jamiethompsonmev1alpha1.TypeArima ||
+		model.Type == jamiethompsonmev1alpha1.TypeXGBoost ||
+		model.Type == jamiethompsonmev1alpha1.TypeLightGBM {
 		return countCPUHistory(replicaHistory) >= required
 	}
 	return len(replicaHistory) >= required

@@ -34,6 +34,16 @@ func TestRequiredHistorySize(t *testing.T) {
 			expected: 10,
 		},
 		{
+			name: "lightgbm",
+			model: jamiethompsonmev1alpha1.Model{
+				Type: jamiethompsonmev1alpha1.TypeLightGBM,
+				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+					HistorySize: 14,
+				},
+			},
+			expected: 14,
+		},
+		{
 			name: "arima-with-history",
 			model: jamiethompsonmev1alpha1.Model{
 				Type: jamiethompsonmev1alpha1.TypeArima,
@@ -110,6 +120,17 @@ func TestModelHasSufficientHistory(t *testing.T) {
 			want:    false,
 		},
 		{
+			name: "lightgbm-cpu-history",
+			model: jamiethompsonmev1alpha1.Model{
+				Type: jamiethompsonmev1alpha1.TypeLightGBM,
+				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+					HistorySize: 3,
+				},
+			},
+			history: 2,
+			want:    false,
+		},
+		{
 			name: "no-requirement",
 			model: jamiethompsonmev1alpha1.Model{
 				Type: "unknown",
@@ -122,6 +143,12 @@ func TestModelHasSufficientHistory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			history := make([]jamiethompsonmev1alpha1.TimestampedReplicas, tt.history)
+			if tt.model.Type == jamiethompsonmev1alpha1.TypeXGBoost || tt.model.Type == jamiethompsonmev1alpha1.TypeLightGBM {
+				for i := range history {
+					value := int64(i + 1)
+					history[i].TotalCPUUsageMillicores = &value
+				}
+			}
 			if got := modelHasSufficientHistory(&tt.model, history); got != tt.want {
 				t.Fatalf("modelHasSufficientHistory() = %v, want %v", got, tt.want)
 			}

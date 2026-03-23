@@ -37,6 +37,7 @@ const (
 	TypeLinear      = "Linear"
 	TypeArima       = "ARIMA"
 	TypeXGBoost     = "XGBoost"
+	TypeLightGBM    = "LightGBM"
 )
 
 const (
@@ -143,7 +144,8 @@ type XGBoost struct {
 	// +optional
 	WindowSize *int `json:"windowSize,omitempty"`
 
-	// +kubebuilder:validation:Minimum=1
+	// maxDepth follows LightGBM semantics; use -1 for no depth limit.
+	// +kubebuilder:validation:Minimum=-1
 	// +optional
 	MaxDepth *int `json:"maxDepth,omitempty"`
 
@@ -175,6 +177,67 @@ type XGBoost struct {
 
 	// +optional
 	Gamma *float64 `json:"gamma,omitempty"`
+
+	// +optional
+	RegLambda *float64 `json:"regLambda,omitempty"`
+
+	// +optional
+	RegAlpha *float64 `json:"regAlpha,omitempty"`
+}
+
+// LightGBM represents a gradient boosted tree configuration driven by LightGBM.
+// The runtime predictor trains on aggregate CPU usage history and converts the predicted
+// CPU demand back into replicas using the current pod CPU request and target utilization.
+type LightGBM struct {
+	// historySize is how many timestamped replica counts should be stored for this model, older entries are pruned.
+	// +kubebuilder:validation:Minimum=1
+	HistorySize int `json:"historySize"`
+
+	// lookAhead is how far ahead (in milliseconds) the prediction should forecast.
+	// +kubebuilder:validation:Minimum=1
+	LookAhead int `json:"lookAhead"`
+
+	// lags controls how many previous CPU usage samples are used as features for training.
+	// +kubebuilder:validation:Minimum=1
+	Lags int `json:"lags"`
+
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	WindowSize *int `json:"windowSize,omitempty"`
+
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxDepth *int `json:"maxDepth,omitempty"`
+
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	NEstimators *int `json:"nEstimators,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	LearningRate *float64 `json:"learningRate,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	// +optional
+	Subsample *float64 `json:"subsample,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	// +optional
+	ColsampleBytree *float64 `json:"colsampleBytree,omitempty"`
+
+	// objective defines the LightGBM objective function, defaults to regression.
+	// +optional
+	Objective *string `json:"objective,omitempty"`
+
+	// +kubebuilder:validation:Minimum=2
+	// +optional
+	NumLeaves *int `json:"numLeaves,omitempty"`
+
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MinChildSamples *int `json:"minChildSamples,omitempty"`
 
 	// +optional
 	RegLambda *float64 `json:"regLambda,omitempty"`
@@ -270,7 +333,7 @@ type Arima struct {
 type Model struct {
 	// type is the type of the model, for example 'Linear'. To see a full list of supported model types visit
 	// https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/models.md.
-	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA;XGBoost
+	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA;XGBoost;LightGBM
 	Type string `json:"type"`
 
 	// name is the name of the model, this can be any arbitrary name and is just used to distinguish between models if
@@ -341,6 +404,11 @@ type Model struct {
 	// 'XGBoost'
 	// +optional
 	XGBoost *XGBoost `json:"xgboost,omitempty"`
+
+	// lightgbm is the configuration to use for the LightGBM model, it will only be used if the type is set to
+	// 'LightGBM'
+	// +optional
+	LightGBM *LightGBM `json:"lightgbm,omitempty"`
 }
 
 // TimestampedReplicas is a replica count paired with the time that the replica count was created at.

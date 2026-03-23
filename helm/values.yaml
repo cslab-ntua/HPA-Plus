@@ -2,5 +2,5 @@ mode: cluster
 
 image:
   repository: dimitrisde/hpa-plus-operator
-  tag: xgboost-cpu-history-20260313-rawlog
+  tag: lightgbm-benchmark-20260319-163731
   pullPolicy: Always
