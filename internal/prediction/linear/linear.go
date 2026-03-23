@@ -19,11 +19,14 @@ package linear
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"sort"
 	"strconv"
+	"strings"
 
 	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
+	ctrlLog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -53,7 +56,8 @@ type Predict struct {
 	Runner AlgorithmRunner
 }
 
-// GetPrediction uses a linear regression to predict what the replica count should be based on historical evaluations
+// GetPrediction uses linear regression to predict aggregate CPU usage and converts that prediction
+// back into a replica count.
 func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
 	result, err := p.GetPredictionResult(model, replicaHistory)
 	if err != nil {
@@ -62,28 +66,34 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 	return result.Replicas, nil
 }
 
-// GetPredictionResult uses a linear regression to predict what the replica count should be based on historical evaluations
+// GetPredictionResult uses linear regression to predict aggregate CPU usage and converts that
+// prediction back into a replica count.
 func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (prediction.Result, error) {
 	if model.Linear == nil {
 		return prediction.Result{}, errors.New("no Linear configuration provided for model")
 	}
 
-	if len(replicaHistory) == 0 {
-		return prediction.Result{}, errors.New("no evaluations provided for Linear regression model")
+	trainingHistory := filterHistoryWithCPUUsage(replicaHistory)
+	if len(trainingHistory) == 0 {
+		return prediction.Result{}, errors.New("no CPU usage evaluations provided for Linear regression model")
 	}
 
-	if len(replicaHistory) == 1 {
+	sort.Slice(trainingHistory, func(i, j int) bool {
+		return trainingHistory[i].Time.Before(trainingHistory[j].Time)
+	})
+
+	if len(trainingHistory) == 1 {
 		// If only 1 evaluation is provided do not try and calculate using the linear regression model, just return
-		// the target replicas from the only evaluation
+		// the target replicas from the only evaluation.
 		return prediction.Result{
-			Replicas:      replicaHistory[0].Replicas,
-			ConsumedUntil: prediction.LatestTimestamp(replicaHistory),
+			Replicas:      trainingHistory[0].Replicas,
+			ConsumedUntil: prediction.LatestTimestamp(trainingHistory),
 		}, nil
 	}
 
 	parameters, err := json.Marshal(linearRegressionParameters{
 		LookAhead:      model.Linear.LookAhead,
-		ReplicaHistory: replicaHistory,
+		ReplicaHistory: trainingHistory,
 	})
 	if err != nil {
 		// Should not occur, panic
@@ -100,14 +110,20 @@ func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, repl
 		return prediction.Result{}, err
 	}
 
-	predictedReplicas, err := strconv.Atoi(value)
+	predictedUsage, err := parsePredictedCPUUsage(value)
 	if err != nil {
 		return prediction.Result{}, err
 	}
 
+	predictedReplicas, err := convertPredictedCPUUsageToReplicas(model, predictedUsage)
+	if err != nil {
+		return prediction.Result{}, err
+	}
+	logRawForecast(model, predictedUsage, predictedReplicas)
+
 	return prediction.Result{
-		Replicas:      int32(predictedReplicas),
-		ConsumedUntil: prediction.LatestTimestamp(replicaHistory),
+		Replicas:      predictedReplicas,
+		ConsumedUntil: prediction.LatestTimestamp(trainingHistory),
 	}, nil
 }
 
@@ -116,24 +132,138 @@ func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 		return nil, errors.New("no Linear configuration provided for model")
 	}
 
-	if len(replicaHistory) < model.Linear.HistorySize {
+	cpuHistoryCount := countCPUUsageEntries(replicaHistory)
+	if cpuHistoryCount == 0 {
+		if len(replicaHistory) <= model.Linear.HistorySize {
+			return replicaHistory, nil
+		}
+
+		sort.Slice(replicaHistory, func(i, j int) bool {
+			return !replicaHistory[i].Time.Before(replicaHistory[j].Time)
+		})
+
+		for i := len(replicaHistory) - 1; i >= model.Linear.HistorySize; i-- {
+			replicaHistory = append(replicaHistory[:i], replicaHistory[i+1:]...)
+		}
+
 		return replicaHistory, nil
 	}
 
-	// Sort by date created, newest first
-	sort.Slice(replicaHistory, func(i, j int) bool {
-		return !replicaHistory[i].Time.Before(replicaHistory[j].Time)
-	})
-
-	// Remove oldest to fit into requirements, have to loop from the end to allow deletion without affecting indices
-	for i := len(replicaHistory) - 1; i >= model.Linear.HistorySize; i-- {
-		replicaHistory = append(replicaHistory[:i], replicaHistory[i+1:]...)
+	if cpuHistoryCount <= model.Linear.HistorySize {
+		return replicaHistory, nil
 	}
 
-	return replicaHistory, nil
+	// Keep the newest CPU-backed samples even if the input history ordering is disturbed.
+	sort.Slice(replicaHistory, func(i, j int) bool {
+		return replicaHistory[i].Time.Before(replicaHistory[j].Time)
+	})
+
+	return pruneHistoryByCPUUsage(replicaHistory, model.Linear.HistorySize), nil
 }
 
 // GetType returns the type of the Prediction model
 func (p *Predict) GetType() string {
 	return jamiethompsonmev1alpha1.TypeLinear
+}
+
+func filterHistoryWithCPUUsage(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
+	filtered := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 0, len(replicaHistory))
+	for _, entry := range replicaHistory {
+		if entry.TotalCPUUsageMillicores == nil {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
+func countCPUUsageEntries(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) int {
+	count := 0
+	for _, entry := range replicaHistory {
+		if entry.TotalCPUUsageMillicores != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func pruneHistoryByCPUUsage(
+	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+	maxCPUEntries int,
+) []jamiethompsonmev1alpha1.TimestampedReplicas {
+	if maxCPUEntries <= 0 {
+		return []jamiethompsonmev1alpha1.TimestampedReplicas{}
+	}
+
+	cpuEntriesSeen := 0
+	start := len(replicaHistory)
+	for idx := len(replicaHistory) - 1; idx >= 0; idx-- {
+		if replicaHistory[idx].TotalCPUUsageMillicores != nil {
+			cpuEntriesSeen++
+		}
+		if cpuEntriesSeen >= maxCPUEntries {
+			start = idx
+			break
+		}
+	}
+
+	if start <= 0 {
+		return replicaHistory
+	}
+
+	return replicaHistory[start:]
+}
+
+func parsePredictedCPUUsage(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, errors.New("empty Linear regression prediction output")
+	}
+
+	predictedUsage, err := strconv.ParseInt(value, 10, 64)
+	if err == nil {
+		return predictedUsage, nil
+	}
+
+	predictedUsageFloat, floatErr := strconv.ParseFloat(value, 64)
+	if floatErr != nil {
+		return 0, err
+	}
+
+	return int64(math.Ceil(predictedUsageFloat)), nil
+}
+
+func convertPredictedCPUUsageToReplicas(model *jamiethompsonmev1alpha1.Model, predictedUsage int64) (int32, error) {
+	if model.CPURequestPerPodMillicores <= 0 {
+		return 0, errors.New("missing CPU request per pod for Linear CPU-history prediction")
+	}
+	if model.TargetCPUUtilizationPercentage <= 0 {
+		return 0, errors.New("missing target CPU utilization for Linear CPU-history prediction")
+	}
+
+	if predictedUsage < 0 {
+		predictedUsage = 0
+	}
+
+	targetPerPod := float64(model.CPURequestPerPodMillicores) * (float64(model.TargetCPUUtilizationPercentage) / 100.0)
+	if targetPerPod <= 0 {
+		return 0, errors.New("invalid CPU target conversion values for Linear CPU-history prediction")
+	}
+
+	return int32(math.Ceil(float64(predictedUsage) / targetPerPod)), nil
+}
+
+func logRawForecast(model *jamiethompsonmev1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
+	sessionID := model.Name
+	if model.SessionID != "" {
+		sessionID = model.SessionID
+	}
+
+	ctrlLog.Log.WithName("linear").Info(
+		"Linear raw CPU forecast ready",
+		"sessionID", sessionID,
+		"modelName", model.Name,
+		"predictedUsageMillicores", predictedUsage,
+		"predictedReplicas", predictedReplicas,
+	)
 }

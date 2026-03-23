@@ -23,6 +23,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 
 	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 )
 
 // Validate performs validation on the HPA+, will return an error if the HPA+ is not valid
@@ -83,6 +84,9 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 				return fmt.Errorf("invalid model '%s', type is '%s' but no Holt Winters configuration provided",
 					model.Name, model.Type)
 			}
+			if !hasCPUUtilizationMetric {
+				return fmt.Errorf("invalid model '%s', Holt-Winters CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
+			}
 
 			if hw.RuntimeTuningFetchHook != nil {
 				hook := hw.RuntimeTuningFetchHook
@@ -93,9 +97,14 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 			}
 		}
 
-		if model.Type == jamiethompsonmev1alpha1.TypeLinear && model.Linear == nil {
-			return fmt.Errorf("invalid model '%s', type is '%s' but no Linear Regression configuration provided",
-				model.Name, model.Type)
+		if model.Type == jamiethompsonmev1alpha1.TypeLinear {
+			if model.Linear == nil {
+				return fmt.Errorf("invalid model '%s', type is '%s' but no Linear Regression configuration provided",
+					model.Name, model.Type)
+			}
+			if !hasCPUUtilizationMetric {
+				return fmt.Errorf("invalid model '%s', Linear CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
+			}
 		}
 
 		if model.Type == jamiethompsonmev1alpha1.TypeArima && model.Arima == nil {
@@ -104,9 +113,6 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 		}
 
 		if model.Type == jamiethompsonmev1alpha1.TypeArima && model.Arima != nil {
-			if !hasCPUUtilizationMetric {
-				return fmt.Errorf("invalid model '%s', ARIMA CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
-			}
 			arima := model.Arima
 			if len(arima.Order) != 3 {
 				return fmt.Errorf("invalid model '%s', ARIMA order must have exactly 3 parameters [p, d, q], got %d",
@@ -150,9 +156,6 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 			if xb == nil {
 				return fmt.Errorf("invalid model '%s', type is '%s' but no XGBoost configuration provided",
 					model.Name, model.Type)
-			}
-			if !hasCPUUtilizationMetric {
-				return fmt.Errorf("invalid model '%s', XGBoost CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
 			}
 			if xb.HistorySize < 1 {
 				return fmt.Errorf("invalid model '%s', XGBoost historySize must be >= 1", model.Name)
@@ -203,9 +206,6 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 				return fmt.Errorf("invalid model '%s', type is '%s' but no LightGBM configuration provided",
 					model.Name, model.Type)
 			}
-			if !hasCPUUtilizationMetric {
-				return fmt.Errorf("invalid model '%s', LightGBM CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
-			}
 			if lgb.HistorySize < 1 {
 				return fmt.Errorf("invalid model '%s', LightGBM historySize must be >= 1", model.Name)
 			}
@@ -253,6 +253,10 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 			if lgb.RegAlpha != nil && *lgb.RegAlpha < 0 {
 				return fmt.Errorf("invalid model '%s', LightGBM regAlpha must be >= 0", model.Name)
 			}
+		}
+
+		if prediction.UsesCPUHistory(model.Type) && !hasCPUUtilizationMetric {
+			return fmt.Errorf("invalid model '%s', %s CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name, model.Type)
 		}
 	}
 	return nil

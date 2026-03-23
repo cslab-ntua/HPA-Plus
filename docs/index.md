@@ -31,7 +31,8 @@ tuned HPA+ setup could easily end up being worse than a normal HPA.
 ## How does it work?
 
 This project works by doing the same calculations as the Horizontal Pod Autoscaler does to determine how many replicas
-a resource should have, then applies statistical models against the calculated replica count and the replica history.
+a resource should have, then applies predictive models against recorded runtime history. In the current repository, the
+models learn from aggregate CPU usage history and convert their forecasts back into replica targets.
 
 ## Supported Kubernetes versions
 

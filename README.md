@@ -82,8 +82,9 @@ versions we will try to fix them, but there is no guarantee of support.
 
 ## Model Families In This Repo
 
-- `Linear` and `HoltWinters` operate over replica-history style inputs
-- `ARIMA`, `XGBoost`, and `LightGBM` operate over aggregate CPU-history inputs
+- All current predictors in this repo operate over aggregate CPU-history inputs
+- `Linear` and `HoltWinters` are the lighter statistical options
+- `ARIMA`, `XGBoost`, and `LightGBM` add progressively more modeling capacity and tuning surface
 - the repository includes both sample manifests and benchmark tooling for the tree-based models
 
 See [models.md](./docs/user-guide/models.md) for the current repo-specific model guide.

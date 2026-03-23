@@ -2,5 +2,5 @@ mode: cluster
 
 image:
   repository: dimitrisde/hpa-plus-operator
-  tag: lightgbm-benchmark-20260319-163731
+  tag: cpu-history-all-models-20260323-113811
   pullPolicy: Always

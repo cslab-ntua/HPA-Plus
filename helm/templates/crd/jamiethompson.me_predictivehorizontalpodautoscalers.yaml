@@ -948,8 +948,7 @@ spec:
                           minimum: 1
                           type: integer
                         maxDepth:
-                          description: maxDepth follows LightGBM semantics; use -1
-                            for no depth limit.
+                          minimum: 1
                           type: integer
                         minChildSamples:
                           minimum: 1

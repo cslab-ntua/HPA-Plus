@@ -44,6 +44,15 @@ func makeInstance(model jamiethompsonmev1alpha1.Model) *jamiethompsonmev1alpha1.
 	}
 }
 
+func makeInstanceWithoutMetrics(model jamiethompsonmev1alpha1.Model) *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler {
+	return &jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler{
+		Spec: jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerSpec{
+			MaxReplicas: 10,
+			Models:      []jamiethompsonmev1alpha1.Model{model},
+		},
+	}
+}
+
 func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -195,5 +204,55 @@ func TestValidateAllowsLightGBMUnboundedMaxDepth(t *testing.T) {
 
 	if err := Validate(instance); err != nil {
 		t.Fatalf("expected maxDepth=-1 to be valid, got %v", err)
+	}
+}
+
+func TestValidateRejectsCPUHistoryModelsWithoutCPUUtilizationMetric(t *testing.T) {
+	tests := []struct {
+		name    string
+		model   jamiethompsonmev1alpha1.Model
+		wantErr string
+	}{
+		{
+			name: "linear",
+			model: jamiethompsonmev1alpha1.Model{
+				Name: "linear",
+				Type: jamiethompsonmev1alpha1.TypeLinear,
+				Linear: &jamiethompsonmev1alpha1.Linear{
+					HistorySize: 4,
+					LookAhead:   1000,
+				},
+			},
+			wantErr: "Linear CPU-history prediction requires a CPU resource metric with averageUtilization configured",
+		},
+		{
+			name: "holtwinters",
+			model: jamiethompsonmev1alpha1.Model{
+				Name: "hw",
+				Type: jamiethompsonmev1alpha1.TypeHoltWinters,
+				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+					Alpha:           float64Ptr(0.3),
+					Beta:            float64Ptr(0.2),
+					Gamma:           float64Ptr(0.1),
+					SeasonalPeriods: 2,
+					StoredSeasons:   3,
+					Trend:           "add",
+					Seasonal:        "add",
+				},
+			},
+			wantErr: "Holt-Winters CPU-history prediction requires a CPU resource metric with averageUtilization configured",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate(makeInstanceWithoutMetrics(tt.model))
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %q", tt.wantErr, err.Error())
+			}
+		})
 	}
 }

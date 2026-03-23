@@ -181,11 +181,11 @@ spec:
 
 This autoscaler works by using the same logic that the Horizontal Pod Autoscaler uses to calculate the number of
 replicas a target deployment should have, in this example it tries to make sure that the average CPU utilization is
-`50%`. Once it calculates this Horizontal Pod Autoscaler target value, it then stores it and combines it with previous
-calculations, feeding it into a linear regression model to try and fit a better prediction.
+`50%`. It also records aggregate CPU usage over time and feeds that CPU-history series into a linear regression model to
+predict demand ahead of time.
 
 This example is not hugely practical, it serves primarily as a demonstration, as such it only stores the last 60 seconds
-worth of replica target values and tries to fit this into a linear regression. You can see some sample results in
+worth of CPU-history samples and tries to fit this into a linear regression. You can see some sample results in
 this graph:
 
 ![Calculated HPA values vs linear regression predicted values](../img/getting_started_linear_regression.svg)
@@ -235,7 +235,7 @@ behavior:
   - The linear regression is set to run every time the autoscaler is run (every sync period), in this example it is
     every 10 seconds (`perSyncPeriod: 1`).
   - The linear regression is predicting 10 seconds into the future (`lookAhead: 10000`).
-  - The linear regression uses a maximum of `6` previous target values for predicting (`storedValues: 6`).
+  - The linear regression uses a maximum of `6` previous CPU-history samples for predicting (`historySize: 6`).
 
 ```yaml
 models:
@@ -293,14 +293,14 @@ kubectl logs -l name=hpa-plus -f
 This is looking at the operators logs, these are the brains of the autoscaling program and will report how all
 autoscaling decisions are done.
 
-You can see the targets calculated by the HPA logic before the linear regression has been applied to them by querying
+You can inspect the CPU-history samples captured for the linear model by querying
 the autoscaler's config map:
 
 ```bash
-kubectl get configmap hpa-plus-simple-linear-data -o=json | jq -r '.data.data | fromjson | .modelHistories["simple-linear"].replicaHistory[] | .time,.replicas'
+kubectl get configmap hpa-plus-simple-linear-data -o=json | jq -r '.data.data | fromjson | .modelHistories["simple-linear"].replicaHistory[] | .time,.totalCPUUsageMillicores,.replicas'
 ```
 
-This prints out all of the timestamped replica counts that HPA+ will use for its prediction.
+This prints out the timestamped CPU samples, along with the recorded replica count at each point.
 
 You can increase the load by starting a new container, and looping to send a bunch of HTTP requests to our test
 application:

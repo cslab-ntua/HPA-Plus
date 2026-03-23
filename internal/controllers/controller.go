@@ -561,9 +561,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 		} else {
 			if !historyReady {
 				currentHistorySize := len(modelHistory.ReplicaHistory)
-				if model.Type == jamiethompsonmev1alpha1.TypeArima ||
-					model.Type == jamiethompsonmev1alpha1.TypeXGBoost ||
-					model.Type == jamiethompsonmev1alpha1.TypeLightGBM {
+				if prediction.UsesCPUHistory(model.Type) {
 					currentHistorySize = countCPUHistory(modelHistory.ReplicaHistory)
 				}
 				logger.V(1).Info("Skipping model for this sync period, not enough history recorded to satisfy history size",
@@ -891,9 +889,7 @@ func modelHasSufficientHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 	if required <= 0 {
 		return true
 	}
-	if model.Type == jamiethompsonmev1alpha1.TypeArima ||
-		model.Type == jamiethompsonmev1alpha1.TypeXGBoost ||
-		model.Type == jamiethompsonmev1alpha1.TypeLightGBM {
+	if prediction.UsesCPUHistory(model.Type) {
 		return countCPUHistory(replicaHistory) >= required
 	}
 	return len(replicaHistory) >= required

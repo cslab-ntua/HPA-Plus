@@ -94,3 +94,17 @@ func LatestTimestamp(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplica
 	}
 	return latest
 }
+
+// UsesCPUHistory reports whether the model trains on aggregate CPU usage samples instead of replica counts.
+func UsesCPUHistory(modelType string) bool {
+	switch modelType {
+	case jamiethompsonmev1alpha1.TypeLinear,
+		jamiethompsonmev1alpha1.TypeHoltWinters,
+		jamiethompsonmev1alpha1.TypeArima,
+		jamiethompsonmev1alpha1.TypeXGBoost,
+		jamiethompsonmev1alpha1.TypeLightGBM:
+		return true
+	default:
+		return false
+	}
+}
