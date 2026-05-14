@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 )
 
 func TestRequiredHistorySize(t *testing.T) {
@@ -109,6 +110,18 @@ func TestModelHasSufficientHistory(t *testing.T) {
 			want:    true,
 		},
 		{
+			name: "holtwinters-cpu-history",
+			model: jamiethompsonmev1alpha1.Model{
+				Type: jamiethompsonmev1alpha1.TypeHoltWinters,
+				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+					SeasonalPeriods: 2,
+					StoredSeasons:   2,
+				},
+			},
+			history: 3,
+			want:    false,
+		},
+		{
 			name: "insufficient-history",
 			model: jamiethompsonmev1alpha1.Model{
 				Type: jamiethompsonmev1alpha1.TypeXGBoost,
@@ -143,7 +156,7 @@ func TestModelHasSufficientHistory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			history := make([]jamiethompsonmev1alpha1.TimestampedReplicas, tt.history)
-			if tt.model.Type == jamiethompsonmev1alpha1.TypeXGBoost || tt.model.Type == jamiethompsonmev1alpha1.TypeLightGBM {
+			if prediction.UsesCPUHistory(tt.model.Type) {
 				for i := range history {
 					value := int64(i + 1)
 					history[i].TotalCPUUsageMillicores = &value

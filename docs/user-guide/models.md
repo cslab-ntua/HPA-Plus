@@ -27,20 +27,14 @@ All model entries support these common fields:
 - `startInterval`: optional delayed start boundary for time-aligned models.
 - `resetDuration`: optional idle timeout after which model state/history is reset.
 
-## Two Input Families
+## Training Input
+All models in the current repository learn from aggregate CPU usage history stored in the PHPA ConfigMap and convert predicted CPU demand back into replicas using the current CPU request per pod and target utilization.
 
-The models in this repo fall into two groups:
-
-- Replica-history models: `Linear`, `HoltWinters`
-  - These learn from the sequence of computed replica values over time.
-- CPU-history models: `ARIMA`, `XGBoost`, `LightGBM`
-  - These learn from aggregate CPU usage history stored in the PHPA ConfigMap and convert predicted CPU demand back into replicas using the current CPU request per pod and target utilization.
-
-If a CPU-history model does not yet have enough usable CPU samples, the controller falls back to the HPA path until the history is warm.
+If a model does not yet have enough usable CPU samples, the controller falls back to the HPA path until the history is warm.
 
 ## Linear
 
-Use this when you want the lightest-weight predictive layer and only need short-horizon trend following.
+Use this when you want the lightest-weight predictive layer and only need short-horizon trend following over CPU demand.
 
 Example:
 
@@ -57,13 +51,13 @@ models:
 Key fields:
 
 - `linear.lookAhead`: forecast horizon in milliseconds.
-- `linear.historySize`: number of stored replica-history samples.
+- `linear.historySize`: number of retained CPU-history samples.
 
 See [`examples/simple-linear/hpa-plus.yaml`](../../examples/simple-linear/hpa-plus.yaml).
 
 ## Holt-Winters
 
-Use this when the workload has a strong repeating seasonal pattern and you want explicit trend/seasonality controls.
+Use this when the workload has a strong repeating seasonal CPU pattern and you want explicit trend/seasonality controls.
 
 Example:
 
@@ -210,7 +204,7 @@ See [`lightgbm.yaml`](../../testing/manifests/hpa-plus/lightgbm.yaml).
 
 Use this rule of thumb:
 
-- Start with `Linear` if you want the simplest predictive behavior.
+- Start with `Linear` if you want the simplest CPU-history predictive behavior.
 - Use `HoltWinters` if the workload is strongly seasonal and interpretable season controls matter.
 - Use `ARIMA` if you want a classical time-series model with explicit order control or incremental updates.
 - Use `XGBoost` or `LightGBM` if you are tuning against recorded CPU history and want higher-capacity nonlinear models.

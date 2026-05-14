@@ -51,6 +51,7 @@ class TimestampedReplica:
     """
     time: str
     replicas: int
+    total_cpu_usage_millicores: Optional[int] = None
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)
@@ -103,7 +104,11 @@ for i, timestamped_replica in enumerate(algorithm_input.replica_history):
         sys.exit(1)
 
     x.append(search_time - datetime.timestamp(created))
-    y.append(timestamped_replica.replicas)
+    if timestamped_replica.total_cpu_usage_millicores is None:
+        print("Missing total_cpu_usage_millicores in history sample, exiting", file=sys.stderr)
+        sys.exit(1)
+
+    y.append(timestamped_replica.total_cpu_usage_millicores)
 
 # Add constant for OLS, constant is 1.0
 x = sm.add_constant(x)

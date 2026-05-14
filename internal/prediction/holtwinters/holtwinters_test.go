@@ -17,6 +17,7 @@ limitations under the License.
 package holtwinters_test
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -34,6 +35,18 @@ func intPtr(i int) *int {
 
 func float64Ptr(val float64) *float64 {
 	return &val
+}
+
+func withCPUHistory(history []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
+	out := make([]jamiethompsonmev1alpha1.TimestampedReplicas, len(history))
+	copy(out, history)
+	for i := range out {
+		if out[i].TotalCPUUsageMillicores == nil {
+			value := int64(out[i].Replicas)
+			out[i].TotalCPUUsageMillicores = &value
+		}
+	}
+	return out
 }
 
 func TestPredict_GetPrediction(t *testing.T) {
@@ -530,7 +543,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 		{
 			"Fail, additive, holt winters algorithm invalid response",
 			0,
-			errors.New(`strconv.Atoi: parsing "invalid": invalid syntax`),
+			errors.New(`strconv.ParseInt: parsing "invalid": invalid syntax`),
 			&holtwinters.Predict{
 				Runner: &fake.Run{
 					RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
@@ -954,7 +967,16 @@ func TestPredict_GetPrediction(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
-			result, err := test.predicter.GetPrediction(test.model, test.replicaHistory)
+			history := withCPUHistory(test.replicaHistory)
+			modelCopy := *test.model
+			if modelCopy.CPURequestPerPodMillicores == 0 {
+				modelCopy.CPURequestPerPodMillicores = 1
+			}
+			if modelCopy.TargetCPUUtilizationPercentage == 0 {
+				modelCopy.TargetCPUUtilizationPercentage = 100
+			}
+
+			result, err := test.predicter.GetPrediction(&modelCopy, history)
 			if !cmp.Equal(&err, &test.expectedErr, equateErrorMessage) {
 				t.Errorf("error mismatch (-want +got):\n%s", cmp.Diff(test.expectedErr, err, equateErrorMessage))
 				return
@@ -963,6 +985,99 @@ func TestPredict_GetPrediction(t *testing.T) {
 				t.Errorf("result mismatch (-want +got):\n%s", cmp.Diff(test.expected, result))
 			}
 		})
+	}
+}
+
+func TestPredict_PruneHistoryUsesCPUBackedSeasons(t *testing.T) {
+	predicter := &holtwinters.Predict{}
+	model := &jamiethompsonmev1alpha1.Model{
+		HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			SeasonalPeriods: 2,
+			StoredSeasons:   2,
+			Trend:           "add",
+			Seasonal:        "add",
+		},
+	}
+
+	cpu1 := int64(100)
+	cpu2 := int64(200)
+	cpu3 := int64(300)
+	cpu4 := int64(400)
+	cpu5 := int64(500)
+	cpu6 := int64(600)
+	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{Replicas: 1, Time: &metav1.Time{Time: time.Unix(1, 0).UTC()}, TotalCPUUsageMillicores: &cpu1},
+		{Replicas: 2, Time: &metav1.Time{Time: time.Unix(2, 0).UTC()}, TotalCPUUsageMillicores: &cpu1},
+		{Replicas: 3, Time: &metav1.Time{Time: time.Unix(3, 0).UTC()}, TotalCPUUsageMillicores: &cpu2},
+		{Replicas: 4, Time: &metav1.Time{Time: time.Unix(4, 0).UTC()}},
+		{Replicas: 5, Time: &metav1.Time{Time: time.Unix(5, 0).UTC()}, TotalCPUUsageMillicores: &cpu3},
+		{Replicas: 6, Time: &metav1.Time{Time: time.Unix(6, 0).UTC()}, TotalCPUUsageMillicores: &cpu4},
+		{Replicas: 7, Time: &metav1.Time{Time: time.Unix(7, 0).UTC()}, TotalCPUUsageMillicores: &cpu5},
+		{Replicas: 8, Time: &metav1.Time{Time: time.Unix(8, 0).UTC()}, TotalCPUUsageMillicores: &cpu6},
+	}
+
+	pruned, err := predicter.PruneHistory(model, history)
+	if err != nil {
+		t.Fatalf("PruneHistory() error = %v", err)
+	}
+
+	if diff := cmp.Diff(history[4:], pruned); diff != "" {
+		t.Fatalf("PruneHistory() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestPredict_GetPredictionSortsTrainingHistoryBeforeRunningAlgorithm(t *testing.T) {
+	type algorithmInput struct {
+		Series []float64 `json:"series"`
+	}
+
+	model := &jamiethompsonmev1alpha1.Model{
+		HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			Alpha:           float64Ptr(0.9),
+			Beta:            float64Ptr(0.9),
+			Gamma:           float64Ptr(0.9),
+			SeasonalPeriods: 2,
+			StoredSeasons:   6,
+			Trend:           "add",
+			Seasonal:        "add",
+		},
+		CPURequestPerPodMillicores:     100,
+		TargetCPUUtilizationPercentage: 100,
+	}
+
+	history := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 0, 12)
+	for i := 12; i >= 1; i-- {
+		replicas := int32(i)
+		usage := int64(i * 100)
+		history = append(history, jamiethompsonmev1alpha1.TimestampedReplicas{
+			Replicas:                replicas,
+			Time:                    &metav1.Time{Time: time.Unix(int64(i), 0).UTC()},
+			TotalCPUUsageMillicores: &usage,
+		})
+	}
+
+	predicter := &holtwinters.Predict{
+		Runner: &fake.Run{
+			RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
+				var input algorithmInput
+				if err := json.Unmarshal([]byte(value), &input); err != nil {
+					t.Fatalf("json.Unmarshal() error = %v", err)
+				}
+				want := []float64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200}
+				if diff := cmp.Diff(want, input.Series); diff != "" {
+					t.Fatalf("series order mismatch (-want +got):\n%s", diff)
+				}
+				return "300", nil
+			},
+		},
+	}
+
+	result, err := predicter.GetPrediction(model, history)
+	if err != nil {
+		t.Fatalf("GetPrediction() error = %v", err)
+	}
+	if result != 3 {
+		t.Fatalf("GetPrediction() = %d, want 3", result)
 	}
 }
 

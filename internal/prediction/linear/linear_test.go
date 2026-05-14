@@ -17,6 +17,7 @@ limitations under the License.
 package linear_test
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -30,6 +31,18 @@ import (
 
 func intPtr(i int) *int {
 	return &i
+}
+
+func withCPUHistory(history []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
+	out := make([]jamiethompsonmev1alpha1.TimestampedReplicas, len(history))
+	copy(out, history)
+	for i := range out {
+		if out[i].TotalCPUUsageMillicores == nil {
+			value := int64(out[i].Replicas)
+			out[i].TotalCPUUsageMillicores = &value
+		}
+	}
+	return out
 }
 
 func TestPredict_GetPrediction(t *testing.T) {
@@ -59,7 +72,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 		{
 			description: "Fail no evaluations",
 			expected:    0,
-			expectedErr: errors.New("no evaluations provided for Linear regression model"),
+			expectedErr: errors.New("no CPU usage evaluations provided for Linear regression model"),
 			predicter:   &linear.Predict{},
 			model: &jamiethompsonmev1alpha1.Model{
 				Type: jamiethompsonmev1alpha1.TypeLinear,
@@ -118,7 +131,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 		{
 			description: "Fail algorithm returns non-integer castable value",
 			expected:    0,
-			expectedErr: errors.New(`strconv.Atoi: parsing "invalid": invalid syntax`),
+			expectedErr: errors.New(`strconv.ParseInt: parsing "invalid": invalid syntax`),
 			predicter: &linear.Predict{
 				Runner: &fake.Run{
 					RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
@@ -200,7 +213,16 @@ func TestPredict_GetPrediction(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
-			result, err := test.predicter.GetPrediction(test.model, test.replicaHistory)
+			history := withCPUHistory(test.replicaHistory)
+			modelCopy := *test.model
+			if modelCopy.CPURequestPerPodMillicores == 0 {
+				modelCopy.CPURequestPerPodMillicores = 1
+			}
+			if modelCopy.TargetCPUUtilizationPercentage == 0 {
+				modelCopy.TargetCPUUtilizationPercentage = 100
+			}
+
+			result, err := test.predicter.GetPrediction(&modelCopy, history)
 			if !cmp.Equal(&err, &test.expectedErr, equateErrorMessage) {
 				t.Errorf("error mismatch (-want +got):\n%s", cmp.Diff(test.expectedErr, err, equateErrorMessage))
 				return
@@ -209,6 +231,126 @@ func TestPredict_GetPrediction(t *testing.T) {
 				t.Errorf("result mismatch (-want +got):\n%s", cmp.Diff(test.expected, result))
 			}
 		})
+	}
+}
+
+func TestPredict_PruneHistoryUsesCPUBackedEntries(t *testing.T) {
+	predicter := &linear.Predict{}
+	model := &jamiethompsonmev1alpha1.Model{
+		Linear: &jamiethompsonmev1alpha1.Linear{
+			HistorySize: 2,
+		},
+	}
+
+	cpu1 := int64(100)
+	cpu2 := int64(200)
+	cpu3 := int64(300)
+	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{Replicas: 1, Time: &metav1.Time{Time: time.Unix(1, 0).UTC()}},
+		{Replicas: 2, Time: &metav1.Time{Time: time.Unix(2, 0).UTC()}, TotalCPUUsageMillicores: &cpu1},
+		{Replicas: 3, Time: &metav1.Time{Time: time.Unix(3, 0).UTC()}, TotalCPUUsageMillicores: &cpu2},
+		{Replicas: 4, Time: &metav1.Time{Time: time.Unix(4, 0).UTC()}},
+		{Replicas: 5, Time: &metav1.Time{Time: time.Unix(5, 0).UTC()}, TotalCPUUsageMillicores: &cpu3},
+	}
+
+	pruned, err := predicter.PruneHistory(model, history)
+	if err != nil {
+		t.Fatalf("PruneHistory() error = %v", err)
+	}
+
+	if diff := cmp.Diff(history[2:], pruned); diff != "" {
+		t.Fatalf("PruneHistory() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestPredict_PruneHistoryUsesNewestCPUEntriesWhenInputUnsorted(t *testing.T) {
+	predicter := &linear.Predict{}
+	model := &jamiethompsonmev1alpha1.Model{
+		Linear: &jamiethompsonmev1alpha1.Linear{
+			HistorySize: 2,
+		},
+	}
+
+	cpu1 := int64(100)
+	cpu2 := int64(200)
+	cpu3 := int64(300)
+	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{Replicas: 5, Time: &metav1.Time{Time: time.Unix(5, 0).UTC()}, TotalCPUUsageMillicores: &cpu3},
+		{Replicas: 2, Time: &metav1.Time{Time: time.Unix(2, 0).UTC()}, TotalCPUUsageMillicores: &cpu1},
+		{Replicas: 4, Time: &metav1.Time{Time: time.Unix(4, 0).UTC()}},
+		{Replicas: 3, Time: &metav1.Time{Time: time.Unix(3, 0).UTC()}, TotalCPUUsageMillicores: &cpu2},
+		{Replicas: 1, Time: &metav1.Time{Time: time.Unix(1, 0).UTC()}},
+	}
+
+	pruned, err := predicter.PruneHistory(model, history)
+	if err != nil {
+		t.Fatalf("PruneHistory() error = %v", err)
+	}
+
+	expected := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{Replicas: 3, Time: &metav1.Time{Time: time.Unix(3, 0).UTC()}, TotalCPUUsageMillicores: &cpu2},
+		{Replicas: 4, Time: &metav1.Time{Time: time.Unix(4, 0).UTC()}},
+		{Replicas: 5, Time: &metav1.Time{Time: time.Unix(5, 0).UTC()}, TotalCPUUsageMillicores: &cpu3},
+	}
+	if diff := cmp.Diff(expected, pruned); diff != "" {
+		t.Fatalf("PruneHistory() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestPredict_GetPredictionSortsTrainingHistoryBeforeRunningAlgorithm(t *testing.T) {
+	type algorithmInput struct {
+		ReplicaHistory []struct {
+			Time string `json:"time"`
+		} `json:"replicaHistory"`
+	}
+
+	model := &jamiethompsonmev1alpha1.Model{
+		Type: jamiethompsonmev1alpha1.TypeLinear,
+		Linear: &jamiethompsonmev1alpha1.Linear{
+			HistorySize: 5,
+			LookAhead:   0,
+		},
+		CPURequestPerPodMillicores:     100,
+		TargetCPUUtilizationPercentage: 100,
+	}
+
+	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+		{Replicas: 3, Time: &metav1.Time{Time: time.Unix(3, 0).UTC()}},
+		{Replicas: 1, Time: &metav1.Time{Time: time.Unix(1, 0).UTC()}},
+		{Replicas: 2, Time: &metav1.Time{Time: time.Unix(2, 0).UTC()}},
+	}
+
+	predicter := &linear.Predict{
+		Runner: &fake.Run{
+			RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
+				var input algorithmInput
+				if err := json.Unmarshal([]byte(value), &input); err != nil {
+					t.Fatalf("json.Unmarshal() error = %v", err)
+				}
+				got := []string{
+					input.ReplicaHistory[0].Time,
+					input.ReplicaHistory[1].Time,
+					input.ReplicaHistory[2].Time,
+				}
+				want := []string{
+					"1970-01-01T00:00:01Z",
+					"1970-01-01T00:00:02Z",
+					"1970-01-01T00:00:03Z",
+				}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Fatalf("training order mismatch (-want +got):\n%s", diff)
+				}
+				return "300", nil
+			},
+		},
+	}
+
+	result, err := predicter.GetPrediction(model, withCPUHistory(history))
+	if err != nil {
+		t.Fatalf("GetPrediction() error = %v", err)
+	}
+	if result != 3 {
+		t.Fatalf("GetPrediction() = %d, want 3", result)
 	}
 }
 
