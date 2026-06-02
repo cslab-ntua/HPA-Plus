@@ -11,8 +11,7 @@ Deciding which metrics to use is done by using `MetricSpecs`, which are a key pa
       averageUtilization: 50
 ```
 
-To send these specs to the HPA+, add a config option called `metrics` to the HPA+, with a multiline string
-containing the metric list. For example:
+To send these specs to HPA+, add a `metrics` list to the `HPAPlus` spec. For example:
 
 ```yaml
 metrics:

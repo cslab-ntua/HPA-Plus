@@ -34,11 +34,11 @@ Installing HPA+ objects requires you to have installed the HPA+ operator onto yo
 Build/push the controller image and install the chart directly from this repository:
 
 ```bash
-export REGISTRY=docker.io/<your-user>
+export REGISTRY=<your-registry-or-dockerhub-user>
 export VERSION=$(git rev-parse --short HEAD)
 
-docker build -t ${REGISTRY}/hpa-plus-operator:${VERSION} .
-docker push ${REGISTRY}/hpa-plus-operator:${VERSION}
+make docker REGISTRY=${REGISTRY} VERSION=${VERSION}
+make push REGISTRY=${REGISTRY} VERSION=${VERSION}
 
 helm upgrade --install hpa-plus-operator ./helm \
   --namespace hpa-plus-system \
@@ -205,7 +205,7 @@ scaleTargetRef:
   name: php-apache
 ```
 
-- The minimum and maximum replicas that the deployment can be autoscaled to are set to the range `0-10`:
+- The minimum and maximum replicas that the deployment can be autoscaled to are set to the range `1-10`:
 
 ```yaml
 minReplicas: 1
@@ -283,7 +283,7 @@ kubectl get hpaplus simple-linear
 You can monitor the autoscaling process by running:
 
 ```bash
-kubectl logs -l name=hpa-plus -f
+kubectl logs -n hpa-plus-system -l name=hpa-plus-operator -f
 ```
 
 This is looking at the operators logs, these are the brains of the autoscaling program and will report how all
@@ -334,7 +334,6 @@ k3d cluster delete hpa-plus-test-cluster
 
 ## Conclusion
 
-This guide is intended to provide a simple walkthrough of how to install and use HPA+, the concepts outlined here
-can be used to deploy autoscalers with different predictive models. Check out the [examples in the project Git
-repository to see more
-samples](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples).
+This guide is intended to provide a simple walkthrough of how to install and use HPA+. The concepts outlined here can be
+used to deploy autoscalers with different predictive models; see the [model guide](./models.md) for the supported model
+families.

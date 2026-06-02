@@ -117,9 +117,9 @@ here](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
 ## models
 
 List of statistical models to apply.
-See [the models section for details](../../user-guide/models).
+See [the models section for details](../user-guide/models.md).
 
 ## metrics
 
 List of metrics to target for evaluating replica counts.
-See [the metrics section for details](../../user-guide/metrics).
+See [the metrics section for details](../user-guide/metrics.md).

@@ -1,22 +1,19 @@
-[![Build](https://github.com/cslab-ntua/HPA-Plus/workflows/main/badge.svg)](https://github.com/cslab-ntua/HPA-Plus/actions)
-[![go.dev](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat)](https://pkg.go.dev/github.com/cslab-ntua/HPA-Plus)
-[![Go Report Card](https://goreportcard.com/badge/github.com/cslab-ntua/HPA-Plus)](https://goreportcard.com/report/github.com/cslab-ntua/HPA-Plus)
 [![Docs](https://img.shields.io/badge/docs-GitHub-blue)](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs)
 [![License](https://img.shields.io/:license-apache-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 
 # HPA+
 
-HPA+ is a Horizontal Pod Autoscaler (HPA) with predictive capabilities, allowing you to autoscale using statistical
-models so you can react ahead of time.
+HPA+ is a benchmark-first predictive autoscaling operator for Kubernetes. It keeps the familiar HPA control shape while
+recording runtime history and letting configured forecasting models contribute to replica decisions.
 
 ## Why would I use it?
 
-HPA+ can deliver better scaling results by making proactive decisions to scale up ahead of demand, meaning that a
-resource does not have to wait for performance to degrade before autoscaling kicks in.
+HPA+ can deliver better scaling results when reactive-only scaling is systematically late. It can make proactive
+decisions ahead of repeated demand patterns, short spikes, or workloads with expensive warm-up time.
 
 ## What systems would need it?
 
-Any systems that have regular/predictable demand peaks/troughs.
+Any systems that have regular or learnable demand peaks/troughs.
 
 Some use cases:
 
@@ -26,7 +23,7 @@ could be pre-empted.
 by the time a regular HPA made the decision to scale up there could already be major performance/availablity issues.
 
 HPA+ is not a silver bullet, and requires tuning using real data for there to be any benefits of using it. A poorly
-tuned HPA+ setup could easily end up being worse than a normal HPA.
+tuned HPA+ setup can easily be worse than a normal HPA.
 
 ## How does it work?
 
@@ -45,7 +42,7 @@ versions we will try to fix them, but there is no guarantee of support.
 ## Features
 
 * Functionally identical to Horizontal Pod Autoscaler for calculating replica counts without prediction.
-* Choice of statistical models to apply over Horizontal Pod Autoscaler replica counting logic.
+* Choice of predictive models to apply over Horizontal Pod Autoscaler replica counting logic.
   * ARIMA
   * Holt-Winters Smoothing
   * Linear Regression
@@ -56,3 +53,4 @@ solutions such as EKS or GCP.
   * CPU Initialization Period.
   * Downscale Stabilization.
   * Sync Period.
+* HPA+ resources use `apiVersion: hpa.plus/v1alpha1` and `kind: HPAPlus`.
