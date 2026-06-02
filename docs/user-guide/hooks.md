@@ -20,7 +20,7 @@ holtWinters:
     timeout: 2500
     http:
       method: "GET"
-      url: "https://www.jamiethompson.me"
+      url: "https://www.hpa.plus"
       successCodes:
         - 200
       headers:
@@ -57,7 +57,7 @@ runtimeTuningFetchHook:
   timeout: 2500
   http:
     method: "POST"
-    url: "https://www.jamiethompson.me"
+    url: "https://www.hpa.plus"
     successCodes:
       - 200
       - 202

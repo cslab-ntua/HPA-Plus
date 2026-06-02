@@ -22,12 +22,12 @@ import (
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 )
 
 // Validate performs validation on the HPA+, will return an error if the HPA+ is not valid
-func Validate(instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler) error {
+func Validate(instance *hpaplusv1alpha1.HPAPlus) error {
 	spec := instance.Spec
 
 	err := validateMinMax(spec)
@@ -43,7 +43,7 @@ func Validate(instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscale
 	return nil
 }
 
-func validateMinMax(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerSpec) error {
+func validateMinMax(spec hpaplusv1alpha1.HPAPlusSpec) error {
 	if spec.MinReplicas != nil && spec.MaxReplicas < *spec.MinReplicas {
 		return fmt.Errorf("spec.maxReplicas (%d) cannot be less than spec.minReplicas (%d)",
 			spec.MaxReplicas, *spec.MinReplicas)
@@ -66,7 +66,7 @@ func validateMinMax(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 	return nil
 }
 
-func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerSpec) error {
+func validateModels(spec hpaplusv1alpha1.HPAPlusSpec) error {
 	hasCPUUtilizationMetric := false
 	for _, metric := range spec.Metrics {
 		if metric.Type == autoscalingv2.ResourceMetricSourceType &&
@@ -78,7 +78,7 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 	}
 
 	for _, model := range spec.Models {
-		if model.Type == jamiethompsonmev1alpha1.TypeHoltWinters {
+		if model.Type == hpaplusv1alpha1.TypeHoltWinters {
 			hw := model.HoltWinters
 			if hw == nil {
 				return fmt.Errorf("invalid model '%s', type is '%s' but no Holt Winters configuration provided",
@@ -90,14 +90,14 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 
 			if hw.RuntimeTuningFetchHook != nil {
 				hook := hw.RuntimeTuningFetchHook
-				if hook.Type == jamiethompsonmev1alpha1.HookTypeHTTP && hook.HTTP == nil {
+				if hook.Type == hpaplusv1alpha1.HookTypeHTTP && hook.HTTP == nil {
 					return fmt.Errorf("invalid model '%s', runtimeTuningFetchHook is type '%s' but no HTTP hook configuration provided",
 						model.Name, hook.Type)
 				}
 			}
 		}
 
-		if model.Type == jamiethompsonmev1alpha1.TypeLinear {
+		if model.Type == hpaplusv1alpha1.TypeLinear {
 			if model.Linear == nil {
 				return fmt.Errorf("invalid model '%s', type is '%s' but no Linear Regression configuration provided",
 					model.Name, model.Type)
@@ -107,12 +107,12 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 			}
 		}
 
-		if model.Type == jamiethompsonmev1alpha1.TypeArima && model.Arima == nil {
+		if model.Type == hpaplusv1alpha1.TypeArima && model.Arima == nil {
 			return fmt.Errorf("invalid model '%s', type is '%s' but no ARIMA configuration provided",
 				model.Name, model.Type)
 		}
 
-		if model.Type == jamiethompsonmev1alpha1.TypeArima && model.Arima != nil {
+		if model.Type == hpaplusv1alpha1.TypeArima && model.Arima != nil {
 			arima := model.Arima
 			if len(arima.Order) != 3 {
 				return fmt.Errorf("invalid model '%s', ARIMA order must have exactly 3 parameters [p, d, q], got %d",
@@ -151,7 +151,7 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 			}
 		}
 
-		if model.Type == jamiethompsonmev1alpha1.TypeXGBoost {
+		if model.Type == hpaplusv1alpha1.TypeXGBoost {
 			xb := model.XGBoost
 			if xb == nil {
 				return fmt.Errorf("invalid model '%s', type is '%s' but no XGBoost configuration provided",
@@ -200,7 +200,7 @@ func validateModels(spec jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscal
 			}
 		}
 
-		if model.Type == jamiethompsonmev1alpha1.TypeLightGBM {
+		if model.Type == hpaplusv1alpha1.TypeLightGBM {
 			lgb := model.LightGBM
 			if lgb == nil {
 				return fmt.Errorf("invalid model '%s', type is '%s' but no LightGBM configuration provided",

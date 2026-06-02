@@ -28,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	ctrlLog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -43,7 +43,7 @@ const incrementalWorkerPath = "algorithms/arima/incremental_worker.py"
 type arimaParameters struct {
 	Order                []int                                         `json:"order"`
 	LookAhead            int                                           `json:"lookAhead"`
-	ReplicaHistory       []jamiethompsonmev1alpha1.TimestampedReplicas `json:"replicaHistory"`
+	ReplicaHistory       []hpaplusv1alpha1.TimestampedReplicas `json:"replicaHistory"`
 	Trend                *string                                       `json:"trend,omitempty"`
 	AutoArima            bool                                          `json:"autoArima"`
 	InformationCriterion string                                        `json:"informationCriterion"`
@@ -86,7 +86,7 @@ type IncrementalRunner interface {
 type incrementalRequest struct {
 	Action         string                                        `json:"action"`
 	Config         *arimaParameters                              `json:"config,omitempty"`
-	ReplicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas `json:"replicaHistory,omitempty"`
+	ReplicaHistory []hpaplusv1alpha1.TimestampedReplicas `json:"replicaHistory,omitempty"`
 }
 
 type incrementalResponse struct {
@@ -112,7 +112,7 @@ type Predict struct {
 }
 
 // GetPrediction uses ARIMA to predict what the replica count should be based on historical evaluations
-func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 	result, err := p.GetPredictionResult(model, replicaHistory)
 	if err != nil {
 		return 0, err
@@ -121,7 +121,7 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 }
 
 // GetPredictionResult uses ARIMA to predict what the replica count should be based on historical evaluations.
-func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (prediction.Result, error) {
+func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (prediction.Result, error) {
 	if model.Arima == nil {
 		return prediction.Result{}, errors.New("no ARIMA configuration provided for model")
 	}
@@ -157,7 +157,7 @@ func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, repl
 	}, nil
 }
 
-func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {
+func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
 	if model.Arima == nil {
 		return nil, errors.New("no ARIMA configuration provided for model")
 	}
@@ -190,10 +190,10 @@ func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 
 // GetType returns the type of the Prediction model
 func (p *Predict) GetType() string {
-	return jamiethompsonmev1alpha1.TypeArima
+	return hpaplusv1alpha1.TypeArima
 }
 
-func (p *Predict) getPredictionOneShot(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+func (p *Predict) getPredictionOneShot(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 	parametersStruct := p.buildParameters(model, replicaHistory)
 	parameters, err := json.Marshal(parametersStruct)
 	if err != nil {
@@ -224,7 +224,7 @@ func (p *Predict) getPredictionOneShot(model *jamiethompsonmev1alpha1.Model, rep
 	return replicas, nil
 }
 
-func (p *Predict) getPredictionIncremental(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+func (p *Predict) getPredictionIncremental(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 	if hasMissingTimestamps(replicaHistory) {
 		// Incremental updates require ordering by timestamps. Fallback to one-shot if timestamps are missing.
 		return p.getPredictionOneShot(model, replicaHistory)
@@ -344,15 +344,15 @@ func (p *Predict) runIncremental(sessionID string, request incrementalRequest, t
 	return int64(*response.Prediction), nil
 }
 
-func (p *Predict) incrementalEnabled(model *jamiethompsonmev1alpha1.Model) bool {
+func (p *Predict) incrementalEnabled(model *hpaplusv1alpha1.Model) bool {
 	if model.Arima == nil || model.Arima.IncrementalUpdates == nil {
 		return false
 	}
 	return *model.Arima.IncrementalUpdates
 }
 
-func (p *Predict) buildParameters(model *jamiethompsonmev1alpha1.Model,
-	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) arimaParameters {
+func (p *Predict) buildParameters(model *hpaplusv1alpha1.Model,
+	replicaHistory []hpaplusv1alpha1.TimestampedReplicas) arimaParameters {
 	autoArima := false
 	informationCriterion := "aic"
 	enforceStationarity := true
@@ -407,7 +407,7 @@ func hashParameters(parameters arimaParameters) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func hasMissingTimestamps(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) bool {
+func hasMissingTimestamps(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) bool {
 	for _, entry := range replicaHistory {
 		if entry.Time == nil {
 			return true
@@ -416,7 +416,7 @@ func hasMissingTimestamps(replicaHistory []jamiethompsonmev1alpha1.TimestampedRe
 	return false
 }
 
-func getLatestHistoryTime(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) *time.Time {
+func getLatestHistoryTime(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) *time.Time {
 	var latest *time.Time
 	for _, entry := range replicaHistory {
 		if entry.Time == nil {
@@ -431,13 +431,13 @@ func getLatestHistoryTime(replicaHistory []jamiethompsonmev1alpha1.TimestampedRe
 	return latest
 }
 
-func filterHistoryAfter(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
-	lastProcessed *time.Time) []jamiethompsonmev1alpha1.TimestampedReplicas {
+func filterHistoryAfter(replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
+	lastProcessed *time.Time) []hpaplusv1alpha1.TimestampedReplicas {
 	if lastProcessed == nil {
 		return replicaHistory
 	}
 
-	filtered := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 0, len(replicaHistory))
+	filtered := make([]hpaplusv1alpha1.TimestampedReplicas, 0, len(replicaHistory))
 	for _, entry := range replicaHistory {
 		if entry.Time == nil {
 			continue
@@ -487,10 +487,10 @@ func (p *Predict) resetState(sessionID string) {
 }
 
 func filterHistoryForTraining(
-	model *jamiethompsonmev1alpha1.Model,
-	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
-) []jamiethompsonmev1alpha1.TimestampedReplicas {
-	filtered := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 0, len(replicaHistory))
+	model *hpaplusv1alpha1.Model,
+	replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
+) []hpaplusv1alpha1.TimestampedReplicas {
+	filtered := make([]hpaplusv1alpha1.TimestampedReplicas, 0, len(replicaHistory))
 	for _, entry := range replicaHistory {
 		if !trainingEntryUsable(model, entry) {
 			continue
@@ -501,8 +501,8 @@ func filterHistoryForTraining(
 }
 
 func countTrainingEntries(
-	model *jamiethompsonmev1alpha1.Model,
-	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+	model *hpaplusv1alpha1.Model,
+	replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
 ) int {
 	count := 0
 	for _, entry := range replicaHistory {
@@ -514,12 +514,12 @@ func countTrainingEntries(
 }
 
 func pruneHistoryByTrainingEntries(
-	model *jamiethompsonmev1alpha1.Model,
-	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+	model *hpaplusv1alpha1.Model,
+	replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
 	maxTrainingEntries int,
-) []jamiethompsonmev1alpha1.TimestampedReplicas {
+) []hpaplusv1alpha1.TimestampedReplicas {
 	if maxTrainingEntries <= 0 {
-		return []jamiethompsonmev1alpha1.TimestampedReplicas{}
+		return []hpaplusv1alpha1.TimestampedReplicas{}
 	}
 
 	trainingEntriesSeen := 0
@@ -541,8 +541,8 @@ func pruneHistoryByTrainingEntries(
 	return replicaHistory[start:]
 }
 
-func trainingEntryUsable(model *jamiethompsonmev1alpha1.Model,
-	entry jamiethompsonmev1alpha1.TimestampedReplicas) bool {
+func trainingEntryUsable(model *hpaplusv1alpha1.Model,
+	entry hpaplusv1alpha1.TimestampedReplicas) bool {
 	if entry.TotalCPUUsageMillicores == nil {
 		return false
 	}
@@ -568,7 +568,7 @@ func parsePredictedCPUUsage(value string) (int64, error) {
 	return int64(math.Ceil(predictedUsageFloat)), nil
 }
 
-func convertPredictedCPUUsageToReplicas(model *jamiethompsonmev1alpha1.Model, predictedUsage int64) (int32, error) {
+func convertPredictedCPUUsageToReplicas(model *hpaplusv1alpha1.Model, predictedUsage int64) (int32, error) {
 	if model.CPURequestPerPodMillicores <= 0 {
 		return 0, errors.New("missing CPU request per pod for ARIMA CPU-history prediction")
 	}
@@ -588,7 +588,7 @@ func convertPredictedCPUUsageToReplicas(model *jamiethompsonmev1alpha1.Model, pr
 	return int32(math.Ceil(float64(predictedUsage) / targetPerPod)), nil
 }
 
-func logRawForecast(model *jamiethompsonmev1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
+func logRawForecast(model *hpaplusv1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
 	sessionID := model.Name
 	if model.SessionID != "" {
 		sessionID = model.SessionID

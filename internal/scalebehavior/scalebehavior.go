@@ -29,7 +29,7 @@ import (
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 )
 
 func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplicas []int32) int32 {
@@ -40,7 +40,7 @@ func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplica
 	// Decide which replica count to use based on decision type
 	var targetReplicas int32
 	switch decisionType {
-	case jamiethompsonmev1alpha1.DecisionMaximum:
+	case hpaplusv1alpha1.DecisionMaximum:
 		max := int32(0)
 		for i, predictedReplica := range predictedReplicas {
 			if i == 0 || predictedReplica > max {
@@ -48,7 +48,7 @@ func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplica
 			}
 		}
 		targetReplicas = max
-	case jamiethompsonmev1alpha1.DecisionMinimum:
+	case hpaplusv1alpha1.DecisionMinimum:
 		min := int32(0)
 		for i, predictedReplica := range predictedReplicas {
 			if i == 0 || predictedReplica < min {
@@ -56,7 +56,7 @@ func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplica
 			}
 		}
 		targetReplicas = min
-	case jamiethompsonmev1alpha1.DecisionMean:
+	case hpaplusv1alpha1.DecisionMean:
 		total := int32(0)
 		for _, predictedReplica := range predictedReplicas {
 			total += predictedReplica
@@ -65,7 +65,7 @@ func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplica
 			return targetReplicas
 		}
 		targetReplicas = int32(math.Round(float64(total) / float64(len(predictedReplicas))))
-	case jamiethompsonmev1alpha1.DecisionMedian:
+	case hpaplusv1alpha1.DecisionMedian:
 		if len(predictedReplicas) <= 0 {
 			return targetReplicas
 		}
@@ -88,10 +88,10 @@ func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplica
 func DecideTargetReplicasByBehavior(
 	behavior *autoscalingv2.HorizontalPodAutoscalerBehavior, currentReplicas int32, targetReplicas int32,
 	minReplicas int32, maxReplicas int32,
-	scaleUpReplicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
-	scaleDownReplicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
-	scaleUpEventHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
-	scaleDownEventHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+	scaleUpReplicaHistory []hpaplusv1alpha1.TimestampedReplicas,
+	scaleDownReplicaHistory []hpaplusv1alpha1.TimestampedReplicas,
+	scaleUpEventHistory []hpaplusv1alpha1.TimestampedReplicas,
+	scaleDownEventHistory []hpaplusv1alpha1.TimestampedReplicas,
 	now time.Time) int32 {
 
 	// Upscale stabilization
@@ -150,9 +150,9 @@ func GetLongestPolicyPeriod(scalingRules *autoscalingv2.HPAScalingRules) int32 {
 }
 
 func PruneTimestampedReplicasToWindow(
-	timestampedReplicas []jamiethompsonmev1alpha1.TimestampedReplicas, window int32, now time.Time) []jamiethompsonmev1alpha1.TimestampedReplicas {
+	timestampedReplicas []hpaplusv1alpha1.TimestampedReplicas, window int32, now time.Time) []hpaplusv1alpha1.TimestampedReplicas {
 
-	prunedTimestampedReplicas := []jamiethompsonmev1alpha1.TimestampedReplicas{}
+	prunedTimestampedReplicas := []hpaplusv1alpha1.TimestampedReplicas{}
 
 	// Prune old evaluations
 	// Cutoff is current time - stabilization window
@@ -170,8 +170,8 @@ func PruneTimestampedReplicasToWindow(
 
 func decideTargetReplicasByBehaviorRate(behavior *autoscalingv2.HorizontalPodAutoscalerBehavior,
 	currentReplicas int32, targetReplicas int32,
-	scaleUpEvents []jamiethompsonmev1alpha1.TimestampedReplicas,
-	scaleDownEvents []jamiethompsonmev1alpha1.TimestampedReplicas, now time.Time) int32 {
+	scaleUpEvents []hpaplusv1alpha1.TimestampedReplicas,
+	scaleDownEvents []hpaplusv1alpha1.TimestampedReplicas, now time.Time) int32 {
 
 	if targetReplicas > currentReplicas {
 		// Scale up
@@ -206,8 +206,8 @@ func decideTargetReplicasByBehaviorRate(behavior *autoscalingv2.HorizontalPodAut
 }
 
 func calculateScaleUpLimitWithinScalingRules(currentReplicas int32,
-	scaleUpEvents []jamiethompsonmev1alpha1.TimestampedReplicas,
-	scaleDownEvents []jamiethompsonmev1alpha1.TimestampedReplicas,
+	scaleUpEvents []hpaplusv1alpha1.TimestampedReplicas,
+	scaleDownEvents []hpaplusv1alpha1.TimestampedReplicas,
 	scalingRules *autoscalingv2.HPAScalingRules, now time.Time) int32 {
 	var result int32
 	var proposed int32
@@ -237,8 +237,8 @@ func calculateScaleUpLimitWithinScalingRules(currentReplicas int32,
 }
 
 func calculateScaleDownLimitWithinScalingRules(currentReplicas int32,
-	scaleUpEvents []jamiethompsonmev1alpha1.TimestampedReplicas,
-	scaleDownEvents []jamiethompsonmev1alpha1.TimestampedReplicas,
+	scaleUpEvents []hpaplusv1alpha1.TimestampedReplicas,
+	scaleDownEvents []hpaplusv1alpha1.TimestampedReplicas,
 	scalingRules *autoscalingv2.HPAScalingRules, now time.Time) int32 {
 	var result int32
 	var proposed int32
@@ -266,7 +266,7 @@ func calculateScaleDownLimitWithinScalingRules(currentReplicas int32,
 	return result
 }
 
-func getReplicaChanges(scaleEvents []jamiethompsonmev1alpha1.TimestampedReplicas, periodSeconds int32, now time.Time) int32 {
+func getReplicaChanges(scaleEvents []hpaplusv1alpha1.TimestampedReplicas, periodSeconds int32, now time.Time) int32 {
 	period := time.Second * time.Duration(periodSeconds)
 	cutoff := now.Add(-period)
 	var replicas int32

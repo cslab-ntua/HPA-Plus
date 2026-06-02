@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -34,21 +34,21 @@ func makeCPUUtilizationMetric(target int32) autoscalingv2.MetricSpec {
 	}
 }
 
-func makeInstance(model jamiethompsonmev1alpha1.Model) *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler {
-	return &jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler{
-		Spec: jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerSpec{
+func makeInstance(model hpaplusv1alpha1.Model) *hpaplusv1alpha1.HPAPlus {
+	return &hpaplusv1alpha1.HPAPlus{
+		Spec: hpaplusv1alpha1.HPAPlusSpec{
 			MaxReplicas: 10,
 			Metrics:     []autoscalingv2.MetricSpec{makeCPUUtilizationMetric(70)},
-			Models:      []jamiethompsonmev1alpha1.Model{model},
+			Models:      []hpaplusv1alpha1.Model{model},
 		},
 	}
 }
 
-func makeInstanceWithoutMetrics(model jamiethompsonmev1alpha1.Model) *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler {
-	return &jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler{
-		Spec: jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerSpec{
+func makeInstanceWithoutMetrics(model hpaplusv1alpha1.Model) *hpaplusv1alpha1.HPAPlus {
+	return &hpaplusv1alpha1.HPAPlus{
+		Spec: hpaplusv1alpha1.HPAPlusSpec{
 			MaxReplicas: 10,
-			Models:      []jamiethompsonmev1alpha1.Model{model},
+			Models:      []hpaplusv1alpha1.Model{model},
 		},
 	}
 }
@@ -56,15 +56,15 @@ func makeInstanceWithoutMetrics(model jamiethompsonmev1alpha1.Model) *jamiethomp
 func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 	tests := []struct {
 		name    string
-		model   jamiethompsonmev1alpha1.Model
+		model   hpaplusv1alpha1.Model
 		wantErr string
 	}{
 		{
 			name: "xgboost-zero-subsample",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Name: "xb",
-				Type: jamiethompsonmev1alpha1.TypeXGBoost,
-				XGBoost: &jamiethompsonmev1alpha1.XGBoost{
+				Type: hpaplusv1alpha1.TypeXGBoost,
+				XGBoost: &hpaplusv1alpha1.XGBoost{
 					HistorySize: 10,
 					LookAhead:   1000,
 					Lags:        4,
@@ -75,10 +75,10 @@ func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 		},
 		{
 			name: "xgboost-zero-colsample",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Name: "xb",
-				Type: jamiethompsonmev1alpha1.TypeXGBoost,
-				XGBoost: &jamiethompsonmev1alpha1.XGBoost{
+				Type: hpaplusv1alpha1.TypeXGBoost,
+				XGBoost: &hpaplusv1alpha1.XGBoost{
 					HistorySize:     10,
 					LookAhead:       1000,
 					Lags:            4,
@@ -89,10 +89,10 @@ func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 		},
 		{
 			name: "lightgbm-zero-subsample",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Name: "lgb",
-				Type: jamiethompsonmev1alpha1.TypeLightGBM,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+				Type: hpaplusv1alpha1.TypeLightGBM,
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize: 10,
 					LookAhead:   1000,
 					Lags:        4,
@@ -103,10 +103,10 @@ func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 		},
 		{
 			name: "lightgbm-zero-colsample",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Name: "lgb",
-				Type: jamiethompsonmev1alpha1.TypeLightGBM,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+				Type: hpaplusv1alpha1.TypeLightGBM,
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize:     10,
 					LookAhead:       1000,
 					Lags:            4,
@@ -117,10 +117,10 @@ func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 		},
 		{
 			name: "lightgbm-zero-learning-rate",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Name: "lgb",
-				Type: jamiethompsonmev1alpha1.TypeLightGBM,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+				Type: hpaplusv1alpha1.TypeLightGBM,
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize:  10,
 					LookAhead:    1000,
 					Lags:         4,
@@ -131,10 +131,10 @@ func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 		},
 		{
 			name: "lightgbm-negative-reg-lambda",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Name: "lgb",
-				Type: jamiethompsonmev1alpha1.TypeLightGBM,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+				Type: hpaplusv1alpha1.TypeLightGBM,
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize: 10,
 					LookAhead:   1000,
 					Lags:        4,
@@ -145,10 +145,10 @@ func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 		},
 		{
 			name: "lightgbm-negative-reg-alpha",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Name: "lgb",
-				Type: jamiethompsonmev1alpha1.TypeLightGBM,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+				Type: hpaplusv1alpha1.TypeLightGBM,
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize: 10,
 					LookAhead:   1000,
 					Lags:        4,
@@ -173,10 +173,10 @@ func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 }
 
 func TestValidateAllowsZeroLightGBMRegularization(t *testing.T) {
-	instance := makeInstance(jamiethompsonmev1alpha1.Model{
+	instance := makeInstance(hpaplusv1alpha1.Model{
 		Name: "lgb",
-		Type: jamiethompsonmev1alpha1.TypeLightGBM,
-		LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+		Type: hpaplusv1alpha1.TypeLightGBM,
+		LightGBM: &hpaplusv1alpha1.LightGBM{
 			HistorySize: 10,
 			LookAhead:   1000,
 			Lags:        4,
@@ -191,10 +191,10 @@ func TestValidateAllowsZeroLightGBMRegularization(t *testing.T) {
 }
 
 func TestValidateAllowsLightGBMUnboundedMaxDepth(t *testing.T) {
-	instance := makeInstance(jamiethompsonmev1alpha1.Model{
+	instance := makeInstance(hpaplusv1alpha1.Model{
 		Name: "lgb",
-		Type: jamiethompsonmev1alpha1.TypeLightGBM,
-		LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+		Type: hpaplusv1alpha1.TypeLightGBM,
+		LightGBM: &hpaplusv1alpha1.LightGBM{
 			HistorySize: 10,
 			LookAhead:   1000,
 			Lags:        4,
@@ -210,15 +210,15 @@ func TestValidateAllowsLightGBMUnboundedMaxDepth(t *testing.T) {
 func TestValidateRejectsCPUHistoryModelsWithoutCPUUtilizationMetric(t *testing.T) {
 	tests := []struct {
 		name    string
-		model   jamiethompsonmev1alpha1.Model
+		model   hpaplusv1alpha1.Model
 		wantErr string
 	}{
 		{
 			name: "linear",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Name: "linear",
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				Linear: &jamiethompsonmev1alpha1.Linear{
+				Type: hpaplusv1alpha1.TypeLinear,
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 4,
 					LookAhead:   1000,
 				},
@@ -227,10 +227,10 @@ func TestValidateRejectsCPUHistoryModelsWithoutCPUUtilizationMetric(t *testing.T
 		},
 		{
 			name: "holtwinters",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Name: "hw",
-				Type: jamiethompsonmev1alpha1.TypeHoltWinters,
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+				Type: hpaplusv1alpha1.TypeHoltWinters,
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Alpha:           float64Ptr(0.3),
 					Beta:            float64Ptr(0.2),
 					Gamma:           float64Ptr(0.1),

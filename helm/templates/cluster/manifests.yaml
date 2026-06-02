@@ -11,19 +11,19 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-jamiethompson-me-jamiethompson-me-v1alpha1-predictivehorizontalpodautoscaler
+      path: /mutate-hpa-plus-v1alpha1-hpaplus
   failurePolicy: Fail
-  name: mpredictivehorizontalpodautoscaler.kb.io
+  name: mhpaplus.kb.io
   rules:
   - apiGroups:
-    - jamiethompson.me.jamiethompson.me
+    - hpa.plus
     apiVersions:
     - v1alpha1
     operations:
     - CREATE
     - UPDATE
     resources:
-    - predictivehorizontalpodautoscalers
+    - hpapluses
   sideEffects: None
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -38,17 +38,17 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-jamiethompson-me-jamiethompson-me-v1alpha1-predictivehorizontalpodautoscaler
+      path: /validate-hpa-plus-v1alpha1-hpaplus
   failurePolicy: Fail
-  name: vpredictivehorizontalpodautoscaler.kb.io
+  name: vhpaplus.kb.io
   rules:
   - apiGroups:
-    - jamiethompson.me.jamiethompson.me
+    - hpa.plus
     apiVersions:
     - v1alpha1
     operations:
     - CREATE
     - UPDATE
     resources:
-    - predictivehorizontalpodautoscalers
+    - hpapluses
   sideEffects: None

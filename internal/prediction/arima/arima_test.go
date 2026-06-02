@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/fake"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/arima"
@@ -46,8 +46,8 @@ func int64Ptr(i int64) *int64 {
 	return &i
 }
 
-func attachCPUUsage(history []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
-	result := make([]jamiethompsonmev1alpha1.TimestampedReplicas, len(history))
+func attachCPUUsage(history []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
+	result := make([]hpaplusv1alpha1.TimestampedReplicas, len(history))
 	for i, entry := range history {
 		result[i] = entry
 		if result[i].TotalCPUUsageMillicores == nil {
@@ -87,44 +87,44 @@ func TestPredict_GetPrediction(t *testing.T) {
 		expected       int32
 		expectedErr    error
 		predicter      *arima.Predict
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			description:    "Fail no ARIMA configuration",
 			expected:       0,
 			expectedErr:    errors.New("no ARIMA configuration provided for model"),
 			predicter:      &arima.Predict{},
-			model:          &jamiethompsonmev1alpha1.Model{},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			model:          &hpaplusv1alpha1.Model{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Fail no evaluations",
 			expected:    0,
 			expectedErr: errors.New("no CPU usage evaluations provided for ARIMA model"),
 			predicter:   &arima.Predict{},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{
 					Order:     []int{1, 1, 1},
 					LookAhead: 10000,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Success, only one evaluation, return last value",
 			expected:    32,
 			expectedErr: nil,
 			predicter:   &arima.Predict{},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{
 					Order:     []int{1, 1, 1},
 					LookAhead: 10000,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 32,
 				},
@@ -135,14 +135,14 @@ func TestPredict_GetPrediction(t *testing.T) {
 			expected:    16,
 			expectedErr: nil,
 			predicter:   &arima.Predict{},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{
 					Order:     []int{1, 1, 1},
 					LookAhead: 10000,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 32,
 				},
@@ -162,14 +162,14 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{
 					Order:     []int{1, 1, 1},
 					LookAhead: 10000,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -192,14 +192,14 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{
 					Order:     []int{1, 1, 1},
 					LookAhead: 10000,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -222,14 +222,14 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{
 					Order:     []int{1, 1, 1},
 					LookAhead: 10000,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -252,9 +252,9 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{
 					Order:                []int{1, 1, 1},
 					LookAhead:            10000,
 					AutoArima:            boolPtr(true),
@@ -262,7 +262,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					MaxOrder:             []int{3, 2, 3},
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -285,15 +285,15 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{
 					Order:     []int{1, 1, 1},
 					LookAhead: 10000,
 				},
 				CalculationTimeout: intPtr(10),
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -334,21 +334,21 @@ func TestPredict_PruneHistory(t *testing.T) {
 
 	var tests = []struct {
 		description    string
-		expected       []jamiethompsonmev1alpha1.TimestampedReplicas
+		expected       []hpaplusv1alpha1.TimestampedReplicas
 		expectedErr    error
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			description:    "Fail no ARIMA configuration",
 			expected:       nil,
 			expectedErr:    errors.New("no ARIMA configuration provided for model"),
-			model:          &jamiethompsonmev1alpha1.Model{},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			model:          &hpaplusv1alpha1.Model{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Only 3 in history, max size 4",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
@@ -363,12 +363,12 @@ func TestPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			model: &jamiethompsonmev1alpha1.Model{
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Arima: &hpaplusv1alpha1.Arima{
 					HistorySize: intPtr(4),
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
@@ -385,7 +385,7 @@ func TestPredict_PruneHistory(t *testing.T) {
 		},
 		{
 			description: "3 too many, remove oldest 3",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},
@@ -400,12 +400,12 @@ func TestPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			model: &jamiethompsonmev1alpha1.Model{
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Arima: &hpaplusv1alpha1.Arima{
 					HistorySize: intPtr(3),
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 5,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(1) * time.Second)},
@@ -434,11 +434,11 @@ func TestPredict_PruneHistory(t *testing.T) {
 		},
 		{
 			description: "Default history size (50) with 60 items",
-			expected: func() []jamiethompsonmev1alpha1.TimestampedReplicas {
-				result := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 50)
+			expected: func() []hpaplusv1alpha1.TimestampedReplicas {
+				result := make([]hpaplusv1alpha1.TimestampedReplicas, 50)
 				for i := 0; i < 50; i++ {
 					value := i + 11
-					result[i] = jamiethompsonmev1alpha1.TimestampedReplicas{
+					result[i] = hpaplusv1alpha1.TimestampedReplicas{
 						Replicas: int32(value),
 						Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(value) * time.Second)},
 					}
@@ -446,12 +446,12 @@ func TestPredict_PruneHistory(t *testing.T) {
 				return result
 			}(),
 			expectedErr: nil,
-			model:       &jamiethompsonmev1alpha1.Model{Arima: &jamiethompsonmev1alpha1.Arima{}}, // No historySize set, should use default 50
-			replicaHistory: func() []jamiethompsonmev1alpha1.TimestampedReplicas {
-				result := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 60)
+			model:       &hpaplusv1alpha1.Model{Arima: &hpaplusv1alpha1.Arima{}}, // No historySize set, should use default 50
+			replicaHistory: func() []hpaplusv1alpha1.TimestampedReplicas {
+				result := make([]hpaplusv1alpha1.TimestampedReplicas, 60)
 				for i := 0; i < 60; i++ {
 					value := i + 1
-					result[i] = jamiethompsonmev1alpha1.TimestampedReplicas{
+					result[i] = hpaplusv1alpha1.TimestampedReplicas{
 						Replicas: int32(value),
 						Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(value) * time.Second)},
 					}
@@ -461,7 +461,7 @@ func TestPredict_PruneHistory(t *testing.T) {
 		},
 		{
 			description: "Prune by CPU-valid history count",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas:                3,
 					Time:                    &metav1.Time{Time: time.Time{}.Add(3 * time.Second)},
@@ -483,12 +483,12 @@ func TestPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			model: &jamiethompsonmev1alpha1.Model{
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: &hpaplusv1alpha1.Model{
+				Arima: &hpaplusv1alpha1.Arima{
 					HistorySize: intPtr(3),
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas:                1,
 					Time:                    &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
@@ -559,19 +559,19 @@ func TestPredict_GetPrediction_IncrementalSuccess(t *testing.T) {
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
+	model := &hpaplusv1alpha1.Model{
 		Name:                           "default/test-scaler/traffic-predictor",
-		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		Type:                           hpaplusv1alpha1.TypeArima,
 		CPURequestPerPodMillicores:     1,
 		TargetCPUUtilizationPercentage: 100,
-		Arima: &jamiethompsonmev1alpha1.Arima{
+		Arima: &hpaplusv1alpha1.Arima{
 			Order:              []int{1, 0, 0},
 			LookAhead:          60000,
 			IncrementalUpdates: &incrementalEnabled,
 		},
 	}
 
-	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	replicaHistory := []hpaplusv1alpha1.TimestampedReplicas{
 		{
 			Replicas: 1,
 			Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
@@ -615,19 +615,19 @@ func TestPredict_GetPrediction_IncrementalFallbackToOneShot(t *testing.T) {
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
+	model := &hpaplusv1alpha1.Model{
 		Name:                           "default/test-scaler/traffic-predictor",
-		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		Type:                           hpaplusv1alpha1.TypeArima,
 		CPURequestPerPodMillicores:     1,
 		TargetCPUUtilizationPercentage: 100,
-		Arima: &jamiethompsonmev1alpha1.Arima{
+		Arima: &hpaplusv1alpha1.Arima{
 			Order:              []int{1, 0, 0},
 			LookAhead:          60000,
 			IncrementalUpdates: &incrementalEnabled,
 		},
 	}
 
-	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	replicaHistory := []hpaplusv1alpha1.TimestampedReplicas{
 		{
 			Replicas: 1,
 			Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
@@ -678,20 +678,20 @@ func TestPredict_GetPrediction_IncrementalUsesSessionID(t *testing.T) {
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
+	model := &hpaplusv1alpha1.Model{
 		Name:                           "traffic-predictor",
 		SessionID:                      "default/test-scaler/traffic-predictor",
-		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		Type:                           hpaplusv1alpha1.TypeArima,
 		CPURequestPerPodMillicores:     1,
 		TargetCPUUtilizationPercentage: 100,
-		Arima: &jamiethompsonmev1alpha1.Arima{
+		Arima: &hpaplusv1alpha1.Arima{
 			Order:              []int{1, 0, 0},
 			LookAhead:          60000,
 			IncrementalUpdates: &incrementalEnabled,
 		},
 	}
 
-	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	replicaHistory := []hpaplusv1alpha1.TimestampedReplicas{
 		{
 			Replicas: 1,
 			Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
@@ -738,20 +738,20 @@ func TestPredict_GetPrediction_IncrementalMissingTimestampFallsBack(t *testing.T
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
+	model := &hpaplusv1alpha1.Model{
 		Name:                           "traffic-predictor",
 		SessionID:                      "default/test-scaler/traffic-predictor",
-		Type:                           jamiethompsonmev1alpha1.TypeArima,
+		Type:                           hpaplusv1alpha1.TypeArima,
 		CPURequestPerPodMillicores:     1,
 		TargetCPUUtilizationPercentage: 100,
-		Arima: &jamiethompsonmev1alpha1.Arima{
+		Arima: &hpaplusv1alpha1.Arima{
 			Order:              []int{1, 0, 0},
 			LookAhead:          60000,
 			IncrementalUpdates: &incrementalEnabled,
 		},
 	}
 
-	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	replicaHistory := []hpaplusv1alpha1.TimestampedReplicas{
 		{
 			Replicas: 1,
 			Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
@@ -790,17 +790,17 @@ func TestPredict_GetPrediction_ConvertsPredictedCPUUsageToReplicas(t *testing.T)
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
-		Type:                           jamiethompsonmev1alpha1.TypeArima,
+	model := &hpaplusv1alpha1.Model{
+		Type:                           hpaplusv1alpha1.TypeArima,
 		CPURequestPerPodMillicores:     800,
 		TargetCPUUtilizationPercentage: 70,
-		Arima: &jamiethompsonmev1alpha1.Arima{
+		Arima: &hpaplusv1alpha1.Arima{
 			Order:     []int{1, 0, 0},
 			LookAhead: 60000,
 		},
 	}
 
-	replicaHistory := attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+	replicaHistory := attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
 		{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
 		{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}},
@@ -824,17 +824,17 @@ func TestPredict_GetPrediction_ParsesFloatCPUUsageOutput(t *testing.T) {
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
-		Type:                           jamiethompsonmev1alpha1.TypeArima,
+	model := &hpaplusv1alpha1.Model{
+		Type:                           hpaplusv1alpha1.TypeArima,
 		CPURequestPerPodMillicores:     800,
 		TargetCPUUtilizationPercentage: 70,
-		Arima: &jamiethompsonmev1alpha1.Arima{
+		Arima: &hpaplusv1alpha1.Arima{
 			Order:     []int{1, 0, 0},
 			LookAhead: 60000,
 		},
 	}
 
-	replicaHistory := attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+	replicaHistory := attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
 		{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
 		{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}},
@@ -858,11 +858,11 @@ func TestPredict_GetPredictionResult_ConsumedUntilUsesTrainingHistory(t *testing
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
-		Type:                           jamiethompsonmev1alpha1.TypeArima,
+	model := &hpaplusv1alpha1.Model{
+		Type:                           hpaplusv1alpha1.TypeArima,
 		CPURequestPerPodMillicores:     800,
 		TargetCPUUtilizationPercentage: 70,
-		Arima: &jamiethompsonmev1alpha1.Arima{
+		Arima: &hpaplusv1alpha1.Arima{
 			Order:     []int{1, 0, 0},
 			LookAhead: 60000,
 		},
@@ -872,7 +872,7 @@ func TestPredict_GetPredictionResult_ConsumedUntilUsesTrainingHistory(t *testing
 	second := metav1.Time{Time: time.Time{}.Add(2 * time.Second)}
 	third := metav1.Time{Time: time.Time{}.Add(3 * time.Second)}
 	fourth := metav1.Time{Time: time.Time{}.Add(4 * time.Second)}
-	replicaHistory := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	replicaHistory := []hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 2, Time: &first, TotalCPUUsageMillicores: int64Ptr(1120)},
 		{Replicas: 3, Time: &second, TotalCPUUsageMillicores: int64Ptr(1680)},
 		{Replicas: 4, Time: &third, TotalCPUUsageMillicores: int64Ptr(2240)},

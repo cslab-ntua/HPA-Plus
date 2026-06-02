@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/fake"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/xgboost"
@@ -37,8 +37,8 @@ func int64Ptr(i int64) *int64 {
 	return &i
 }
 
-func attachCPUUsage(history []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
-	result := make([]jamiethompsonmev1alpha1.TimestampedReplicas, len(history))
+func attachCPUUsage(history []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
+	result := make([]hpaplusv1alpha1.TimestampedReplicas, len(history))
 	for i, entry := range history {
 		result[i] = entry
 		if result[i].TotalCPUUsageMillicores == nil {
@@ -62,35 +62,35 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 		expected       int32
 		expectedErr    error
 		predicter      *xgboost.Predict
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			description:    "Fail no XGBoost configuration",
 			expected:       0,
 			expectedErr:    errors.New("no XGBoost configuration provided for model"),
 			predicter:      &xgboost.Predict{},
-			model:          &jamiethompsonmev1alpha1.Model{},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			model:          &hpaplusv1alpha1.Model{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description:    "Fail no evaluations",
 			expected:       0,
 			expectedErr:    errors.New("no CPU usage evaluations provided for XGBoost model"),
 			predicter:      &xgboost.Predict{},
-			model:          &jamiethompsonmev1alpha1.Model{Type: jamiethompsonmev1alpha1.TypeXGBoost, XGBoost: &jamiethompsonmev1alpha1.XGBoost{HistorySize: 5, LookAhead: 1000, Lags: 2}},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			model:          &hpaplusv1alpha1.Model{Type: hpaplusv1alpha1.TypeXGBoost, XGBoost: &hpaplusv1alpha1.XGBoost{HistorySize: 5, LookAhead: 1000, Lags: 2}},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Success single CPU evaluation returns last replicas",
 			expected:    6,
 			expectedErr: nil,
 			predicter:   &xgboost.Predict{},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type:    jamiethompsonmev1alpha1.TypeXGBoost,
-				XGBoost: &jamiethompsonmev1alpha1.XGBoost{HistorySize: 5, LookAhead: 1000, Lags: 2},
+			model: &hpaplusv1alpha1.Model{
+				Type:    hpaplusv1alpha1.TypeXGBoost,
+				XGBoost: &hpaplusv1alpha1.XGBoost{HistorySize: 5, LookAhead: 1000, Lags: 2},
 			},
-			replicaHistory: attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 				{Replicas: 6},
 			}),
 		},
@@ -105,18 +105,18 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type:                           jamiethompsonmev1alpha1.TypeXGBoost,
+			model: &hpaplusv1alpha1.Model{
+				Type:                           hpaplusv1alpha1.TypeXGBoost,
 				CPURequestPerPodMillicores:     800,
 				TargetCPUUtilizationPercentage: 70,
-				XGBoost: &jamiethompsonmev1alpha1.XGBoost{
+				XGBoost: &hpaplusv1alpha1.XGBoost{
 					HistorySize: 5,
 					LookAhead:   1000,
 					Lags:        2,
 					WindowSize:  intPtr(2),
 				},
 			},
-			replicaHistory: attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 				{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
 				{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
 				{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}},
@@ -146,11 +146,11 @@ func TestPredict_GetPredictionResult_ConsumedUntilUsesTrainingHistory(t *testing
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
-		Type:                           jamiethompsonmev1alpha1.TypeXGBoost,
+	model := &hpaplusv1alpha1.Model{
+		Type:                           hpaplusv1alpha1.TypeXGBoost,
 		CPURequestPerPodMillicores:     800,
 		TargetCPUUtilizationPercentage: 70,
-		XGBoost: &jamiethompsonmev1alpha1.XGBoost{
+		XGBoost: &hpaplusv1alpha1.XGBoost{
 			HistorySize: 5,
 			LookAhead:   1000,
 			Lags:        2,
@@ -158,7 +158,7 @@ func TestPredict_GetPredictionResult_ConsumedUntilUsesTrainingHistory(t *testing
 		},
 	}
 
-	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	history := []hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}, TotalCPUUsageMillicores: int64Ptr(1120)},
 		{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}, TotalCPUUsageMillicores: int64Ptr(1680)},
 		{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}, TotalCPUUsageMillicores: int64Ptr(2240)},

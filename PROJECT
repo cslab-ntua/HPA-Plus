@@ -1,4 +1,4 @@
-domain: jamiethompson.me
+domain: hpa.plus
 layout:
 - go.kubebuilder.io/v3
 plugins:
@@ -11,9 +11,9 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: jamiethompson.me
-  group: jamiethompson.me
-  kind: PredictiveHorizontalPodAutoscaler
+  domain: hpa.plus
+  group: hpa.plus
+  kind: HPAPlus
   path: github.com/cslab-ntua/HPA-Plus/api/v1alpha1
   version: v1alpha1
   webhooks:

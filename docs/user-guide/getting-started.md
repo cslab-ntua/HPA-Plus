@@ -3,8 +3,8 @@
 This guide walks through the first steps for deploying a simple HPA+ object. It demonstrates how to deploy an HPA+ that
 uses a linear regression to predict future load based on CPU usage.
 
-To see the final result of this guide, check out the [Simple Linear Regression
-example](https://github.com/cslab-ntua/HPA-Plus/tree/master/examples/simple-linear).
+The guide is self-contained and includes the workload, service, load generator, and `HPAPlus` resource needed for a
+local smoke test.
 
 ## Prerequisites
 
@@ -147,8 +147,8 @@ Now we need to set up the autoscaler. This autoscaler will be configured to watc
 apply a linear regression to predict ahead of time what the replica count should be.
 
 ```yaml
-apiVersion: jamiethompson.me/v1alpha1
-kind: PredictiveHorizontalPodAutoscaler
+apiVersion: hpa.plus/v1alpha1
+kind: HPAPlus
 metadata:
   name: simple-linear
 spec:
@@ -185,13 +185,9 @@ replicas a target deployment should have, in this example it tries to make sure 
 predict demand ahead of time.
 
 This example is not hugely practical, it serves primarily as a demonstration, as such it only stores the last 60 seconds
-worth of CPU-history samples and tries to fit this into a linear regression. You can see some sample results in
-this graph:
-
-![Calculated HPA values vs linear regression predicted values](../img/getting_started_linear_regression.svg)
-
-This shows how as the calculated value drops rapidly from `10` target replicas to `0`, the linear regression results in
-a smoothing effect on the actual scaling that takes place; instead it drops from `10` to `5` to `2` and finally to `1`.
+worth of CPU-history samples and tries to fit this into a linear regression. When the calculated value drops rapidly, the
+linear regression can smooth the actual scaling that takes place; for example, it may step down from `10` to `5` to `2`
+and finally to `1` instead of immediately dropping to the minimum.
 
 The predictive elements are not only for scaling downwards, they could also predict ahead of time an increase in the
 required number of replicas, for example with a sequence of increasing calculated replicas (`[1, 3, 5]`) it could

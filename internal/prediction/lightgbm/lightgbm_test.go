@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/fake"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/lightgbm"
@@ -26,8 +26,8 @@ func float64Ptr(f float64) *float64 {
 	return &f
 }
 
-func attachCPUUsage(history []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
-	result := make([]jamiethompsonmev1alpha1.TimestampedReplicas, len(history))
+func attachCPUUsage(history []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
+	result := make([]hpaplusv1alpha1.TimestampedReplicas, len(history))
 	for i, entry := range history {
 		result[i] = entry
 		if result[i].TotalCPUUsageMillicores == nil {
@@ -51,35 +51,35 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 		expected       int32
 		expectedErr    error
 		predicter      *lightgbm.Predict
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			description:    "Fail no LightGBM configuration",
 			expected:       0,
 			expectedErr:    errors.New("no LightGBM configuration provided for model"),
 			predicter:      &lightgbm.Predict{},
-			model:          &jamiethompsonmev1alpha1.Model{},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			model:          &hpaplusv1alpha1.Model{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description:    "Fail no evaluations",
 			expected:       0,
 			expectedErr:    errors.New("no CPU usage evaluations provided for LightGBM model"),
 			predicter:      &lightgbm.Predict{},
-			model:          &jamiethompsonmev1alpha1.Model{Type: jamiethompsonmev1alpha1.TypeLightGBM, LightGBM: &jamiethompsonmev1alpha1.LightGBM{HistorySize: 5, LookAhead: 1000, Lags: 2}},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			model:          &hpaplusv1alpha1.Model{Type: hpaplusv1alpha1.TypeLightGBM, LightGBM: &hpaplusv1alpha1.LightGBM{HistorySize: 5, LookAhead: 1000, Lags: 2}},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Success single CPU evaluation returns last replicas",
 			expected:    6,
 			expectedErr: nil,
 			predicter:   &lightgbm.Predict{},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type:     jamiethompsonmev1alpha1.TypeLightGBM,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{HistorySize: 5, LookAhead: 1000, Lags: 2},
+			model: &hpaplusv1alpha1.Model{
+				Type:     hpaplusv1alpha1.TypeLightGBM,
+				LightGBM: &hpaplusv1alpha1.LightGBM{HistorySize: 5, LookAhead: 1000, Lags: 2},
 			},
-			replicaHistory: attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 				{Replicas: 6},
 			}),
 		},
@@ -94,18 +94,18 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type:                           jamiethompsonmev1alpha1.TypeLightGBM,
+			model: &hpaplusv1alpha1.Model{
+				Type:                           hpaplusv1alpha1.TypeLightGBM,
 				CPURequestPerPodMillicores:     800,
 				TargetCPUUtilizationPercentage: 70,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize: 5,
 					LookAhead:   1000,
 					Lags:        2,
 					WindowSize:  intPtr(2),
 				},
 			},
-			replicaHistory: attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 				{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
 				{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
 				{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}},
@@ -122,16 +122,16 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type:                           jamiethompsonmev1alpha1.TypeLightGBM,
+			model: &hpaplusv1alpha1.Model{
+				Type:                           hpaplusv1alpha1.TypeLightGBM,
 				TargetCPUUtilizationPercentage: 70,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize: 5,
 					LookAhead:   1000,
 					Lags:        2,
 				},
 			},
-			replicaHistory: attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 				{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
 				{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
 			}),
@@ -147,16 +147,16 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type:                       jamiethompsonmev1alpha1.TypeLightGBM,
+			model: &hpaplusv1alpha1.Model{
+				Type:                       hpaplusv1alpha1.TypeLightGBM,
 				CPURequestPerPodMillicores: 800,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize: 5,
 					LookAhead:   1000,
 					Lags:        2,
 				},
 			},
-			replicaHistory: attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 				{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
 				{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
 			}),
@@ -195,11 +195,11 @@ func TestPredict_GetPredictionResult_PreservesZeroRegularizationValues(t *testin
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
-		Type:                           jamiethompsonmev1alpha1.TypeLightGBM,
+	model := &hpaplusv1alpha1.Model{
+		Type:                           hpaplusv1alpha1.TypeLightGBM,
 		CPURequestPerPodMillicores:     800,
 		TargetCPUUtilizationPercentage: 70,
-		LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+		LightGBM: &hpaplusv1alpha1.LightGBM{
 			HistorySize: 5,
 			LookAhead:   1000,
 			Lags:        2,
@@ -208,7 +208,7 @@ func TestPredict_GetPredictionResult_PreservesZeroRegularizationValues(t *testin
 		},
 	}
 
-	history := attachCPUUsage([]jamiethompsonmev1alpha1.TimestampedReplicas{
+	history := attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
 		{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
 		{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}},
@@ -232,11 +232,11 @@ func TestPredict_GetPredictionResult_ConsumedUntilUsesTrainingHistory(t *testing
 		},
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
-		Type:                           jamiethompsonmev1alpha1.TypeLightGBM,
+	model := &hpaplusv1alpha1.Model{
+		Type:                           hpaplusv1alpha1.TypeLightGBM,
 		CPURequestPerPodMillicores:     800,
 		TargetCPUUtilizationPercentage: 70,
-		LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+		LightGBM: &hpaplusv1alpha1.LightGBM{
 			HistorySize: 5,
 			LookAhead:   1000,
 			Lags:        2,
@@ -244,7 +244,7 @@ func TestPredict_GetPredictionResult_ConsumedUntilUsesTrainingHistory(t *testing
 		},
 	}
 
-	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	history := []hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}, TotalCPUUsageMillicores: int64Ptr(1120)},
 		{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}, TotalCPUUsageMillicores: int64Ptr(1680)},
 		{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}, TotalCPUUsageMillicores: int64Ptr(2240)},
