@@ -3,7 +3,7 @@ package controllers
 import (
 	"testing"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 )
 
@@ -11,14 +11,14 @@ func TestRequiredHistorySize(t *testing.T) {
 	arimaHistory := 12
 	tests := []struct {
 		name     string
-		model    jamiethompsonmev1alpha1.Model
+		model    hpaplusv1alpha1.Model
 		expected int
 	}{
 		{
 			name: "linear",
-			model: jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 6,
 				},
 			},
@@ -26,9 +26,9 @@ func TestRequiredHistorySize(t *testing.T) {
 		},
 		{
 			name: "xgboost",
-			model: jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeXGBoost,
-				XGBoost: &jamiethompsonmev1alpha1.XGBoost{
+			model: hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeXGBoost,
+				XGBoost: &hpaplusv1alpha1.XGBoost{
 					HistorySize: 10,
 				},
 			},
@@ -36,9 +36,9 @@ func TestRequiredHistorySize(t *testing.T) {
 		},
 		{
 			name: "lightgbm",
-			model: jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLightGBM,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+			model: hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLightGBM,
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize: 14,
 				},
 			},
@@ -46,9 +46,9 @@ func TestRequiredHistorySize(t *testing.T) {
 		},
 		{
 			name: "arima-with-history",
-			model: jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{
+			model: hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{
 					HistorySize: &arimaHistory,
 				},
 			},
@@ -56,17 +56,17 @@ func TestRequiredHistorySize(t *testing.T) {
 		},
 		{
 			name: "arima-default-history",
-			model: jamiethompsonmev1alpha1.Model{
-				Type:  jamiethompsonmev1alpha1.TypeArima,
-				Arima: &jamiethompsonmev1alpha1.Arima{},
+			model: hpaplusv1alpha1.Model{
+				Type:  hpaplusv1alpha1.TypeArima,
+				Arima: &hpaplusv1alpha1.Arima{},
 			},
 			expected: defaultArimaHistorySize,
 		},
 		{
 			name: "holtWinters",
-			model: jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeHoltWinters,
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			model: hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeHoltWinters,
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					SeasonalPeriods: 3,
 					StoredSeasons:   4,
 				},
@@ -75,7 +75,7 @@ func TestRequiredHistorySize(t *testing.T) {
 		},
 		{
 			name: "unknown-type",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Type: "unknown",
 			},
 			expected: 0,
@@ -94,15 +94,15 @@ func TestRequiredHistorySize(t *testing.T) {
 func TestModelHasSufficientHistory(t *testing.T) {
 	tests := []struct {
 		name    string
-		model   jamiethompsonmev1alpha1.Model
+		model   hpaplusv1alpha1.Model
 		history int
 		want    bool
 	}{
 		{
 			name: "enough-history",
-			model: jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 3,
 				},
 			},
@@ -111,9 +111,9 @@ func TestModelHasSufficientHistory(t *testing.T) {
 		},
 		{
 			name: "holtwinters-cpu-history",
-			model: jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeHoltWinters,
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			model: hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeHoltWinters,
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					SeasonalPeriods: 2,
 					StoredSeasons:   2,
 				},
@@ -123,9 +123,9 @@ func TestModelHasSufficientHistory(t *testing.T) {
 		},
 		{
 			name: "insufficient-history",
-			model: jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeXGBoost,
-				XGBoost: &jamiethompsonmev1alpha1.XGBoost{
+			model: hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeXGBoost,
+				XGBoost: &hpaplusv1alpha1.XGBoost{
 					HistorySize: 5,
 				},
 			},
@@ -134,9 +134,9 @@ func TestModelHasSufficientHistory(t *testing.T) {
 		},
 		{
 			name: "lightgbm-cpu-history",
-			model: jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLightGBM,
-				LightGBM: &jamiethompsonmev1alpha1.LightGBM{
+			model: hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLightGBM,
+				LightGBM: &hpaplusv1alpha1.LightGBM{
 					HistorySize: 3,
 				},
 			},
@@ -145,7 +145,7 @@ func TestModelHasSufficientHistory(t *testing.T) {
 		},
 		{
 			name: "no-requirement",
-			model: jamiethompsonmev1alpha1.Model{
+			model: hpaplusv1alpha1.Model{
 				Type: "unknown",
 			},
 			history: 0,
@@ -155,7 +155,7 @@ func TestModelHasSufficientHistory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			history := make([]jamiethompsonmev1alpha1.TimestampedReplicas, tt.history)
+			history := make([]hpaplusv1alpha1.TimestampedReplicas, tt.history)
 			if prediction.UsesCPUHistory(tt.model.Type) {
 				for i := range history {
 					value := int64(i + 1)

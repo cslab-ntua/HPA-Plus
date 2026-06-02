@@ -18,11 +18,11 @@ limitations under the License.
 package hook
 
 import (
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 )
 
 // Executer interface provides methods for executing user logic with a value passed through to it
 type Executer interface {
-	ExecuteWithValue(definition *jamiethompsonmev1alpha1.HookDefinition, value string) (string, error)
+	ExecuteWithValue(definition *hpaplusv1alpha1.HookDefinition, value string) (string, error)
 	GetType() string
 }

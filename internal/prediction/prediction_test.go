@@ -20,7 +20,7 @@ import (
 	"errors"
 	"testing"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/fake"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	"github.com/google/go-cmp/cmp"
@@ -40,21 +40,21 @@ func TestModelPredict_GetPrediction(t *testing.T) {
 		expected       int32
 		expectedErr    error
 		predicters     []prediction.Predicter
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			description: "Unknown model type",
 			expected:    0,
 			expectedErr: errors.New(`unknown model type 'invalid'`),
 			predicters:  []prediction.Predicter{},
-			model: &jamiethompsonmev1alpha1.Model{
+			model: &hpaplusv1alpha1.Model{
 				Type: "invalid",
-				Linear: &jamiethompsonmev1alpha1.Linear{
+				Linear: &hpaplusv1alpha1.Linear{
 					LookAhead: 10,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "GetIDsToRemove fail child predictor",
@@ -62,7 +62,7 @@ func TestModelPredict_GetPrediction(t *testing.T) {
 			expectedErr: errors.New("fail to get prediction from child"),
 			predicters: []prediction.Predicter{
 				&fake.Predicter{
-					GetPredictionReactor: func(model *jamiethompsonmev1alpha1.Model, evaluations []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+					GetPredictionReactor: func(model *hpaplusv1alpha1.Model, evaluations []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 						return 0, errors.New("fail to get prediction from child")
 					},
 					GetTypeReactor: func() string {
@@ -70,12 +70,12 @@ func TestModelPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
+			model: &hpaplusv1alpha1.Model{
 				Type: "test",
-				Linear: &jamiethompsonmev1alpha1.Linear{
+				Linear: &hpaplusv1alpha1.Linear{
 					LookAhead: 10,
 				}},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Successful prediction, single available model",
@@ -83,7 +83,7 @@ func TestModelPredict_GetPrediction(t *testing.T) {
 			expectedErr: nil,
 			predicters: []prediction.Predicter{
 				&fake.Predicter{
-					GetPredictionReactor: func(model *jamiethompsonmev1alpha1.Model, evaluations []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+					GetPredictionReactor: func(model *hpaplusv1alpha1.Model, evaluations []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 						return 3, nil
 					},
 					GetTypeReactor: func() string {
@@ -91,12 +91,12 @@ func TestModelPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
+			model: &hpaplusv1alpha1.Model{
 				Type: "test",
-				Linear: &jamiethompsonmev1alpha1.Linear{
+				Linear: &hpaplusv1alpha1.Linear{
 					LookAhead: 10,
 				}},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Successful prediction, three available models",
@@ -104,7 +104,7 @@ func TestModelPredict_GetPrediction(t *testing.T) {
 			expectedErr: nil,
 			predicters: []prediction.Predicter{
 				&fake.Predicter{
-					GetPredictionReactor: func(model *jamiethompsonmev1alpha1.Model, evaluations []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+					GetPredictionReactor: func(model *hpaplusv1alpha1.Model, evaluations []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 						return 0, errors.New("incorrect model")
 					},
 					GetTypeReactor: func() string {
@@ -112,7 +112,7 @@ func TestModelPredict_GetPrediction(t *testing.T) {
 					},
 				},
 				&fake.Predicter{
-					GetPredictionReactor: func(model *jamiethompsonmev1alpha1.Model, evaluations []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+					GetPredictionReactor: func(model *hpaplusv1alpha1.Model, evaluations []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 						return 0, errors.New("incorrect model")
 					},
 					GetTypeReactor: func() string {
@@ -120,7 +120,7 @@ func TestModelPredict_GetPrediction(t *testing.T) {
 					},
 				},
 				&fake.Predicter{
-					GetPredictionReactor: func(model *jamiethompsonmev1alpha1.Model, evaluations []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+					GetPredictionReactor: func(model *hpaplusv1alpha1.Model, evaluations []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 						return 5, nil
 					},
 					GetTypeReactor: func() string {
@@ -128,13 +128,13 @@ func TestModelPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
+			model: &hpaplusv1alpha1.Model{
 				Type: "test",
-				Linear: &jamiethompsonmev1alpha1.Linear{
+				Linear: &hpaplusv1alpha1.Linear{
 					LookAhead: 10,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 	}
 	for _, test := range tests {
@@ -164,28 +164,28 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 
 	var tests = []struct {
 		description    string
-		expected       []jamiethompsonmev1alpha1.TimestampedReplicas
+		expected       []hpaplusv1alpha1.TimestampedReplicas
 		expectedErr    error
 		predicters     []prediction.Predicter
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			description: "Unknown model type",
 			expected:    nil,
 			expectedErr: errors.New(`unknown model type 'invalid'`),
 			predicters:  []prediction.Predicter{},
-			model: &jamiethompsonmev1alpha1.Model{
+			model: &hpaplusv1alpha1.Model{
 				Type: "invalid",
-				Linear: &jamiethompsonmev1alpha1.Linear{
+				Linear: &hpaplusv1alpha1.Linear{
 					LookAhead: 10,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Successful PruneHistory, single available model, remove last",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &v1.Time{},
 					Replicas: 1,
@@ -198,7 +198,7 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 			expectedErr: nil,
 			predicters: []prediction.Predicter{
 				&fake.Predicter{
-					PruneHistoryReactor: func(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {
+					PruneHistoryReactor: func(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
 						replicaHistory = replicaHistory[:len(replicaHistory)-1]
 						return replicaHistory, nil
 					},
@@ -207,12 +207,12 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
+			model: &hpaplusv1alpha1.Model{
 				Type: "test",
-				Linear: &jamiethompsonmev1alpha1.Linear{
+				Linear: &hpaplusv1alpha1.Linear{
 					LookAhead: 10,
 				}},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &v1.Time{},
 					Replicas: 1,
@@ -229,7 +229,7 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 		},
 		{
 			description: "Successful PruneHistory, three available models, remove last",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &v1.Time{},
 					Replicas: 1,
@@ -242,7 +242,7 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 			expectedErr: nil,
 			predicters: []prediction.Predicter{
 				&fake.Predicter{
-					PruneHistoryReactor: func(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {
+					PruneHistoryReactor: func(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
 						replicaHistory = replicaHistory[:len(replicaHistory)-1]
 						return replicaHistory, nil
 					},
@@ -251,7 +251,7 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 					},
 				},
 				&fake.Predicter{
-					PruneHistoryReactor: func(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {
+					PruneHistoryReactor: func(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
 						replicaHistory = replicaHistory[:len(replicaHistory)-1]
 						return replicaHistory, nil
 					},
@@ -260,7 +260,7 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 					},
 				},
 				&fake.Predicter{
-					PruneHistoryReactor: func(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {
+					PruneHistoryReactor: func(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
 						replicaHistory = replicaHistory[:len(replicaHistory)-1]
 						return replicaHistory, nil
 					},
@@ -269,13 +269,13 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
+			model: &hpaplusv1alpha1.Model{
 				Type: "test",
-				Linear: &jamiethompsonmev1alpha1.Linear{
+				Linear: &hpaplusv1alpha1.Linear{
 					LookAhead: 10,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &v1.Time{},
 					Replicas: 1,

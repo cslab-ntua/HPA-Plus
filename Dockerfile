@@ -13,16 +13,14 @@
 # limitations under the License.
 
 # Build the manager binary
-FROM golang:1.20 as builder
+FROM golang:1.20 AS builder
 
 WORKDIR /workspace
-# Always use vendored dependencies to avoid needing network access during build
-ENV GOFLAGS=-mod=vendor
 
-# Copy the Go Modules manifests and vendor directory so dependency layer stays cached
+# Copy the Go module manifests first so dependency downloads stay cached.
 COPY go.mod go.mod
 COPY go.sum go.sum
-COPY vendor/ vendor/
+RUN go mod download
 
 # Copy the go source
 COPY . .

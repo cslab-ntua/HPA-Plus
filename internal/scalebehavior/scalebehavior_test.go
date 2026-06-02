@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/scalebehavior"
 	"github.com/google/go-cmp/cmp"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -99,27 +99,27 @@ func secondsAfterZeroTime(seconds int) time.Time {
 func TestPruneTimestampedReplicasToWindow(t *testing.T) {
 	var tests = []struct {
 		description         string
-		expected            []jamiethompsonmev1alpha1.TimestampedReplicas
-		timestampedReplicas []jamiethompsonmev1alpha1.TimestampedReplicas
+		expected            []hpaplusv1alpha1.TimestampedReplicas
+		timestampedReplicas []hpaplusv1alpha1.TimestampedReplicas
 		window              int32
 		now                 time.Time
 	}{
 		{
 			description:         "No timestamped replicas",
-			expected:            []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			timestampedReplicas: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			expected:            []hpaplusv1alpha1.TimestampedReplicas{},
+			timestampedReplicas: []hpaplusv1alpha1.TimestampedReplicas{},
 			window:              300,
 			now:                 time.Time{},
 		},
 		{
 			description: "1 timestamped replica in range",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: secondsAfterZeroTime(500)},
 					Replicas: 30,
 				},
 			},
-			timestampedReplicas: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			timestampedReplicas: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: secondsAfterZeroTime(500)},
 					Replicas: 30,
@@ -130,8 +130,8 @@ func TestPruneTimestampedReplicasToWindow(t *testing.T) {
 		},
 		{
 			description: "1 timestamped replica not in range",
-			expected:    []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			timestampedReplicas: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected:    []hpaplusv1alpha1.TimestampedReplicas{},
+			timestampedReplicas: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: secondsAfterZeroTime(299)},
 					Replicas: 30,
@@ -142,7 +142,7 @@ func TestPruneTimestampedReplicasToWindow(t *testing.T) {
 		},
 		{
 			description: "5 timestamped replicas, 2 not in range",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: secondsAfterZeroTime(599)},
 					Replicas: 1,
@@ -156,7 +156,7 @@ func TestPruneTimestampedReplicasToWindow(t *testing.T) {
 					Replicas: 4,
 				},
 			},
-			timestampedReplicas: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			timestampedReplicas: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: secondsAfterZeroTime(599)},
 					Replicas: 1,
@@ -202,55 +202,55 @@ func TestDecideTargetReplicasByScalingStrategy(t *testing.T) {
 		{
 			description:       "Max decision type, no predicted replicas",
 			expected:          0,
-			decisionType:      jamiethompsonmev1alpha1.DecisionMaximum,
+			decisionType:      hpaplusv1alpha1.DecisionMaximum,
 			predictedReplicas: []int32{},
 		},
 		{
 			description:       "Max decision type, 5 predicted replicas",
 			expected:          15,
-			decisionType:      jamiethompsonmev1alpha1.DecisionMaximum,
+			decisionType:      hpaplusv1alpha1.DecisionMaximum,
 			predictedReplicas: []int32{1, 10, 8, 15, 0},
 		},
 		{
 			description:       "Min decision type, no predicted replicas",
 			expected:          0,
-			decisionType:      jamiethompsonmev1alpha1.DecisionMinimum,
+			decisionType:      hpaplusv1alpha1.DecisionMinimum,
 			predictedReplicas: []int32{},
 		},
 		{
 			description:       "Min decision type, 5 predicted replicas",
 			expected:          0,
-			decisionType:      jamiethompsonmev1alpha1.DecisionMinimum,
+			decisionType:      hpaplusv1alpha1.DecisionMinimum,
 			predictedReplicas: []int32{1, 10, 8, 15, 0},
 		},
 		{
 			description:       "Mean decision type, no predicted replicas",
 			expected:          0,
-			decisionType:      jamiethompsonmev1alpha1.DecisionMean,
+			decisionType:      hpaplusv1alpha1.DecisionMean,
 			predictedReplicas: []int32{},
 		},
 		{
 			description:       "Mean decision type, 5 predicted replicas",
 			expected:          7,
-			decisionType:      jamiethompsonmev1alpha1.DecisionMean,
+			decisionType:      hpaplusv1alpha1.DecisionMean,
 			predictedReplicas: []int32{1, 10, 8, 15, 0},
 		},
 		{
 			description:       "Median decision type, no predicted replicas",
 			expected:          0,
-			decisionType:      jamiethompsonmev1alpha1.DecisionMedian,
+			decisionType:      hpaplusv1alpha1.DecisionMedian,
 			predictedReplicas: []int32{},
 		},
 		{
 			description:       "Median decision type, 5 predicted replicas",
 			expected:          8,
-			decisionType:      jamiethompsonmev1alpha1.DecisionMedian,
+			decisionType:      hpaplusv1alpha1.DecisionMedian,
 			predictedReplicas: []int32{1, 10, 8, 15, 0},
 		},
 		{
 			description:       "Median decision type, 6 predicted replicas",
 			expected:          7,
-			decisionType:      jamiethompsonmev1alpha1.DecisionMedian,
+			decisionType:      hpaplusv1alpha1.DecisionMedian,
 			predictedReplicas: []int32{1, 10, 8, 15, 0, 7},
 		},
 	}
@@ -273,10 +273,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 		targetReplicas          int32
 		minReplicas             int32
 		maxReplicas             int32
-		scaleUpReplicaHistory   []jamiethompsonmev1alpha1.TimestampedReplicas
-		scaleDownReplicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
-		scaleUpEventHistory     []jamiethompsonmev1alpha1.TimestampedReplicas
-		scaleDownEventHistory   []jamiethompsonmev1alpha1.TimestampedReplicas
+		scaleUpReplicaHistory   []hpaplusv1alpha1.TimestampedReplicas
+		scaleDownReplicaHistory []hpaplusv1alpha1.TimestampedReplicas
+		scaleUpEventHistory     []hpaplusv1alpha1.TimestampedReplicas
+		scaleDownEventHistory   []hpaplusv1alpha1.TimestampedReplicas
 		now                     time.Time
 	}{
 		{
@@ -287,10 +287,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          4,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                     time.Time{},
 		},
 		{
@@ -301,10 +301,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          4,
 			minReplicas:             1,
 			maxReplicas:             3,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                     time.Time{},
 		},
 		{
@@ -315,10 +315,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          1,
 			minReplicas:             1,
 			maxReplicas:             4,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                     time.Time{},
 		},
 		{
@@ -329,10 +329,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          0,
 			minReplicas:             1,
 			maxReplicas:             4,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                     time.Time{},
 		},
 		{
@@ -343,10 +343,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          0,
 			minReplicas:             0,
 			maxReplicas:             4,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                     time.Time{},
 		},
 		{
@@ -357,8 +357,8 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:        2,
 			minReplicas:           1,
 			maxReplicas:           10,
-			scaleUpReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 7,
 				},
@@ -372,8 +372,8 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 					Replicas: 8,
 				},
 			},
-			scaleUpEventHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                   time.Time{},
 		},
 		{
@@ -388,7 +388,7 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:  7,
 			minReplicas:     1,
 			maxReplicas:     10,
-			scaleUpReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 2,
 				},
@@ -399,9 +399,9 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 					Replicas: 3,
 				},
 			},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                     time.Time{},
 		},
 		{
@@ -416,10 +416,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          7,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                     time.Time{},
 		},
 		{
@@ -434,10 +434,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          3,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                     time.Time{},
 		},
 		{
@@ -448,9 +448,9 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          6,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 1,
@@ -468,7 +468,7 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 					Replicas: 1,
 				},
 			},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                   time.Time{}.Add(60 * time.Second),
 		},
 		{
@@ -479,9 +479,9 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          6,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 1,
@@ -499,7 +499,7 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 					Replicas: 1,
 				},
 			},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(41 * time.Second)},
 					Replicas: 1,
@@ -523,15 +523,15 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          7,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 1,
 				},
 			},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                   time.Time{}.Add(60 * time.Second),
 		},
 		{
@@ -542,15 +542,15 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          50,
 			minReplicas:             1,
 			maxReplicas:             100,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 10,
 				},
 			},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                   time.Time{}.Add(60 * time.Second),
 		},
 		{
@@ -561,10 +561,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          4,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 1,
@@ -602,10 +602,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          4,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 1,
@@ -643,9 +643,9 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          4,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(41 * time.Second)},
 					Replicas: 1,
@@ -655,7 +655,7 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 					Replicas: 1,
 				},
 			},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 1,
@@ -693,10 +693,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          4,
 			minReplicas:             1,
 			maxReplicas:             10,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 1,
@@ -731,10 +731,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          40,
 			minReplicas:             1,
 			maxReplicas:             100,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 10,
@@ -770,10 +770,10 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          40,
 			minReplicas:             1,
 			maxReplicas:             100,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory:     []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory:     []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 10,
@@ -809,9 +809,9 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          80,
 			minReplicas:             1,
 			maxReplicas:             100,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 5,
@@ -821,7 +821,7 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 					Replicas: 5,
 				},
 			},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                   time.Time{}.Add(60 * time.Second),
 		},
 		{
@@ -848,9 +848,9 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          100,
 			minReplicas:             1,
 			maxReplicas:             100,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 5,
@@ -860,7 +860,7 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 					Replicas: 5,
 				},
 			},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                   time.Time{}.Add(60 * time.Second),
 		},
 		{
@@ -887,9 +887,9 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 			targetReplicas:          6,
 			minReplicas:             1,
 			maxReplicas:             100,
-			scaleUpReplicaHistory:   []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleDownReplicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
-			scaleUpEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleUpReplicaHistory:   []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleDownReplicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
+			scaleUpEventHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Time{}.Add(1 * time.Second)},
 					Replicas: 1,
@@ -899,7 +899,7 @@ func TestDecideTargetReplicasByBehavior(t *testing.T) {
 					Replicas: 2,
 				},
 			},
-			scaleDownEventHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			scaleDownEventHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 			now:                   time.Time{}.Add(60 * time.Second),
 		},
 	}

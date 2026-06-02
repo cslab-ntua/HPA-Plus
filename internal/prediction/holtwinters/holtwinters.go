@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/hook"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	ctrlLog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -63,8 +63,8 @@ type holtWintersParametersParameters struct {
 }
 
 type runTimeTuningFetchHookRequest struct {
-	Model          jamiethompsonmev1alpha1.Model                 `json:"model"`
-	ReplicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas `json:"replicaHistory"`
+	Model          hpaplusv1alpha1.Model                 `json:"model"`
+	ReplicaHistory []hpaplusv1alpha1.TimestampedReplicas `json:"replicaHistory"`
 }
 
 type runTimeTuningFetchHookResult struct {
@@ -75,7 +75,7 @@ type runTimeTuningFetchHookResult struct {
 
 // GetPrediction uses Holt-Winters to predict aggregate CPU usage and converts that prediction
 // back into a replica count.
-func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 	result, err := p.GetPredictionResult(model, replicaHistory)
 	if err != nil {
 		return 0, err
@@ -85,7 +85,7 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 
 // GetPredictionResult uses Holt-Winters to predict aggregate CPU usage and converts that
 // prediction back into a replica count.
-func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (prediction.Result, error) {
+func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (prediction.Result, error) {
 	err := p.validate(model)
 	if err != nil {
 		return prediction.Result{}, err
@@ -214,7 +214,7 @@ func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, repl
 	}, nil
 }
 
-func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {
+func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
 	err := p.validate(model)
 	if err != nil {
 		return nil, err
@@ -236,7 +236,7 @@ func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 
 		numberOfReplicasToRemove := numberOfSeasonsToRemove * seasonLength
 		if numberOfReplicasToRemove >= len(replicaHistory) {
-			return []jamiethompsonmev1alpha1.TimestampedReplicas{}, nil
+			return []hpaplusv1alpha1.TimestampedReplicas{}, nil
 		}
 
 		return replicaHistory[numberOfReplicasToRemove:], nil
@@ -260,10 +260,10 @@ func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 
 // GetType returns the type of the Prediction model
 func (p *Predict) GetType() string {
-	return jamiethompsonmev1alpha1.TypeHoltWinters
+	return hpaplusv1alpha1.TypeHoltWinters
 }
 
-func (p *Predict) validate(model *jamiethompsonmev1alpha1.Model) error {
+func (p *Predict) validate(model *hpaplusv1alpha1.Model) error {
 	if model.HoltWinters == nil {
 		return errors.New("no HoltWinters configuration provided for model")
 	}
@@ -275,8 +275,8 @@ func (p *Predict) validate(model *jamiethompsonmev1alpha1.Model) error {
 	return nil
 }
 
-func filterHistoryWithCPUUsage(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
-	filtered := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 0, len(replicaHistory))
+func filterHistoryWithCPUUsage(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
+	filtered := make([]hpaplusv1alpha1.TimestampedReplicas, 0, len(replicaHistory))
 	for _, entry := range replicaHistory {
 		if entry.TotalCPUUsageMillicores == nil {
 			continue
@@ -286,7 +286,7 @@ func filterHistoryWithCPUUsage(replicaHistory []jamiethompsonmev1alpha1.Timestam
 	return filtered
 }
 
-func countCPUUsageEntries(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) int {
+func countCPUUsageEntries(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) int {
 	count := 0
 	for _, entry := range replicaHistory {
 		if entry.TotalCPUUsageMillicores != nil {
@@ -297,11 +297,11 @@ func countCPUUsageEntries(replicaHistory []jamiethompsonmev1alpha1.TimestampedRe
 }
 
 func pruneHistoryByCPUUsage(
-	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+	replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
 	maxCPUEntries int,
-) []jamiethompsonmev1alpha1.TimestampedReplicas {
+) []hpaplusv1alpha1.TimestampedReplicas {
 	if maxCPUEntries <= 0 {
-		return []jamiethompsonmev1alpha1.TimestampedReplicas{}
+		return []hpaplusv1alpha1.TimestampedReplicas{}
 	}
 
 	cpuEntriesSeen := 0
@@ -342,7 +342,7 @@ func parsePredictedCPUUsage(value string) (int64, error) {
 	return int64(math.Ceil(predictedUsageFloat)), nil
 }
 
-func convertPredictedCPUUsageToReplicas(model *jamiethompsonmev1alpha1.Model, predictedUsage int64) (int32, error) {
+func convertPredictedCPUUsageToReplicas(model *hpaplusv1alpha1.Model, predictedUsage int64) (int32, error) {
 	if model.CPURequestPerPodMillicores <= 0 {
 		return 0, errors.New("missing CPU request per pod for Holt-Winters CPU-history prediction")
 	}
@@ -362,7 +362,7 @@ func convertPredictedCPUUsageToReplicas(model *jamiethompsonmev1alpha1.Model, pr
 	return int32(math.Ceil(float64(predictedUsage) / targetPerPod)), nil
 }
 
-func logRawForecast(model *jamiethompsonmev1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
+func logRawForecast(model *hpaplusv1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
 	sessionID := model.Name
 	if model.SessionID != "" {
 		sessionID = model.SessionID

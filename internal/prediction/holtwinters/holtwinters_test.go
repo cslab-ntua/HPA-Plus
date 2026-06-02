@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/fake"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/holtwinters"
 	"github.com/google/go-cmp/cmp"
@@ -37,8 +37,8 @@ func float64Ptr(val float64) *float64 {
 	return &val
 }
 
-func withCPUHistory(history []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
-	out := make([]jamiethompsonmev1alpha1.TimestampedReplicas, len(history))
+func withCPUHistory(history []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
+	out := make([]hpaplusv1alpha1.TimestampedReplicas, len(history))
 	copy(out, history)
 	for i := range out {
 		if out[i].TotalCPUUsageMillicores == nil {
@@ -62,38 +62,38 @@ func TestPredict_GetPrediction(t *testing.T) {
 		expected       int32
 		expectedErr    error
 		predicter      *holtwinters.Predict
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			"Fail no HoltWinters configuration",
 			0,
 			errors.New("no HoltWinters configuration provided for model"),
 			&holtwinters.Predict{},
-			&jamiethompsonmev1alpha1.Model{},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{},
+			&hpaplusv1alpha1.Model{},
+			[]hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			"Fail no trend configuration",
 			0,
 			errors.New("no required 'trend' value provided for model"),
 			&holtwinters.Predict{},
-			&jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Trend: "",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{},
+			[]hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			"Success, less than 2 * seasonal_periods observations",
 			0,
 			nil,
 			&holtwinters.Predict{},
-			&jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Alpha:           float64Ptr(0.9),
 					Beta:            float64Ptr(0.9),
 					Gamma:           float64Ptr(0.9),
@@ -102,7 +102,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Trend:           "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Now().UTC().Add(time.Duration(-80) * time.Second)},
 					Replicas: 1,
@@ -118,9 +118,9 @@ func TestPredict_GetPrediction(t *testing.T) {
 			0,
 			nil,
 			&holtwinters.Predict{},
-			&jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Alpha:           float64Ptr(0.9),
 					Beta:            float64Ptr(0.9),
 					Gamma:           float64Ptr(0.9),
@@ -129,7 +129,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Trend:           "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Time:     &metav1.Time{Time: time.Now().UTC().Add(time.Duration(-80) * time.Second)},
 					Replicas: 1,
@@ -167,15 +167,15 @@ func TestPredict_GetPrediction(t *testing.T) {
 			&holtwinters.Predict{
 				HookExecute: func() *fake.Execute {
 					execute := fake.Execute{}
-					execute.ExecuteWithValueReactor = func(definition *jamiethompsonmev1alpha1.HookDefinition, value string) (string, error) {
+					execute.ExecuteWithValueReactor = func(definition *hpaplusv1alpha1.HookDefinition, value string) (string, error) {
 						return "", errors.New("fail runtime fetch")
 					}
 					return &execute
 				}(),
 			},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
-					RuntimeTuningFetchHook: &jamiethompsonmev1alpha1.HookDefinition{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
+					RuntimeTuningFetchHook: &hpaplusv1alpha1.HookDefinition{
 						Type:    "test",
 						Timeout: 2500,
 					},
@@ -184,7 +184,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Seasonal:        "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -236,15 +236,15 @@ func TestPredict_GetPrediction(t *testing.T) {
 			&holtwinters.Predict{
 				HookExecute: func() *fake.Execute {
 					execute := fake.Execute{}
-					execute.ExecuteWithValueReactor = func(definition *jamiethompsonmev1alpha1.HookDefinition, value string) (string, error) {
+					execute.ExecuteWithValueReactor = func(definition *hpaplusv1alpha1.HookDefinition, value string) (string, error) {
 						return "invalid json", nil
 					}
 					return &execute
 				}(),
 			},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
-					RuntimeTuningFetchHook: &jamiethompsonmev1alpha1.HookDefinition{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
+					RuntimeTuningFetchHook: &hpaplusv1alpha1.HookDefinition{
 						Type:    "test",
 						Timeout: 2500,
 					},
@@ -253,7 +253,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Seasonal:        "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -303,8 +303,8 @@ func TestPredict_GetPrediction(t *testing.T) {
 			0,
 			errors.New("no alpha tuning value provided for Holt-Winters prediction"),
 			&holtwinters.Predict{},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Beta:            float64Ptr(0.9),
 					Gamma:           float64Ptr(0.9),
 					SeasonalPeriods: 2,
@@ -312,7 +312,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Seasonal:        "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -362,8 +362,8 @@ func TestPredict_GetPrediction(t *testing.T) {
 			0,
 			errors.New("no beta tuning value provided for Holt-Winters prediction"),
 			&holtwinters.Predict{},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Alpha:           float64Ptr(0.9),
 					Gamma:           float64Ptr(0.9),
 					SeasonalPeriods: 2,
@@ -371,7 +371,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Seasonal:        "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -421,8 +421,8 @@ func TestPredict_GetPrediction(t *testing.T) {
 			0,
 			errors.New("no gamma tuning value provided for Holt-Winters prediction"),
 			&holtwinters.Predict{},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Alpha:           float64Ptr(0.9),
 					Beta:            float64Ptr(0.9),
 					SeasonalPeriods: 2,
@@ -430,7 +430,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Seasonal:        "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -486,8 +486,8 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Alpha:           float64Ptr(0.9),
 					Beta:            float64Ptr(0.9),
 					Gamma:           float64Ptr(0.9),
@@ -495,7 +495,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Trend:           "additive",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -551,8 +551,8 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Alpha:           float64Ptr(0.9),
 					Beta:            float64Ptr(0.9),
 					Gamma:           float64Ptr(0.9),
@@ -560,7 +560,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Trend:           "additive",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -616,8 +616,8 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Alpha:           float64Ptr(0.9),
 					Beta:            float64Ptr(0.9),
 					Gamma:           float64Ptr(0.9),
@@ -626,7 +626,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Seasonal:        "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -682,8 +682,8 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Alpha:           float64Ptr(0.9),
 					Beta:            float64Ptr(0.9),
 					Gamma:           float64Ptr(0.9),
@@ -693,7 +693,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 				},
 				CalculationTimeout: intPtr(10),
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -750,15 +750,15 @@ func TestPredict_GetPrediction(t *testing.T) {
 				},
 				HookExecute: func() *fake.Execute {
 					execute := fake.Execute{}
-					execute.ExecuteWithValueReactor = func(definition *jamiethompsonmev1alpha1.HookDefinition, value string) (string, error) {
+					execute.ExecuteWithValueReactor = func(definition *hpaplusv1alpha1.HookDefinition, value string) (string, error) {
 						return `{}`, nil
 					}
 					return &execute
 				}(),
 			},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
-					RuntimeTuningFetchHook: &jamiethompsonmev1alpha1.HookDefinition{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
+					RuntimeTuningFetchHook: &hpaplusv1alpha1.HookDefinition{
 						Type:    "test",
 						Timeout: 2500,
 					},
@@ -770,7 +770,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Seasonal:        "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -827,15 +827,15 @@ func TestPredict_GetPrediction(t *testing.T) {
 				},
 				HookExecute: func() *fake.Execute {
 					execute := fake.Execute{}
-					execute.ExecuteWithValueReactor = func(definition *jamiethompsonmev1alpha1.HookDefinition, value string) (string, error) {
+					execute.ExecuteWithValueReactor = func(definition *hpaplusv1alpha1.HookDefinition, value string) (string, error) {
 						return `{"alpha":0.2, "beta":0.2, "gamma": 0.2}`, nil
 					}
 					return &execute
 				}(),
 			},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
-					RuntimeTuningFetchHook: &jamiethompsonmev1alpha1.HookDefinition{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
+					RuntimeTuningFetchHook: &hpaplusv1alpha1.HookDefinition{
 						Type:    "test",
 						Timeout: 2500,
 					},
@@ -844,7 +844,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Seasonal:        "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -901,15 +901,15 @@ func TestPredict_GetPrediction(t *testing.T) {
 				},
 				HookExecute: func() *fake.Execute {
 					execute := fake.Execute{}
-					execute.ExecuteWithValueReactor = func(definition *jamiethompsonmev1alpha1.HookDefinition, value string) (string, error) {
+					execute.ExecuteWithValueReactor = func(definition *hpaplusv1alpha1.HookDefinition, value string) (string, error) {
 						return `{"alpha":0.2, "beta":0.2}`, nil
 					}
 					return &execute
 				}(),
 			},
-			&jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
-					RuntimeTuningFetchHook: &jamiethompsonmev1alpha1.HookDefinition{
+			&hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
+					RuntimeTuningFetchHook: &hpaplusv1alpha1.HookDefinition{
 						Type:    "test",
 						Timeout: 2500,
 					},
@@ -919,7 +919,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 					Seasonal:        "add",
 				},
 			},
-			[]jamiethompsonmev1alpha1.TimestampedReplicas{
+			[]hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -990,8 +990,8 @@ func TestPredict_GetPrediction(t *testing.T) {
 
 func TestPredict_PruneHistoryUsesCPUBackedSeasons(t *testing.T) {
 	predicter := &holtwinters.Predict{}
-	model := &jamiethompsonmev1alpha1.Model{
-		HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+	model := &hpaplusv1alpha1.Model{
+		HoltWinters: &hpaplusv1alpha1.HoltWinters{
 			SeasonalPeriods: 2,
 			StoredSeasons:   2,
 			Trend:           "add",
@@ -1005,7 +1005,7 @@ func TestPredict_PruneHistoryUsesCPUBackedSeasons(t *testing.T) {
 	cpu4 := int64(400)
 	cpu5 := int64(500)
 	cpu6 := int64(600)
-	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	history := []hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 1, Time: &metav1.Time{Time: time.Unix(1, 0).UTC()}, TotalCPUUsageMillicores: &cpu1},
 		{Replicas: 2, Time: &metav1.Time{Time: time.Unix(2, 0).UTC()}, TotalCPUUsageMillicores: &cpu1},
 		{Replicas: 3, Time: &metav1.Time{Time: time.Unix(3, 0).UTC()}, TotalCPUUsageMillicores: &cpu2},
@@ -1031,8 +1031,8 @@ func TestPredict_GetPredictionSortsTrainingHistoryBeforeRunningAlgorithm(t *test
 		Series []float64 `json:"series"`
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
-		HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+	model := &hpaplusv1alpha1.Model{
+		HoltWinters: &hpaplusv1alpha1.HoltWinters{
 			Alpha:           float64Ptr(0.9),
 			Beta:            float64Ptr(0.9),
 			Gamma:           float64Ptr(0.9),
@@ -1045,11 +1045,11 @@ func TestPredict_GetPredictionSortsTrainingHistoryBeforeRunningAlgorithm(t *test
 		TargetCPUUtilizationPercentage: 100,
 	}
 
-	history := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 0, 12)
+	history := make([]hpaplusv1alpha1.TimestampedReplicas, 0, 12)
 	for i := 12; i >= 1; i-- {
 		replicas := int32(i)
 		usage := int64(i * 100)
-		history = append(history, jamiethompsonmev1alpha1.TimestampedReplicas{
+		history = append(history, hpaplusv1alpha1.TimestampedReplicas{
 			Replicas:                replicas,
 			Time:                    &metav1.Time{Time: time.Unix(int64(i), 0).UTC()},
 			TotalCPUUsageMillicores: &usage,
@@ -1091,30 +1091,30 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 
 	var tests = []struct {
 		description    string
-		expected       []jamiethompsonmev1alpha1.TimestampedReplicas
+		expected       []hpaplusv1alpha1.TimestampedReplicas
 		expectedErr    error
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			description:    "Fail no HoltWinters configuration",
 			expected:       nil,
 			expectedErr:    errors.New("no HoltWinters configuration provided for model"),
-			model:          &jamiethompsonmev1alpha1.Model{},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			model:          &hpaplusv1alpha1.Model{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Fail no trend configuration",
 			expected:    nil,
 			expectedErr: errors.New("no required 'trend' value provided for model"),
-			model: &jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{},
+			model: &hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "6 in history, seasonal period 2, 3 stored seasons, don't prune",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(1) * time.Second)},
@@ -1141,14 +1141,14 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			model: &jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			model: &hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Trend:           "add",
 					StoredSeasons:   3,
 					SeasonalPeriods: 2,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 6,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
@@ -1177,7 +1177,7 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 		},
 		{
 			description: "7 in history, seasonal period 2, 3 stored seasons, don't prune",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(1) * time.Second)},
@@ -1208,14 +1208,14 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			model: &jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			model: &hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Trend:           "add",
 					StoredSeasons:   3,
 					SeasonalPeriods: 2,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 7,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(7) * time.Second)},
@@ -1248,7 +1248,7 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 		},
 		{
 			description: "8 in history, seasonal period 2, 3 stored seasons, prune oldest season",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 3,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
@@ -1275,14 +1275,14 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			model: &jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			model: &hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Trend:           "add",
 					StoredSeasons:   3,
 					SeasonalPeriods: 2,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 8,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(8) * time.Second)},
@@ -1319,7 +1319,7 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 		},
 		{
 			description: "8 in history, unsorted, seasonal period 2, 3 stored seasons, prune oldest season",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 3,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(3) * time.Second)},
@@ -1346,14 +1346,14 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			model: &jamiethompsonmev1alpha1.Model{
-				HoltWinters: &jamiethompsonmev1alpha1.HoltWinters{
+			model: &hpaplusv1alpha1.Model{
+				HoltWinters: &hpaplusv1alpha1.HoltWinters{
 					Trend:           "add",
 					StoredSeasons:   3,
 					SeasonalPeriods: 2,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 6,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},

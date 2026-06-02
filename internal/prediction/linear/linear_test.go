@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/fake"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/linear"
 	"github.com/google/go-cmp/cmp"
@@ -33,8 +33,8 @@ func intPtr(i int) *int {
 	return &i
 }
 
-func withCPUHistory(history []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
-	out := make([]jamiethompsonmev1alpha1.TimestampedReplicas, len(history))
+func withCPUHistory(history []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
+	out := make([]hpaplusv1alpha1.TimestampedReplicas, len(history))
 	copy(out, history)
 	for i := range out {
 		if out[i].TotalCPUUsageMillicores == nil {
@@ -58,44 +58,44 @@ func TestPredict_GetPrediction(t *testing.T) {
 		expected       int32
 		expectedErr    error
 		predicter      *linear.Predict
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			description:    "Fail no Linear configuration",
 			expected:       0,
 			expectedErr:    errors.New("no Linear configuration provided for model"),
 			predicter:      &linear.Predict{},
-			model:          &jamiethompsonmev1alpha1.Model{},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			model:          &hpaplusv1alpha1.Model{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Fail no evaluations",
 			expected:    0,
 			expectedErr: errors.New("no CPU usage evaluations provided for Linear regression model"),
 			predicter:   &linear.Predict{},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 5,
 					LookAhead:   0,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Success, only one evaluation, return without the prediction",
 			expected:    32,
 			expectedErr: nil,
 			predicter:   &linear.Predict{},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 5,
 					LookAhead:   0,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 32,
 				},
@@ -112,14 +112,14 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 5,
 					LookAhead:   0,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -139,14 +139,14 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 5,
 					LookAhead:   0,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -166,14 +166,14 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 5,
 					LookAhead:   0,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -193,15 +193,15 @@ func TestPredict_GetPrediction(t *testing.T) {
 					},
 				},
 			},
-			model: &jamiethompsonmev1alpha1.Model{
-				Type: jamiethompsonmev1alpha1.TypeLinear,
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: &hpaplusv1alpha1.Model{
+				Type: hpaplusv1alpha1.TypeLinear,
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 5,
 					LookAhead:   0,
 				},
 				CalculationTimeout: intPtr(10),
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 				},
@@ -236,8 +236,8 @@ func TestPredict_GetPrediction(t *testing.T) {
 
 func TestPredict_PruneHistoryUsesCPUBackedEntries(t *testing.T) {
 	predicter := &linear.Predict{}
-	model := &jamiethompsonmev1alpha1.Model{
-		Linear: &jamiethompsonmev1alpha1.Linear{
+	model := &hpaplusv1alpha1.Model{
+		Linear: &hpaplusv1alpha1.Linear{
 			HistorySize: 2,
 		},
 	}
@@ -245,7 +245,7 @@ func TestPredict_PruneHistoryUsesCPUBackedEntries(t *testing.T) {
 	cpu1 := int64(100)
 	cpu2 := int64(200)
 	cpu3 := int64(300)
-	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	history := []hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 1, Time: &metav1.Time{Time: time.Unix(1, 0).UTC()}},
 		{Replicas: 2, Time: &metav1.Time{Time: time.Unix(2, 0).UTC()}, TotalCPUUsageMillicores: &cpu1},
 		{Replicas: 3, Time: &metav1.Time{Time: time.Unix(3, 0).UTC()}, TotalCPUUsageMillicores: &cpu2},
@@ -265,8 +265,8 @@ func TestPredict_PruneHistoryUsesCPUBackedEntries(t *testing.T) {
 
 func TestPredict_PruneHistoryUsesNewestCPUEntriesWhenInputUnsorted(t *testing.T) {
 	predicter := &linear.Predict{}
-	model := &jamiethompsonmev1alpha1.Model{
-		Linear: &jamiethompsonmev1alpha1.Linear{
+	model := &hpaplusv1alpha1.Model{
+		Linear: &hpaplusv1alpha1.Linear{
 			HistorySize: 2,
 		},
 	}
@@ -274,7 +274,7 @@ func TestPredict_PruneHistoryUsesNewestCPUEntriesWhenInputUnsorted(t *testing.T)
 	cpu1 := int64(100)
 	cpu2 := int64(200)
 	cpu3 := int64(300)
-	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	history := []hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 5, Time: &metav1.Time{Time: time.Unix(5, 0).UTC()}, TotalCPUUsageMillicores: &cpu3},
 		{Replicas: 2, Time: &metav1.Time{Time: time.Unix(2, 0).UTC()}, TotalCPUUsageMillicores: &cpu1},
 		{Replicas: 4, Time: &metav1.Time{Time: time.Unix(4, 0).UTC()}},
@@ -287,7 +287,7 @@ func TestPredict_PruneHistoryUsesNewestCPUEntriesWhenInputUnsorted(t *testing.T)
 		t.Fatalf("PruneHistory() error = %v", err)
 	}
 
-	expected := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	expected := []hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 3, Time: &metav1.Time{Time: time.Unix(3, 0).UTC()}, TotalCPUUsageMillicores: &cpu2},
 		{Replicas: 4, Time: &metav1.Time{Time: time.Unix(4, 0).UTC()}},
 		{Replicas: 5, Time: &metav1.Time{Time: time.Unix(5, 0).UTC()}, TotalCPUUsageMillicores: &cpu3},
@@ -304,9 +304,9 @@ func TestPredict_GetPredictionSortsTrainingHistoryBeforeRunningAlgorithm(t *test
 		} `json:"replicaHistory"`
 	}
 
-	model := &jamiethompsonmev1alpha1.Model{
-		Type: jamiethompsonmev1alpha1.TypeLinear,
-		Linear: &jamiethompsonmev1alpha1.Linear{
+	model := &hpaplusv1alpha1.Model{
+		Type: hpaplusv1alpha1.TypeLinear,
+		Linear: &hpaplusv1alpha1.Linear{
 			HistorySize: 5,
 			LookAhead:   0,
 		},
@@ -314,7 +314,7 @@ func TestPredict_GetPredictionSortsTrainingHistoryBeforeRunningAlgorithm(t *test
 		TargetCPUUtilizationPercentage: 100,
 	}
 
-	history := []jamiethompsonmev1alpha1.TimestampedReplicas{
+	history := []hpaplusv1alpha1.TimestampedReplicas{
 		{Replicas: 3, Time: &metav1.Time{Time: time.Unix(3, 0).UTC()}},
 		{Replicas: 1, Time: &metav1.Time{Time: time.Unix(1, 0).UTC()}},
 		{Replicas: 2, Time: &metav1.Time{Time: time.Unix(2, 0).UTC()}},
@@ -364,21 +364,21 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 
 	var tests = []struct {
 		description    string
-		expected       []jamiethompsonmev1alpha1.TimestampedReplicas
+		expected       []hpaplusv1alpha1.TimestampedReplicas
 		expectedErr    error
-		model          *jamiethompsonmev1alpha1.Model
-		replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas
+		model          *hpaplusv1alpha1.Model
+		replicaHistory []hpaplusv1alpha1.TimestampedReplicas
 	}{
 		{
 			description:    "Fail no Linear configuration",
 			expected:       nil,
 			expectedErr:    errors.New("no Linear configuration provided for model"),
-			model:          &jamiethompsonmev1alpha1.Model{},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{},
+			model:          &hpaplusv1alpha1.Model{},
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
 			description: "Only 3 in history, max size 4",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 4,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
@@ -393,12 +393,12 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			model: &jamiethompsonmev1alpha1.Model{
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: &hpaplusv1alpha1.Model{
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 4,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 4,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
@@ -415,7 +415,7 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 		},
 		{
 			description: "3 too many, remove oldest 3",
-			expected: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			expected: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 4,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(6) * time.Second)},
@@ -430,12 +430,12 @@ func TestModelPredict_PruneHistory(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			model: &jamiethompsonmev1alpha1.Model{
-				Linear: &jamiethompsonmev1alpha1.Linear{
+			model: &hpaplusv1alpha1.Model{
+				Linear: &hpaplusv1alpha1.Linear{
 					HistorySize: 3,
 				},
 			},
-			replicaHistory: []jamiethompsonmev1alpha1.TimestampedReplicas{
+			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{
 				{
 					Replicas: 1,
 					Time:     &metav1.Time{Time: time.Time{}.Add(time.Duration(4) * time.Second)},

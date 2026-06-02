@@ -44,7 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	"github.com/cslab-ntua/HPA-Plus/internal/scalebehavior"
 	"github.com/cslab-ntua/HPA-Plus/internal/validation"
@@ -67,7 +67,7 @@ const (
 
 // HPA+ scale constraints
 const (
-	defaultDecisionType = jamiethompsonmev1alpha1.DecisionMaximum
+	defaultDecisionType = hpaplusv1alpha1.DecisionMaximum
 	defaultMinReplicas  = 1
 )
 
@@ -92,8 +92,8 @@ const (
 	defaultArimaHistorySize = 50
 )
 
-// PredictiveHorizontalPodAutoscalerReconciler reconciles a PredictiveHorizontalPodAutoscaler object
-type PredictiveHorizontalPodAutoscalerReconciler struct {
+// HPAPlusReconciler reconciles a HPAPlus object
+type HPAPlusReconciler struct {
 	client.Client
 	RESTMapper  meta.RESTMapper
 	ScaleClient scale.ScalesGetter
@@ -110,9 +110,9 @@ type cpuMetricSnapshot struct {
 	TargetUtilizationPercentage *int32
 }
 
-//+kubebuilder:rbac:groups=jamiethompson.me,resources=predictivehorizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=jamiethompson.me,resources=predictivehorizontalpodautoscalers/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=jamiethompson.me,resources=predictivehorizontalpodautoscalers/finalizers,verbs=update
+//+kubebuilder:rbac:groups=hpa.plus,resources=hpapluses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=hpa.plus,resources=hpapluses/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=hpa.plus,resources=hpapluses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list
 //+kubebuilder:rbac:groups=core,resources=replicationcontrollers,verbs=get;list;watch
 //+kubebuilder:rbac:groups=core,resources=replicationcontrollers/scale,verbs=get;update;patch
@@ -123,10 +123,10 @@ type cpuMetricSnapshot struct {
 //+kubebuilder:rbac:groups=custom.metrics.k8s.io,resources=*,verbs=get;list
 //+kubebuilder:rbac:groups=external.metrics.k8s.io,resources=*,verbs=get;list
 
-func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *HPAPlusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	instance := &jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler{}
+	instance := &hpaplusv1alpha1.HPAPlus{}
 	err := r.Client.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -136,13 +136,13 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 			return reconcile.Result{}, nil
 		}
 
-		logger.Error(err, "failed to get PredictiveHorizontalPodAutoscaler")
+		logger.Error(err, "failed to get HPAPlus")
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
 	err = validation.Validate(instance)
 	if err != nil {
-		logger.Error(err, "invalid PredictiveHorizontalPodAutoscaler, disabling HPA+ until changed to be valid")
+		logger.Error(err, "invalid HPAPlus, disabling HPA+ until changed to be valid")
 		// We stop processing here without requeueing since the HPA+ object is invalid, if changes are made to the spec that
 		// make it valid it will be reconciled again and the validation checked
 		return reconcile.Result{}, nil
@@ -240,7 +240,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 		"inputs", modelPredictions,
 		"targetReplicas", targetReplicas)
 
-	timestampedReplicaValue := jamiethompsonmev1alpha1.TimestampedReplicas{
+	timestampedReplicaValue := hpaplusv1alpha1.TimestampedReplicas{
 		Time:     &metav1.Time{Time: now},
 		Replicas: targetReplicas,
 	}
@@ -290,7 +290,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 
 		if targetReplicas > currentReplicas {
 			// Scale up
-			scaleEvent := jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleEvent := hpaplusv1alpha1.TimestampedReplicas{
 				Time:     &metav1.Time{Time: scaleTime},
 				Replicas: targetReplicas - currentReplicas,
 			}
@@ -301,7 +301,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 				scaleTime)
 		} else {
 			// Scale down
-			scaleEvent := jamiethompsonmev1alpha1.TimestampedReplicas{
+			scaleEvent := hpaplusv1alpha1.TimestampedReplicas{
 				Time:     &metav1.Time{Time: scaleTime},
 				Replicas: currentReplicas - targetReplicas,
 			}
@@ -339,8 +339,8 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) Reconcile(ctx context.Cont
 }
 
 // updateConfigMapData updates the HPA+'s configmap and the data it holds
-func (r *PredictiveHorizontalPodAutoscalerReconciler) updateConfigMapData(ctx context.Context, configMap *corev1.ConfigMap,
-	hpaPlusData *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) error {
+func (r *HPAPlusReconciler) updateConfigMapData(ctx context.Context, configMap *corev1.ConfigMap,
+	hpaPlusData *hpaplusv1alpha1.HPAPlusData) error {
 	data, err := json.Marshal(hpaPlusData)
 	if err != nil {
 		// Should not occur, panic
@@ -364,9 +364,9 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) updateConfigMapData(ctx co
 	return nil
 }
 
-func (r *PredictiveHorizontalPodAutoscalerReconciler) getOrCreateConfigMapData(ctx context.Context,
-	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler,
-) (*corev1.ConfigMap, *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData, error) {
+func (r *HPAPlusReconciler) getOrCreateConfigMapData(ctx context.Context,
+	instance *hpaplusv1alpha1.HPAPlus,
+) (*corev1.ConfigMap, *hpaplusv1alpha1.HPAPlusData, error) {
 	configMapName := fmt.Sprintf("hpa-plus-%s-data", instance.Name)
 	configMap := &corev1.ConfigMap{}
 
@@ -392,8 +392,8 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) getOrCreateConfigMapData(c
 			UID:        instance.UID,
 		}})
 
-		hpaPlusData := &jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData{
-			ModelHistories: map[string]jamiethompsonmev1alpha1.ModelHistory{},
+		hpaPlusData := &hpaplusv1alpha1.HPAPlusData{
+			ModelHistories: map[string]hpaplusv1alpha1.ModelHistory{},
 		}
 		data, err := json.Marshal(hpaPlusData)
 		if err != nil {
@@ -417,24 +417,24 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) getOrCreateConfigMapData(c
 		}
 	}
 
-	hpaPlusData := &jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData{}
+	hpaPlusData := &hpaplusv1alpha1.HPAPlusData{}
 	if configMap.Data == nil || configMap.Data[configMapDataKey] == "" {
-		hpaPlusData.ModelHistories = map[string]jamiethompsonmev1alpha1.ModelHistory{}
+		hpaPlusData.ModelHistories = map[string]hpaplusv1alpha1.ModelHistory{}
 		return configMap, hpaPlusData, nil
 	}
 	if err := json.Unmarshal([]byte(configMap.Data[configMapDataKey]), hpaPlusData); err != nil {
 		return nil, nil, err
 	}
 	if hpaPlusData.ModelHistories == nil {
-		hpaPlusData.ModelHistories = map[string]jamiethompsonmev1alpha1.ModelHistory{}
+		hpaPlusData.ModelHistories = map[string]hpaplusv1alpha1.ModelHistory{}
 	}
 
 	return configMap, hpaPlusData, nil
 }
 
-func (r *PredictiveHorizontalPodAutoscalerReconciler) mutateConfigMapData(ctx context.Context,
-	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler,
-	mutate func(*jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) (bool, error),
+func (r *HPAPlusReconciler) mutateConfigMapData(ctx context.Context,
+	instance *hpaplusv1alpha1.HPAPlus,
+	mutate func(*hpaplusv1alpha1.HPAPlusData) (bool, error),
 ) error {
 	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
@@ -469,9 +469,9 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) mutateConfigMapData(ctx co
 
 // processModels processes every model provided in the spec, it does not return any errors and will instead simply
 // log if a model has failed to be processed, allowing the other models/the HPA calculated replicas to be used instead
-func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.Context,
-	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler,
-	hpaPlusData *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData, now time.Time,
+func (r *HPAPlusReconciler) processModels(ctx context.Context,
+	instance *hpaplusv1alpha1.HPAPlus,
+	hpaPlusData *hpaplusv1alpha1.HPAPlusData, now time.Time,
 	currentReplicas int32, calculatedReplicas int32, cpuSnapshot cpuMetricSnapshot) ([]int32, map[string]int32) {
 
 	logger := log.FromContext(ctx)
@@ -500,10 +500,10 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 
 		modelHistory, exists := hpaPlusData.ModelHistories[model.Name]
 		if !exists || modelHistory.Type != model.Type {
-			modelHistory = jamiethompsonmev1alpha1.ModelHistory{
+			modelHistory = hpaplusv1alpha1.ModelHistory{
 				Type:              model.Type,
 				SyncPeriodsPassed: 0,
-				ReplicaHistory:    []jamiethompsonmev1alpha1.TimestampedReplicas{},
+				ReplicaHistory:    []hpaplusv1alpha1.TimestampedReplicas{},
 			}
 		}
 
@@ -584,8 +584,8 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) processModels(ctx context.
 
 // calculateReplicas does the HPA processing part of the autoscaling based on the metrics provided in the spec,
 // returns the calculated value (the value the HPA would calculate based on these metrics) and the latest metric value if available.
-func (r *PredictiveHorizontalPodAutoscalerReconciler) calculateReplicas(
-	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler, scale *autoscalingv1.Scale) (int32, cpuMetricSnapshot, error) {
+func (r *HPAPlusReconciler) calculateReplicas(
+	instance *hpaplusv1alpha1.HPAPlus, scale *autoscalingv1.Scale) (int32, cpuMetricSnapshot, error) {
 	cpuInitializationPeriod := defaultCPUInitializationPeriod
 	if instance.Spec.CPUInitializationPeriod != nil {
 		cpuInitializationPeriod = *instance.Spec.CPUInitializationPeriod
@@ -676,9 +676,9 @@ func aggregateCPUMillicores(metrics podmetrics.MetricsInfo, requests map[string]
 	return &totalUsage, &requestPerPod
 }
 
-func (r *PredictiveHorizontalPodAutoscalerReconciler) getTargetCPURequestPerPod(
+func (r *HPAPlusReconciler) getTargetCPURequestPerPod(
 	ctx context.Context,
-	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler,
+	instance *hpaplusv1alpha1.HPAPlus,
 ) (*int64, error) {
 	scaleTargetRef := instance.Spec.ScaleTargetRef
 	key := types.NamespacedName{
@@ -742,8 +742,8 @@ func podTemplateCPURequestMillicores(template *corev1.PodTemplateSpec) *int64 {
 
 // preScaleStatusCheck makes sure that the HPA+ status fields are correct before scaling, e.g. the reference field
 // is set
-func (r *PredictiveHorizontalPodAutoscalerReconciler) preScaleStatusCheck(ctx context.Context,
-	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler) error {
+func (r *HPAPlusReconciler) preScaleStatusCheck(ctx context.Context,
+	instance *hpaplusv1alpha1.HPAPlus) error {
 
 	scaleTargetRef := instance.Spec.ScaleTargetRef
 
@@ -848,26 +848,26 @@ func selectPolicyPtr(policy autoscalingv2.ScalingPolicySelect) *autoscalingv2.Sc
 	return &policy
 }
 
-func requiredHistorySize(model *jamiethompsonmev1alpha1.Model) int {
+func requiredHistorySize(model *hpaplusv1alpha1.Model) int {
 	switch model.Type {
-	case jamiethompsonmev1alpha1.TypeLinear:
+	case hpaplusv1alpha1.TypeLinear:
 		if model.Linear != nil {
 			return model.Linear.HistorySize
 		}
-	case jamiethompsonmev1alpha1.TypeXGBoost:
+	case hpaplusv1alpha1.TypeXGBoost:
 		if model.XGBoost != nil {
 			return model.XGBoost.HistorySize
 		}
-	case jamiethompsonmev1alpha1.TypeLightGBM:
+	case hpaplusv1alpha1.TypeLightGBM:
 		if model.LightGBM != nil {
 			return model.LightGBM.HistorySize
 		}
-	case jamiethompsonmev1alpha1.TypeArima:
+	case hpaplusv1alpha1.TypeArima:
 		if model.Arima != nil && model.Arima.HistorySize != nil {
 			return *model.Arima.HistorySize
 		}
 		return defaultArimaHistorySize
-	case jamiethompsonmev1alpha1.TypeHoltWinters:
+	case hpaplusv1alpha1.TypeHoltWinters:
 		if model.HoltWinters != nil {
 			required := model.HoltWinters.SeasonalPeriods * model.HoltWinters.StoredSeasons
 			statsmodelsMin := 2 * model.HoltWinters.SeasonalPeriods
@@ -884,7 +884,7 @@ func requiredHistorySize(model *jamiethompsonmev1alpha1.Model) int {
 	return 0
 }
 
-func modelHasSufficientHistory(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) bool {
+func modelHasSufficientHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) bool {
 	required := requiredHistorySize(model)
 	if required <= 0 {
 		return true
@@ -895,7 +895,7 @@ func modelHasSufficientHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 	return len(replicaHistory) >= required
 }
 
-func countCPUHistory(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) int {
+func countCPUHistory(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) int {
 	count := 0
 	for _, entry := range replicaHistory {
 		if entry.TotalCPUUsageMillicores != nil {
@@ -905,7 +905,7 @@ func countCPUHistory(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplica
 	return count
 }
 
-func syncPeriodForInstance(instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler) time.Duration {
+func syncPeriodForInstance(instance *hpaplusv1alpha1.HPAPlus) time.Duration {
 	syncPeriod := defaultSyncPeriod
 	if instance.Spec.SyncPeriod != nil {
 		syncPeriod = time.Duration(*instance.Spec.SyncPeriod) * time.Millisecond
@@ -913,8 +913,8 @@ func syncPeriodForInstance(instance *jamiethompsonmev1alpha1.PredictiveHorizonta
 	return syncPeriod
 }
 
-func (r *PredictiveHorizontalPodAutoscalerReconciler) getScaleTarget(ctx context.Context,
-	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler,
+func (r *HPAPlusReconciler) getScaleTarget(ctx context.Context,
+	instance *hpaplusv1alpha1.HPAPlus,
 ) (*autoscalingv1.Scale, schema.GroupResource, error) {
 	scaleTargetRef := instance.Spec.ScaleTargetRef
 	resourceGV, err := schema.ParseGroupVersion(scaleTargetRef.APIVersion)
@@ -937,7 +937,7 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) getScaleTarget(ctx context
 	return scale, targetGR, nil
 }
 
-func latestTimestamp(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) *time.Time {
+func latestTimestamp(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) *time.Time {
 	var latest *time.Time
 	for _, entry := range replicaHistory {
 		if entry.Time == nil {
@@ -952,11 +952,11 @@ func latestTimestamp(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplica
 	return latest
 }
 
-func countNewSamplesSinceLastRun(modelHistory jamiethompsonmev1alpha1.ModelHistory) int {
+func countNewSamplesSinceLastRun(modelHistory hpaplusv1alpha1.ModelHistory) int {
 	return countNewSamplesAfter(modelHistory.ReplicaHistory, modelHistory.LastModelRunTime)
 }
 
-func countNewSamplesAfter(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+func countNewSamplesAfter(replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
 	lastProcessed *metav1.Time,
 ) int {
 	latest := latestTimestamp(replicaHistory)
@@ -982,16 +982,16 @@ func countNewSamplesAfter(replicaHistory []jamiethompsonmev1alpha1.TimestampedRe
 	return count
 }
 
-func (r *PredictiveHorizontalPodAutoscalerReconciler) persistModelRunTime(
+func (r *HPAPlusReconciler) persistModelRunTime(
 	ctx context.Context,
-	instance *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler,
+	instance *hpaplusv1alpha1.HPAPlus,
 	modelName string,
 	latestSample *time.Time,
 ) error {
 	if latestSample == nil {
 		return nil
 	}
-	return r.mutateConfigMapData(ctx, instance, func(data *jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscalerData) (bool, error) {
+	return r.mutateConfigMapData(ctx, instance, func(data *hpaplusv1alpha1.HPAPlusData) (bool, error) {
 		modelHistory, exists := data.ModelHistories[modelName]
 		if !exists {
 			return false, nil
@@ -1006,10 +1006,10 @@ func (r *PredictiveHorizontalPodAutoscalerReconciler) persistModelRunTime(
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *PredictiveHorizontalPodAutoscalerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *HPAPlusReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(
-			&jamiethompsonmev1alpha1.PredictiveHorizontalPodAutoscaler{},
+			&hpaplusv1alpha1.HPAPlus{},
 			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
 		).
 		Complete(r)

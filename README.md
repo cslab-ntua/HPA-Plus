@@ -28,7 +28,7 @@ work and its Apache-2.0 licensed codebase.
 
 This repo contains:
 
-- a Kubernetes operator and Helm chart for `PredictiveHorizontalPodAutoscaler`
+- a Kubernetes operator and Helm chart for `HPAPlus`
 - multiple prediction backends, from simple trend-following to boosted trees
 - sample manifests for repeatable experiments
 - scripts for trace capture, benchmark sweeps, and graphing
@@ -97,8 +97,8 @@ The custom resource keeps the HPA shape on purpose. `scaleTargetRef`, `metrics`,
 HPA+ has its own custom resource:
 
 ```yaml
-apiVersion: jamiethompson.me/v1alpha1
-kind: PredictiveHorizontalPodAutoscaler
+apiVersion: hpa.plus/v1alpha1
+kind: HPAPlus
 metadata:
   name: simple-linear
 spec:
@@ -155,29 +155,28 @@ source:
      --set mode=cluster
    ```
 
-3. Deploy one of the sample manifests (`testing/manifests/hpa-plus/*.yaml` or `examples/**/hpa-plus.yaml`) to exercise
-   the controller.
+3. Create an `HPAPlus` resource using the model configuration from the getting started guide or model reference, then
+   apply it with `kubectl`.
 
 ## Common workflows
 
-For the local benchmarking and sample environment used in this repository:
-
-* Bootstrap the LightGBM sample environment with [`scripts/bootstrap_lightgbm_environment.sh`](./scripts/bootstrap_lightgbm_environment.sh).
-* Run the wider LightGBM benchmark matrix with [`scripts/run_lightgbm_benchmark_matrix.sh`](./scripts/run_lightgbm_benchmark_matrix.sh).
-* Compare decision-trace utilization with [`scripts/compare_decision_trace_utilization.py`](./scripts/compare_decision_trace_utilization.py) and plot raw utilization traces with [`scripts/plot_decision_trace_utilization_compare.py`](./scripts/plot_decision_trace_utilization_compare.py).
+For local development, build the image, install the Helm chart, deploy a workload, and apply an `HPAPlus` resource that
+targets that workload. The operator stores model history in ConfigMaps and reconciles the target replica count from the
+configured HPA and predictive model inputs.
 
 ## Quick start
 
 Check out the [getting started
-guide](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/getting-started.md) and the
-[examples](./examples/) for ways to use HPA+.
+guide](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/getting-started.md) for a complete local
+walkthrough.
 
 ## More information
 
 See the [wiki for more information, such as guides and
 references](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs).
 
-See the [`examples/` directory](./examples) for working code samples.
+See the [model reference](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/models.md) for supported
+model configuration blocks.
 
 ## Developing this project
 
@@ -199,14 +198,16 @@ to gather metrics and to evaluate them as the Kubernetes Horizontal Pod Autoscal
 It is recommended to test locally using a local Kubernetes managment system, such as
 [k3d](https://github.com/rancher/k3d) (allows running a small Kubernetes cluster locally using Docker).
 
-You can deploy an HPA+ example (see the [`examples/` directory](./examples) for choices) to test your changes.
+You can test changes by deploying a simple workload, applying an `HPAPlus` object from the getting started guide, and
+watching the target deployment's replica count and HPA+ status.
 
 ### Commands
 
-* `make run` - runs HPA+ locally against the cluster configured in your kubeconfig file.
+* `make py_dependencies` - installs Python development dependencies.
 * `make docker` - builds the HPA+ image.
-* `make lint` - lints the code.
-* `make format` - beautifies the code so that `make lint` stays happy.
+* `make push` - pushes the HPA+ image.
+* `make generate` - regenerates Go deepcopy code, RBAC, webhook manifests, and CRDs.
 * `make test` - runs the unit tests.
-* `make doc` - hosts the documentation locally at <https://localhost:8000>.
-* `make coverage` - opens up any generated coverage reports in the browser.
+* `make gotest` - runs Go tests with coverage.
+* `make pytest` - runs Python algorithm tests with coverage.
+* `make view_coverage` - opens up any generated coverage reports in the browser.

@@ -16,6 +16,7 @@ testbin/*
 
 # Main HPA+ operator binary
 hpa-plus
+predictive-horizontal-pod-autoscaler
 
 # Test binary, build with `go test -c`
 *.test
@@ -37,28 +38,16 @@ hpa-plus
 
 # Pre-commit cache
 **/.cache/pre-commit
-.pre-commit-config.yaml
-test-arima-hpa-plus.yaml
-test-deployment.yaml
-scripts/
-test-load.yaml
-test-app-server-configmap.yaml
 test-arima-hpa-plus.yaml
 test-deployment.yaml
 test-load.yaml
 test-app-server-configmap.yaml
-test-arima-hpa-plus.yaml
-test-deployment.yaml
 **/.gocache/
 test_load.yaml
 .cache/
 vendor/
-.github/ISSUE_TEMPLATE/
 benchmarks/
-examples/
-testing/
 arima_utilization.png
-.gitignore
 decision_trace_cpu_hpa.png
 decision_trace_cpu.png
 decision_trace_cpu_arima.png
@@ -66,7 +55,6 @@ history.csv
 plain_hpa_utilization.png
 decision_trace_utilization_hpa_lightgbm_raw.png
 decision_trace_utilization_hpa_lightgbm.png
-.gitignore
 decision_trace_utilization_comparison.png
 decision_trace_utilization_hpa_xgboost.png
 decision_trace_cpu_xgboost.png

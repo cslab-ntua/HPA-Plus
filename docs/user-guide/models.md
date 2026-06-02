@@ -2,7 +2,7 @@
 
 This page documents the model families that are implemented in the current repository.
 
-It is intentionally short. For exact field names and validation details, check [`api/v1alpha1/predictivehorizontalpodautoscaler_types.go`](../../api/v1alpha1/predictivehorizontalpodautoscaler_types.go) and the sample manifests under [`testing/manifests/hpa-plus/`](../../testing/manifests/hpa-plus/).
+It is intentionally short. For exact field names and validation details, check [`api/v1alpha1/hpaplus_types.go`](../../api/v1alpha1/hpaplus_types.go).
 
 ## How Models Fit Into HPA+
 
@@ -21,14 +21,14 @@ In practice this means a model is only one part of the final scaling behavior. S
 All model entries support these common fields:
 
 - `type`: model family. Supported values in this repo are `Linear`, `HoltWinters`, `ARIMA`, `XGBoost`, and `LightGBM`.
-- `name`: unique model name within the PHPA object.
+- `name`: unique model name within the `HPAPlus` object.
 - `perSyncPeriod`: run cadence in units of `syncPeriod`. `1` means every sync, `2` means every other sync.
 - `calculationTimeout`: max time, in milliseconds, allowed for one prediction run.
 - `startInterval`: optional delayed start boundary for time-aligned models.
 - `resetDuration`: optional idle timeout after which model state/history is reset.
 
 ## Training Input
-All models in the current repository learn from aggregate CPU usage history stored in the PHPA ConfigMap and convert predicted CPU demand back into replicas using the current CPU request per pod and target utilization.
+All models in the current repository learn from aggregate CPU usage history stored in the HPA+ ConfigMap and convert predicted CPU demand back into replicas using the current CPU request per pod and target utilization.
 
 If a model does not yet have enough usable CPU samples, the controller falls back to the HPA path until the history is warm.
 
@@ -53,7 +53,7 @@ Key fields:
 - `linear.lookAhead`: forecast horizon in milliseconds.
 - `linear.historySize`: number of retained CPU-history samples.
 
-See [`examples/simple-linear/hpa-plus.yaml`](../../examples/simple-linear/hpa-plus.yaml).
+Use this block inside `spec.models` on an `HPAPlus` resource.
 
 ## Holt-Winters
 
@@ -85,11 +85,7 @@ Key fields:
 - `holtWinters.trend`, `seasonal`: additive or multiplicative behavior.
 - `holtWinters.runtimeTuningFetchHook`: optional hook-based runtime tuning.
 
-See:
-
-- [`examples/simple-holt-winters/hpa-plus.yaml`](../../examples/simple-holt-winters/hpa-plus.yaml)
-- [`examples/dynamic-holt-winters/hpa-plus.yaml`](../../examples/dynamic-holt-winters/hpa-plus.yaml)
-- [hooks.md](./hooks.md)
+For hook-based runtime tuning details, see [hooks.md](./hooks.md).
 
 ## ARIMA
 
@@ -123,7 +119,7 @@ Key fields:
 - `arima.useSarima`, `seasonalOrder`, `seasonalPeriods`: seasonal ARIMA path.
 - `arima.incrementalUpdates`, `refitEvery`: stateful incremental runtime behavior.
 
-See [`arima.yaml`](../../testing/manifests/hpa-plus/arima.yaml).
+Use this block inside `spec.models` on an `HPAPlus` resource.
 
 ## XGBoost
 
@@ -159,7 +155,7 @@ Key fields:
 - `xgboost.subsample`, `colsampleBytree`: row/feature sampling.
 - `xgboost.minChildWeight`, `gamma`, `regLambda`, `regAlpha`: regularization controls.
 
-See [`xgboost.yaml`](../../testing/manifests/hpa-plus/xgboost.yaml).
+Use this block inside `spec.models` on an `HPAPlus` resource.
 
 ## LightGBM
 
@@ -198,7 +194,7 @@ Key fields:
 - `lightgbm.numLeaves`, `minChildSamples`: LightGBM tree-shape controls.
 - `lightgbm.regLambda`, `regAlpha`: regularization controls.
 
-See [`lightgbm.yaml`](../../testing/manifests/hpa-plus/lightgbm.yaml).
+Use this block inside `spec.models` on an `HPAPlus` resource.
 
 ## Picking A Starting Point
 
@@ -212,5 +208,5 @@ Use this rule of thumb:
 For the tree-based models in this repo, the practical workflow is:
 
 1. Capture realistic runtime history.
-2. Benchmark candidate parameter grids with the scripts under [`scripts/`](../../scripts/).
-3. Apply the chosen settings in the corresponding manifest under [`testing/manifests/hpa-plus/`](../../testing/manifests/hpa-plus/).
+2. Benchmark candidate parameter grids outside the cluster against that history.
+3. Apply the chosen settings in the corresponding `HPAPlus` model block.

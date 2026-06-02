@@ -41,7 +41,7 @@ import (
 	"github.com/jthomperoo/k8shorizmetrics/v2/metricsclient"
 	"github.com/jthomperoo/k8shorizmetrics/v2/podsclient"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/algorithm"
 	"github.com/cslab-ntua/HPA-Plus/internal/controllers"
 	"github.com/cslab-ntua/HPA-Plus/internal/hook/http"
@@ -62,7 +62,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(jamiethompsonmev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(hpaplusv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -89,7 +89,7 @@ func main() {
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "a07591f8.jamiethompson.me",
+		LeaderElectionID:       "a07591f8.hpa.plus",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -134,7 +134,7 @@ func main() {
 	}()
 	httpExec := &http.Execute{}
 
-	reconciler := &controllers.PredictiveHorizontalPodAutoscalerReconciler{
+	reconciler := &controllers.HPAPlusReconciler{
 		Client:      mgr.GetClient(),
 		RESTMapper:  mgr.GetRESTMapper(),
 		Scheme:      mgr.GetScheme(),
@@ -165,7 +165,7 @@ func main() {
 	}
 
 	if err = reconciler.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "PredictiveHorizontalPodAutoscaler")
+		setupLog.Error(err, "unable to create controller", "controller", "HPAPlus")
 		os.Exit(1)
 	}
 	if err = mgr.Add(controllers.NewHistorySampler(reconciler)); err != nil {

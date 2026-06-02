@@ -1,31 +1,13 @@
 REGISTRY = dimitrisde
 NAME = hpa-plus-operator
-VERSION = 0.13.3
-
-LOCAL_HELM_CHART_NAME=hpa-plus-operator
-
-run: deploy py_dependencies
-	go run github.com/cosmtrek/air
+VERSION = 0.14.0-hpaplus
+GOBIN = $(shell go env GOBIN)
+GOPATH = $(shell go env GOPATH)
+GO_BIN_DIR = $(if $(GOBIN),$(GOBIN),$(GOPATH)/bin)
+CONTROLLER_GEN = $(GO_BIN_DIR)/controller-gen
 
 py_dependencies:
 	python -m pip install -r requirements-dev.txt
-
-undeploy: generate
-	helm uninstall $(LOCAL_HELM_CHART_NAME)
-
-deploy: generate
-	helm upgrade --install --set mode=development $(LOCAL_HELM_CHART_NAME) helm/
-
-lint: generate
-	@echo "=============Linting============="
-	go run honnef.co/go/tools/cmd/staticcheck@v0.4.2 ./...
-	pylint algorithms --rcfile=.pylintrc
-
-format:
-	@echo "=============Formatting============="
-	gofmt -s -w .
-	go mod tidy
-	find algorithms -name '*.py' -print0 | xargs -0 yapf -i
 
 test: gotest pytest
 
@@ -38,10 +20,13 @@ pytest:
 docker:
 	docker build . -t $(REGISTRY)/$(NAME):$(VERSION)
 
+push:
+	docker push $(REGISTRY)/$(NAME):$(VERSION)
+
 generate: get_controller-gen
 	@echo "=============Generating Golang and YAML============="
-	controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	controller-gen rbac:roleName=hpa-plus-operator webhook crd:allowDangerousTypes=true \
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) rbac:roleName=hpa-plus-operator webhook crd:allowDangerousTypes=true \
 		paths="./..." \
 		output:crd:artifacts:config=helm/templates/crd \
 		output:rbac:artifacts:config=helm/templates/cluster \
@@ -53,8 +38,4 @@ view_coverage:
 	python -m webbrowser file://$(shell pwd)/.algorithm_coverage/index.html
 
 get_controller-gen:
-	go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.2
-
-doc:
-	@echo "=============Serving docs============="
-	mkdocs serve
+	go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.16.4

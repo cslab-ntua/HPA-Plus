@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	ctrlLog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -37,7 +37,7 @@ const algorithmPath = "algorithms/linear_regression/linear_regression.py"
 
 type linearRegressionParameters struct {
 	LookAhead      int                                           `json:"lookAhead"`
-	ReplicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas `json:"replicaHistory"`
+	ReplicaHistory []hpaplusv1alpha1.TimestampedReplicas `json:"replicaHistory"`
 }
 
 // Config represents a linear regression prediction model configuration
@@ -58,7 +58,7 @@ type Predict struct {
 
 // GetPrediction uses linear regression to predict aggregate CPU usage and converts that prediction
 // back into a replica count.
-func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (int32, error) {
+func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
 	result, err := p.GetPredictionResult(model, replicaHistory)
 	if err != nil {
 		return 0, err
@@ -68,7 +68,7 @@ func (p *Predict) GetPrediction(model *jamiethompsonmev1alpha1.Model, replicaHis
 
 // GetPredictionResult uses linear regression to predict aggregate CPU usage and converts that
 // prediction back into a replica count.
-func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) (prediction.Result, error) {
+func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (prediction.Result, error) {
 	if model.Linear == nil {
 		return prediction.Result{}, errors.New("no Linear configuration provided for model")
 	}
@@ -127,7 +127,7 @@ func (p *Predict) GetPredictionResult(model *jamiethompsonmev1alpha1.Model, repl
 	}, nil
 }
 
-func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) ([]jamiethompsonmev1alpha1.TimestampedReplicas, error) {
+func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
 	if model.Linear == nil {
 		return nil, errors.New("no Linear configuration provided for model")
 	}
@@ -163,11 +163,11 @@ func (p *Predict) PruneHistory(model *jamiethompsonmev1alpha1.Model, replicaHist
 
 // GetType returns the type of the Prediction model
 func (p *Predict) GetType() string {
-	return jamiethompsonmev1alpha1.TypeLinear
+	return hpaplusv1alpha1.TypeLinear
 }
 
-func filterHistoryWithCPUUsage(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) []jamiethompsonmev1alpha1.TimestampedReplicas {
-	filtered := make([]jamiethompsonmev1alpha1.TimestampedReplicas, 0, len(replicaHistory))
+func filterHistoryWithCPUUsage(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
+	filtered := make([]hpaplusv1alpha1.TimestampedReplicas, 0, len(replicaHistory))
 	for _, entry := range replicaHistory {
 		if entry.TotalCPUUsageMillicores == nil {
 			continue
@@ -177,7 +177,7 @@ func filterHistoryWithCPUUsage(replicaHistory []jamiethompsonmev1alpha1.Timestam
 	return filtered
 }
 
-func countCPUUsageEntries(replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas) int {
+func countCPUUsageEntries(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) int {
 	count := 0
 	for _, entry := range replicaHistory {
 		if entry.TotalCPUUsageMillicores != nil {
@@ -188,11 +188,11 @@ func countCPUUsageEntries(replicaHistory []jamiethompsonmev1alpha1.TimestampedRe
 }
 
 func pruneHistoryByCPUUsage(
-	replicaHistory []jamiethompsonmev1alpha1.TimestampedReplicas,
+	replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
 	maxCPUEntries int,
-) []jamiethompsonmev1alpha1.TimestampedReplicas {
+) []hpaplusv1alpha1.TimestampedReplicas {
 	if maxCPUEntries <= 0 {
-		return []jamiethompsonmev1alpha1.TimestampedReplicas{}
+		return []hpaplusv1alpha1.TimestampedReplicas{}
 	}
 
 	cpuEntriesSeen := 0
@@ -233,7 +233,7 @@ func parsePredictedCPUUsage(value string) (int64, error) {
 	return int64(math.Ceil(predictedUsageFloat)), nil
 }
 
-func convertPredictedCPUUsageToReplicas(model *jamiethompsonmev1alpha1.Model, predictedUsage int64) (int32, error) {
+func convertPredictedCPUUsageToReplicas(model *hpaplusv1alpha1.Model, predictedUsage int64) (int32, error) {
 	if model.CPURequestPerPodMillicores <= 0 {
 		return 0, errors.New("missing CPU request per pod for Linear CPU-history prediction")
 	}
@@ -253,7 +253,7 @@ func convertPredictedCPUUsageToReplicas(model *jamiethompsonmev1alpha1.Model, pr
 	return int32(math.Ceil(float64(predictedUsage) / targetPerPod)), nil
 }
 
-func logRawForecast(model *jamiethompsonmev1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
+func logRawForecast(model *hpaplusv1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
 	sessionID := model.Name
 	if model.SessionID != "" {
 		sessionID = model.SessionID

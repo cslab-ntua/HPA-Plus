@@ -16,16 +16,16 @@ limitations under the License.
 
 package fake
 
-import jamiethompsonmev1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+import hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 
 // Execute (fake) provides a way to insert functionality into a hook executer
 type Execute struct {
-	ExecuteWithValueReactor func(definition *jamiethompsonmev1alpha1.HookDefinition, value string) (string, error)
+	ExecuteWithValueReactor func(definition *hpaplusv1alpha1.HookDefinition, value string) (string, error)
 	GetTypeReactor          func() string
 }
 
 // ExecuteWithValue calls the fake Executer function
-func (e *Execute) ExecuteWithValue(definition *jamiethompsonmev1alpha1.HookDefinition, value string) (string, error) {
+func (e *Execute) ExecuteWithValue(definition *hpaplusv1alpha1.HookDefinition, value string) (string, error) {
 	return e.ExecuteWithValueReactor(definition, value)
 }
 
