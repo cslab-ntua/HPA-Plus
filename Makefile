@@ -1,6 +1,6 @@
 REGISTRY = dimitrisde
 NAME = hpa-plus-operator
-VERSION = 0.13.3
+VERSION = 0.14.0-hpaplus
 GOBIN = $(shell go env GOBIN)
 GOPATH = $(shell go env GOPATH)
 GO_BIN_DIR = $(if $(GOBIN),$(GOBIN),$(GOPATH)/bin)
