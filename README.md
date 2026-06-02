@@ -1,6 +1,3 @@
-[![Build](https://github.com/cslab-ntua/HPA-Plus/workflows/main/badge.svg)](https://github.com/cslab-ntua/HPA-Plus/actions)
-[![go.dev](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat)](https://pkg.go.dev/github.com/cslab-ntua/HPA-Plus)
-[![Go Report Card](https://goreportcard.com/badge/github.com/cslab-ntua/HPA-Plus)](https://goreportcard.com/report/github.com/cslab-ntua/HPA-Plus)
 [![Docs](https://img.shields.io/badge/docs-GitHub-blue)](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs)
 [![License](https://img.shields.io/:license-apache-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 
@@ -30,8 +27,8 @@ This repo contains:
 
 - a Kubernetes operator and Helm chart for `HPAPlus`
 - multiple prediction backends, from simple trend-following to boosted trees
-- sample manifests for repeatable experiments
-- scripts for trace capture, benchmark sweeps, and graphing
+- docs for installing the operator and configuring HPA+ resources
+- a Helm-based deployment flow for running the controller in a cluster
 - a workflow oriented around tuning from real workload history instead of picking model settings blindly
 
 ## Where It Helps
@@ -85,7 +82,7 @@ versions we will try to fix them, but there is no guarantee of support.
 - All current predictors in this repo operate over aggregate CPU-history inputs
 - `Linear` and `HoltWinters` are the lighter statistical options
 - `ARIMA`, `XGBoost`, and `LightGBM` add progressively more modeling capacity and tuning surface
-- the repository includes both sample manifests and benchmark tooling for the tree-based models
+- tree-based models require realistic captured history and careful parameter tuning before production use
 
 See [models.md](./docs/user-guide/models.md) for the current repo-specific model guide.
 
@@ -134,14 +131,14 @@ the `Linear` model and lets that model contribute to the final replica decision.
 Because the project now lives in a private repository the recommended workflow is to build and deploy the operator from
 source:
 
-1. Build (and optionally push) the controller image.
+1. Build and push the controller image.
 
    ```bash
-   export REGISTRY=docker.io/<your-user>   # change as needed
+   export REGISTRY=<your-registry-or-dockerhub-user>
    export VERSION=$(git rev-parse --short HEAD)
 
-   docker build -t ${REGISTRY}/hpa-plus-operator:${VERSION} .
-   docker push ${REGISTRY}/hpa-plus-operator:${VERSION}    # optional if you use kind/minikube
+   make docker REGISTRY=${REGISTRY} VERSION=${VERSION}
+   make push REGISTRY=${REGISTRY} VERSION=${VERSION}
    ```
 
 2. Install the Helm chart directly from this repository, pointing it at the image you just built.
@@ -172,8 +169,7 @@ walkthrough.
 
 ## More information
 
-See the [wiki for more information, such as guides and
-references](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs).
+See the [docs directory](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs) for guides and reference material.
 
 See the [model reference](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/models.md) for supported
 model configuration blocks.
