@@ -1,0 +1,137 @@
+{{- if .Values.cgroupCollector.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Chart.Name }}-cgroup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ if .Values.cgroupCollector.watchNamespace }}Role{{ else }}ClusterRole{{ end }}
+metadata:
+  name: {{ .Chart.Name }}-cgroup
+  {{- if .Values.cgroupCollector.watchNamespace }}
+  namespace: {{ .Values.cgroupCollector.watchNamespace | quote }}
+  {{- end }}
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ if .Values.cgroupCollector.watchNamespace }}RoleBinding{{ else }}ClusterRoleBinding{{ end }}
+metadata:
+  name: {{ .Chart.Name }}-cgroup
+  {{- if .Values.cgroupCollector.watchNamespace }}
+  namespace: {{ .Values.cgroupCollector.watchNamespace | quote }}
+  {{- end }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: {{ if .Values.cgroupCollector.watchNamespace }}Role{{ else }}ClusterRole{{ end }}
+  name: {{ .Chart.Name }}-cgroup
+subjects:
+- kind: ServiceAccount
+  name: {{ .Chart.Name }}-cgroup
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Chart.Name }}-cgroup-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods/proxy"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Chart.Name }}-cgroup-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Chart.Name }}-cgroup-reader
+subjects:
+- kind: ServiceAccount
+  name: {{ .Chart.Name }}-cluster
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Chart.Name }}-cgroup
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/component: cgroup-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/component: cgroup-collector
+    spec:
+      serviceAccountName: {{ .Chart.Name }}-cgroup
+      terminationGracePeriodSeconds: 10
+      nodeSelector:
+        {{- toYaml .Values.cgroupCollector.nodeSelector | nindent 8 }}
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: cgroup
+        hostPath:
+          path: /sys/fs/cgroup
+          type: Directory
+      containers:
+      - name: collector
+        image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["/app/cgroup-collector"]
+        args:
+        - --listen=:{{ .Values.cgroupCollector.port }}
+        - --interval={{ .Values.cgroupCollector.interval }}
+        - --retention={{ .Values.cgroupCollector.retention }}
+        - --cgroup-root=/host-cgroup
+        {{- if .Values.cgroupCollector.watchNamespace }}
+        - --watch-namespace={{ .Values.cgroupCollector.watchNamespace }}
+        {{- end }}
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          {{- toYaml .Values.cgroupCollector.resources | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: cgroup
+          mountPath: /host-cgroup
+          readOnly: true
+        ports:
+        - name: snapshot
+          containerPort: {{ .Values.cgroupCollector.port }}
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: snapshot
+          periodSeconds: 2
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: snapshot
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: snapshot
+          periodSeconds: 10
+{{- end }}

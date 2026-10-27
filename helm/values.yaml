@@ -7,6 +7,24 @@ image:
 
 leaderElection: true
 
+cgroupCollector:
+  enabled: false
+  # Empty discovers pods cluster-wide; set for a namespace-owned installation.
+  watchNamespace: ""
+  port: 19091
+  interval: 2s
+  retention: 3m
+  nodeSelector:
+    kubernetes.io/os: linux
+    kubernetes.io/arch: amd64
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
 # Requires a NetworkPolicy-enforcing CNI. Enabling with empty lists isolates
 # operator pods in both directions; configure API/DNS and optional hook/scraper
 # rules first. See docs/reference/network-policy.md.
