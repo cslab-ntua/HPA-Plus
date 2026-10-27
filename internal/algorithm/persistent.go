@@ -1,29 +1,15 @@
-/*
-Copyright 2022 The Predictive Horizontal Pod Autoscaler Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package algorithm
 
 import (
 	"bufio"
-	"bytes"
+	"context"
+	"errors"
 	"fmt"
+	"github.com/cslab-ntua/HPA-Plus/internal/observability"
 	"io"
+	"math"
 	"os"
 	"os/exec"
-	"path"
 	"strings"
 	"sync"
 	"time"
@@ -35,199 +21,301 @@ type readResult struct {
 }
 
 type persistentSession struct {
+	telemetry     *observability.Metrics
 	algorithmPath string
 	cmd           *exec.Cmd
 	stdin         io.WriteCloser
-	stdout        *bufio.Reader
-	stderr        *bytes.Buffer
+	stdout        io.ReadCloser
+	reader        *bufio.Reader
+	stderr        *boundedBuffer
 	done          chan struct{}
-	waitErr       error
-	mu            sync.Mutex
-}
-
-func (s *persistentSession) run(payload string, timeout int) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	select {
-	case <-s.done:
-		return "", fmt.Errorf("python worker for '%s' is no longer running: %s", s.algorithmPath, strings.TrimSpace(s.stderr.String()))
-	default:
-	}
-
-	_, err := io.WriteString(s.stdin, payload+"\n")
-	if err != nil {
-		return "", fmt.Errorf("failed to write request to python worker for '%s': %w", s.algorithmPath, err)
-	}
-
-	responseCh := make(chan readResult, 1)
-	go func() {
-		line, readErr := s.stdout.ReadString('\n')
-		responseCh <- readResult{
-			value: strings.TrimSpace(line),
-			err:   readErr,
-		}
-	}()
-
-	timeoutListener := time.After(time.Duration(timeout) * time.Millisecond)
-
-	select {
-	case response := <-responseCh:
-		if response.err != nil {
-			if response.err == io.EOF {
-				return "", fmt.Errorf("python worker for '%s' exited: %s", s.algorithmPath, strings.TrimSpace(s.stderr.String()))
-			}
-			return "", fmt.Errorf("failed to read python worker response for '%s': %w", s.algorithmPath, response.err)
-		}
-		return response.value, nil
-	case <-s.done:
-		waitErr := s.waitErr
-		if waitErr != nil {
-			return "", fmt.Errorf("python worker for '%s' exited unexpectedly: %v: %s", s.algorithmPath, waitErr, strings.TrimSpace(s.stderr.String()))
-		}
-		return "", fmt.Errorf("python worker for '%s' exited unexpectedly", s.algorithmPath)
-	case <-timeoutListener:
-		return "", fmt.Errorf("entrypoint '%s', command '%s' timed out", entrypoint, s.algorithmPath)
-	}
+	waitErr       error // published by closing done
+	gate          chan struct{}
+	stopOnce      sync.Once
 }
 
 func (s *persistentSession) stop() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.stdin != nil {
+	s.stopOnce.Do(func() {
+		killProcess(s.cmd)
 		_ = s.stdin.Close()
-	}
+		_ = s.stdout.Close()
+		<-s.done
+	})
+}
 
-	if s.cmd != nil && s.cmd.Process != nil {
-		_ = s.cmd.Process.Kill()
+func (s *persistentSession) exchange(payload string) readResult {
+	if _, err := io.WriteString(s.stdin, payload+"\n"); err != nil {
+		return readResult{err: err}
+	}
+	var response []byte
+	for {
+		fragment, err := s.reader.ReadSlice('\n')
+		if len(response)+len(fragment) > MaxOutputBytes {
+			return readResult{err: fmt.Errorf("worker response exceeds %d bytes", MaxOutputBytes)}
+		}
+		response = append(response, fragment...)
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err != nil {
+			return readResult{err: err}
+		}
+		return readResult{value: strings.TrimSpace(string(response))}
 	}
 }
 
-// PersistentPython keeps long-lived Python worker processes keyed by session IDs.
+func (s *persistentSession) run(ctx context.Context, payload string) (string, error) {
+	queued := time.Now()
+	// Cancellation while queued must not terminate the current request's worker.
+	select {
+	case s.gate <- struct{}{}:
+		defer func() { <-s.gate }()
+	case <-ctx.Done():
+		s.telemetry.ObserveWorkerQueue("persistent", "exchange", time.Since(queued))
+		return "", ctx.Err()
+	}
+	s.telemetry.ObserveWorkerQueue("persistent", "exchange", time.Since(queued))
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	select {
+	case <-s.done:
+		return "", fmt.Errorf("python worker exited: %s", s.stderr.String())
+	default:
+	}
+	s.telemetry.WorkerActivity("persistent", "exchanges", 1)
+	defer s.telemetry.WorkerActivity("persistent", "exchanges", -1)
+	responseCh := make(chan readResult, 1)
+	go func() { responseCh <- s.exchange(payload) }()
+	select {
+	case response := <-responseCh:
+		if response.err != nil {
+			s.stop()
+			return "", fmt.Errorf("python worker %q: %w: %s", s.algorithmPath, response.err, s.stderr.String())
+		}
+		if s.stderr.overflowed() {
+			s.stop()
+			return "", fmt.Errorf("worker stderr exceeds %d bytes", MaxOutputBytes)
+		}
+		return response.value, nil
+	case <-ctx.Done():
+		s.stop()
+		<-responseCh
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", &timeoutError{script: s.algorithmPath}
+		}
+		return "", ctx.Err()
+	case <-s.stderr.exceeded:
+		s.stop()
+		<-responseCh
+		return "", fmt.Errorf("worker stderr exceeds %d bytes", MaxOutputBytes)
+	case <-s.done:
+		s.stop()
+		<-responseCh
+		return "", fmt.Errorf("python worker %q exited: %v: %s", s.algorithmPath, s.waitErr, s.stderr.String())
+	}
+}
+
+// PersistentPython manages bounded newline-delimited workers. Configure MaxSessions
+// before first use; CloseAll permanently closes the runner.
 type PersistentPython struct {
-	Command  command
-	Getwd    func() (dir string, err error)
-	mu       sync.Mutex
-	sessions map[string]*persistentSession
+	Telemetry    *observability.Metrics
+	Command      command
+	Getwd        func() (string, error)
+	MaxSessions  int
+	MaxMemoryMiB int
+	mu           sync.Mutex
+	sessions     map[string]*persistentSession
+	closed       bool
 }
 
 func NewPersistentAlgorithmPython() *PersistentPython {
-	return &PersistentPython{
-		Command:  exec.Command,
-		Getwd:    os.Getwd,
-		sessions: map[string]*persistentSession{},
-	}
+	return &PersistentPython{Command: exec.Command, Getwd: os.Getwd, MaxSessions: 16, MaxMemoryMiB: 1024, sessions: map[string]*persistentSession{}}
 }
 
-func (p *PersistentPython) startSession(algorithmPath string) (*persistentSession, error) {
+func (p *PersistentPython) startSession(script string) (*persistentSession, error) {
 	wd, err := p.Getwd()
 	if err != nil {
 		return nil, err
 	}
-
-	cmd := p.Command(entrypoint, path.Join(wd, algorithmPath))
+	cmd, err := workerCommand(p.Command, wd, script, p.MaxMemoryMiB)
+	if err != nil {
+		return nil, err
+	}
+	prepareProcess(cmd)
+	cmd.WaitDelay = time.Second
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		_ = stdin.Close()
 		return nil, err
 	}
-
-	stderr := bytes.Buffer{}
-	cmd.Stderr = &stderr
-
-	err = cmd.Start()
-	if err != nil {
+	stderr := newBoundedBuffer(MaxOutputBytes)
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
 		return nil, err
 	}
-
-	session := &persistentSession{
-		algorithmPath: algorithmPath,
-		cmd:           cmd,
-		stdin:         stdin,
-		stdout:        bufio.NewReader(stdout),
-		stderr:        &stderr,
-		done:          make(chan struct{}),
-	}
-
+	s := &persistentSession{telemetry: p.Telemetry, algorithmPath: script, cmd: cmd, stdin: stdin, stdout: stdout,
+		reader: bufio.NewReader(stdout), stderr: stderr, done: make(chan struct{}), gate: make(chan struct{}, 1)}
+	p.Telemetry.WorkerActivity("persistent", "processes", 1)
+	p.Telemetry.ObserveWorkerEvent("persistent", "started")
 	go func() {
-		session.waitErr = cmd.Wait()
-		close(session.done)
+		s.waitErr = cmd.Wait()
+		p.Telemetry.WorkerActivity("persistent", "processes", -1)
+		p.Telemetry.ObserveWorkerEvent("persistent", "exited")
+		if s.waitErr != nil {
+			p.Telemetry.ObserveWorkerEvent("persistent", "failed")
+		}
+		close(s.done)
 	}()
-
-	return session, nil
+	go func() {
+		select {
+		case <-stderr.exceeded:
+			s.stop()
+		case <-s.done:
+		}
+	}()
+	return s, nil
 }
 
-func (p *PersistentPython) getOrCreateSession(sessionID, algorithmPath string) (*persistentSession, error) {
+func (p *PersistentPython) getOrCreateSession(ctx context.Context, id, script string) (*persistentSession, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	current, ok := p.sessions[sessionID]
-	if ok {
-		if current.algorithmPath == algorithmPath {
+	// Registry waits include starts and joined resets. A canceled caller must
+	// not create an idle child after waiting for another process to be reaped.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if p.closed {
+		return nil, fmt.Errorf("persistent Python runner is closed")
+	}
+	if p.sessions == nil {
+		p.sessions = map[string]*persistentSession{}
+	}
+	if current := p.sessions[id]; current != nil {
+		if current.algorithmPath == script {
 			select {
 			case <-current.done:
-				delete(p.sessions, sessionID)
+				delete(p.sessions, id)
 			default:
 				return current, nil
 			}
 		} else {
 			current.stop()
-			delete(p.sessions, sessionID)
+			delete(p.sessions, id)
 		}
 	}
-
-	session, err := p.startSession(algorithmPath)
+	limit := p.MaxSessions
+	for key, session := range p.sessions {
+		select {
+		case <-session.done:
+			delete(p.sessions, key)
+		default:
+		}
+	}
+	if limit <= 0 {
+		limit = 16
+	}
+	if len(p.sessions) >= limit {
+		p.Telemetry.ObserveWorkerEvent("persistent", "limit_rejected")
+		return nil, fmt.Errorf("persistent Python session limit (%d) reached", limit)
+	}
+	// Replacing a script also joins the old process while holding this lock.
+	// Cancellation during that join must not admit its replacement.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s, err := p.startSession(script)
 	if err != nil {
 		return nil, err
 	}
-
-	p.sessions[sessionID] = session
-	return session, nil
+	p.sessions[id] = s
+	return s, nil
 }
 
-// RunSessionWithValue sends a request to a long-lived Python worker session and returns its response.
-func (p *PersistentPython) RunSessionWithValue(sessionID, algorithmPath, value string, timeout int) (string, error) {
-	session, err := p.getOrCreateSession(sessionID, algorithmPath)
+func (p *PersistentPython) RunSessionWithValue(id, script, value string, timeout int) (string, error) {
+	return p.RunSessionWithValueContext(context.Background(), id, script, value, timeout)
+}
+
+func (p *PersistentPython) RunSessionWithValueContext(parent context.Context, id, script, value string, timeout int) (string, error) {
+	if timeout <= 0 || int64(timeout) > math.MaxInt64/int64(time.Millisecond) {
+		return "", fmt.Errorf("invalid worker timeout")
+	}
+	if len(value) > MaxInputBytes {
+		return "", fmt.Errorf("worker input exceeds %d bytes", MaxInputBytes)
+	}
+	if strings.ContainsAny(value, "\r\n") {
+		return "", fmt.Errorf("worker payload must be a single JSON line")
+	}
+	ctx, cancel := context.WithTimeout(parent, time.Duration(timeout)*time.Millisecond)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	queued := time.Now()
+	s, err := p.getOrCreateSession(ctx, id, script)
+	p.Telemetry.ObserveWorkerQueue("persistent", "session", time.Since(queued))
 	if err != nil {
 		return "", err
 	}
-
-	response, err := session.run(value, timeout)
+	response, err := s.run(ctx, value)
 	if err != nil {
-		_ = p.ResetSession(sessionID)
-		return "", err
+		p.mu.Lock()
+		// Do not evict replacements or healthy workers after queue cancellation.
+		select {
+		case <-s.done:
+			if p.sessions[id] == s {
+				delete(p.sessions, id)
+			}
+		default:
+		}
+		p.mu.Unlock()
 	}
-	return response, nil
+	return response, err
 }
 
-// ResetSession terminates and removes a session.
-func (p *PersistentPython) ResetSession(sessionID string) error {
+func (p *PersistentPython) ResetSession(id string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	session, ok := p.sessions[sessionID]
-	if !ok {
-		return nil
+	s := p.sessions[id]
+	if s != nil {
+		p.Telemetry.ObserveWorkerEvent("persistent", "reset")
+		// Keep admission occupied until Wait has reaped the old child. Otherwise
+		// a concurrent replacement can temporarily exceed MaxSessions.
+		s.stop()
+		delete(p.sessions, id)
 	}
-
-	session.stop()
-	delete(p.sessions, sessionID)
 	return nil
 }
 
-// CloseAll terminates and removes all active sessions.
+// ResetAll reaps every resident session while keeping the runner reusable.
+// Used when a new manager process connects to its existing worker sidecar.
+func (p *PersistentPython) ResetAll() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for id, session := range p.sessions {
+		session.stop()
+		delete(p.sessions, id)
+	}
+	return nil
+}
+
 func (p *PersistentPython) CloseAll() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for sessionID, session := range p.sessions {
-		session.stop()
-		delete(p.sessions, sessionID)
+	p.closed = true
+	sessions := p.sessions
+	p.sessions = map[string]*persistentSession{}
+	p.mu.Unlock()
+	for _, s := range sessions {
+		s.stop()
 	}
-
 	return nil
 }
+
+func (p *PersistentPython) NeedLeaderElection() bool        { return true }
+func (p *PersistentPython) Start(ctx context.Context) error { <-ctx.Done(); return p.CloseAll() }
