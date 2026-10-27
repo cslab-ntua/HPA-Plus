@@ -10,4 +10,4 @@ HPA+ adds CPU-demand forecasting to Kubernetes horizontal autoscaling. Its model
 - Watch decisions, CPU and forecasts in the [local UI](user-guide/ui.md) with `make ui`.
 - See how request-demand forecasting performed in the [benchmark results](results/README.md).
 
-HPA+ forecasts measured aggregate CPU usage. It does not infer all unmet application demand when CPU is saturated, and fitting a model successfully does not establish its accuracy or application performance.
+HPA+ forecasts measured aggregate CPU usage. CPU forecasts alone do not see demand that saturated pods could not serve; the opt-in [request-demand mode](user-guide/request-demand.md) rebuilds that demand from request counters. Fitting a model successfully does not establish its accuracy or application performance.
