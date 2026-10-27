@@ -328,6 +328,9 @@ func validateModels(spec hpaplusv1alpha1.HPAPlusSpec) error {
 }
 
 func validateSpec(spec hpaplusv1alpha1.HPAPlusSpec) error {
+	if err := validateRequestDemand(spec); err != nil {
+		return err
+	}
 	switch spec.EffectiveMode() {
 	case hpaplusv1alpha1.ModeObserve, hpaplusv1alpha1.ModeAssist, hpaplusv1alpha1.ModeControl:
 	default:

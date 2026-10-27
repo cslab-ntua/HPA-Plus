@@ -74,11 +74,12 @@ func main() {
 	var metricsAddr string
 	var watchNamespace string
 	var cpuHistorySource string
-	var collectorNamespace, collectorSelector string
+	var collectorNamespace, collectorSelector, trafficPrometheusURL string
 	var collectorPort int
 	flag.StringVar(&collectorNamespace, "cgroup-collector-namespace", "", "Namespace of the optional cgroup collectors.")
 	flag.StringVar(&collectorSelector, "cgroup-collector-selector", "app.kubernetes.io/component=cgroup-collector", "Label selector for trusted cgroup collectors.")
 	flag.IntVar(&collectorPort, "cgroup-collector-port", 19091, "Cgroup collector HTTP port accessed through Kubernetes pod proxy.")
+	flag.StringVar(&trafficPrometheusURL, "traffic-prometheus-url", "", "Trusted Prometheus origin for workload traffic telemetry; empty disables request-demand mode.")
 	flag.StringVar(&cpuHistorySource, "cpu-history-source", "metrics-server", "CPU measurements: metrics-server, kubelet, or optional cgroup collector. Cgroup applies to CPU training and reactive evaluation.")
 	flag.StringVar(&watchNamespace, "watch-namespace", "", "Restrict the manager cache and reconciliation to one namespace; empty watches all namespaces.")
 	var enableLeaderElection bool
@@ -230,17 +231,19 @@ func main() {
 	}()
 
 	reconciler := &controllers.HPAPlusReconciler{
-		RetryPolicy:  retryPolicy,
-		Client:       mgr.GetClient(),
-		APIReader:    mgr.GetAPIReader(),
-		RESTMapper:   mgr.GetRESTMapper(),
-		Scheme:       mgr.GetScheme(),
-		ScaleClient:  scaleClient,
-		Gatherer:     metricGatherer,
-		Observations: metricadapter.NewObservations(),
-		Evaluator:    metricadapter.HPAEvaluator{},
-		Telemetry:    telemetry,
-		Events:       observability.NewEvents(mgr.GetEventRecorderFor("hpa-plus")),
+		RetryPolicy:          retryPolicy,
+		WorkloadRunner:       pyRunner,
+		TrafficPrometheusURL: trafficPrometheusURL,
+		Client:               mgr.GetClient(),
+		APIReader:            mgr.GetAPIReader(),
+		RESTMapper:           mgr.GetRESTMapper(),
+		Scheme:               mgr.GetScheme(),
+		ScaleClient:          scaleClient,
+		Gatherer:             metricGatherer,
+		Observations:         metricadapter.NewObservations(),
+		Evaluator:            metricadapter.HPAEvaluator{},
+		Telemetry:            telemetry,
+		Events:               observability.NewEvents(mgr.GetEventRecorderFor("hpa-plus")),
 		Predicter: &prediction.ModelPredict{
 			Predicters: []prediction.Predicter{
 				&linear.Predict{

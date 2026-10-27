@@ -433,6 +433,20 @@
           "maxLength": 63
         }
       }
+    },
+    "trafficPrometheusURL": {
+      "type": "string",
+      "maxLength": 2048,
+      "anyOf": [
+        {
+          "enum": [
+            ""
+          ]
+        },
+        {
+          "pattern": "^https?://[^\\s]+$"
+        }
+      ]
     }
   },
   "definitions": {
