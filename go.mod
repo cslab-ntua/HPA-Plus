@@ -17,6 +17,7 @@ require (
 	k8s.io/metrics v0.26.15
 	sigs.k8s.io/controller-runtime v0.14.5
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
+	sigs.k8s.io/yaml v1.3.0
 )
 
 require (
@@ -26,6 +27,7 @@ require (
 	github.com/creack/pty v1.1.18 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.10.1 // indirect
+	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/fatih/color v1.14.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
@@ -77,5 +79,4 @@ require (
 	k8s.io/kube-openapi v0.0.0-20221202012554-9a5fe2dc74e8 // indirect
 	k8s.io/utils v0.0.0-20221128185143-99ec85e7a448 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
-	sigs.k8s.io/yaml v1.3.0 // indirect
 )

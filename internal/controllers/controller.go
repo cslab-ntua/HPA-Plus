@@ -52,6 +52,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/algorithm"
 	"github.com/cslab-ntua/HPA-Plus/internal/decision"
 	"github.com/cslab-ntua/HPA-Plus/internal/forecastquality"
 	"github.com/cslab-ntua/HPA-Plus/internal/history"
@@ -84,7 +85,9 @@ const (
 
 // HPAPlusReconciler reconciles a HPAPlus object
 type HPAPlusReconciler struct {
-	RetryPolicy RetryPolicy
+	RetryPolicy          RetryPolicy
+	WorkloadRunner       algorithm.Runner
+	TrafficPrometheusURL string
 	client.Client
 	APIReader    client.Reader
 	Now          func() time.Time
@@ -230,6 +233,7 @@ func (r *HPAPlusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	// Scale writes respect the existing sync-period cooldown. Request-demand
 	// acquisition must continue independently, or a write at a forecast boundary
 	// would suppress the following closed-window publication.
+	var writeCooldownUntil time.Time
 	lastScaleTime := instance.Status.LastScaleTime
 	if instance.Spec.EffectiveMode() != hpaplusv1alpha1.ModeObserve && lastScaleTime != nil && now.Add(-syncPeriod).Before(lastScaleTime.Time) {
 		health.phase = "Cooldown"
@@ -237,7 +241,10 @@ func (r *HPAPlusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		logger.V(1).Info("Resource already scaled, queueing up reconcile for the next sync period",
 			"syncPeriod", syncPeriod,
 			"timeUntilReconcile", timeUntilReconcile.Seconds())
-		return reconcile.Result{RequeueAfter: timeUntilReconcile}, nil
+		if !hasRequestDemand(instance) {
+			return reconcile.Result{RequeueAfter: timeUntilReconcile}, nil
+		}
+		writeCooldownUntil = lastScaleTime.Add(syncPeriod)
 	}
 
 	currentReplicas := scale.Status.Replicas
@@ -274,6 +281,14 @@ func (r *HPAPlusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		MetricsIncomplete: cpuSnapshot.MetricsIncomplete})
 	if err != nil {
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
+	}
+	if deferredByCooldown(r.now(), writeCooldownUntil, plan.Desired, scale.Spec.Replicas, lastWriteRemovedPods(instance.Status)) {
+		// Publish fresh measurements/model status through the deferred health
+		// update, but do not journal or write a scaling decision yet.
+		health.phase = "Cooldown"
+		checkedAt := r.now()
+		delay := timedDecisionRequeue(instance, modelStatuses, checkedAt, syncPeriod)
+		return reconcile.Result{RequeueAfter: requestDemandRequeue(instance, checkedAt, delay, writeCooldownUntil)}, nil
 	}
 	if modelPredictions == nil {
 		modelPredictions = map[string]int32{}
@@ -343,8 +358,35 @@ func (r *HPAPlusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	}
 	checkedAt := r.now()
 	delay := timedDecisionRequeue(instance, modelStatuses, checkedAt, syncPeriod)
-	return reconcile.Result{RequeueAfter: delay}, nil
+	return reconcile.Result{RequeueAfter: requestDemandRequeue(instance, checkedAt, delay, time.Time{})}, nil
 
+}
+
+// deferredByCooldown reports whether a decision waits for the write cooldown.
+// A scale-up does not: delayed capacity costs requests, and the scale-up
+// policies already bound how fast capacity grows. Nor does a scale-down that
+// follows a scale-down: the cooldown keeps pods that were just added, and the
+// scale-down policies already bound how fast capacity shrinks.
+func deferredByCooldown(now, cooldownUntil time.Time, desired, requested int32, removedLast bool) bool {
+	if !now.Before(cooldownUntil) || desired > requested {
+		return false
+	}
+	return desired == requested || !removedLast
+}
+
+// lastWriteRemovedPods reports whether the newest recorded scale write removed pods.
+func lastWriteRemovedPods(status hpaplusv1alpha1.HPAPlusStatus) bool {
+	newest := func(events []hpaplusv1alpha1.TimestampedSample) *metav1.Time {
+		var last *metav1.Time
+		for _, event := range events {
+			if event.Time != nil && (last == nil || event.Time.After(last.Time)) {
+				last = event.Time
+			}
+		}
+		return last
+	}
+	up, down := newest(status.ScaleUpEventHistory), newest(status.ScaleDownEventHistory)
+	return down != nil && (up == nil || down.After(up.Time))
 }
 
 // processModels processes every model provided in the spec, it does not return any errors and will instead simply
@@ -455,6 +497,18 @@ func (r *HPAPlusReconciler) processModels(ctx context.Context,
 			continue
 		}
 		fingerprints[model.Name] = fingerprint
+		if model.RequestDemand != nil {
+			if len(scales) == 1 && scales[0] != nil {
+				if replicas, deadline, usable := r.processRequestDemand(ctx, instance, &scopedModel, scales[0], cpuSnapshot, status, modelHistory.ReplicaHistory); usable {
+					predictedReplicas = append(predictedReplicas, replicas)
+					modelPredictions[model.Name] = replicas
+					predictionDeadlines[model.Name] = deadline
+					continue
+				}
+			} else {
+				status.RequestDemand = &hpaplusv1alpha1.RequestDemandStatus{State: "unavailable", Source: "hold", FallbackReason: "resolved target unavailable"}
+			}
+		}
 		if model.ForecastReliability != nil {
 			status.Reliability = forecastquality.Status(modelHistory.Reliability, *model.ForecastReliability)
 			if exists && hpaPlusData.ModelHistories[model.Name].Type == model.Type {
@@ -690,6 +744,7 @@ func (r *HPAPlusReconciler) processModels(ctx context.Context,
 				statuses[i].ConsumedUntil = nil
 				statuses[i].ExpiresAt = nil
 			}
+			finalizeRequestDemandSources(statuses, nil)
 			return nil, map[string]int32{}, statuses
 		}
 		if latest.TargetIdentity != hpaPlusData.TargetIdentity {
@@ -698,6 +753,7 @@ func (r *HPAPlusReconciler) processModels(ctx context.Context,
 				statuses[i].ConsumedUntil = nil
 				statuses[i].ExpiresAt = nil
 			}
+			finalizeRequestDemandSources(statuses, nil)
 			return nil, map[string]int32{}, statuses
 		}
 		for i := range statuses {
@@ -747,6 +803,7 @@ func (r *HPAPlusReconciler) processModels(ctx context.Context,
 			}
 		}
 	}
+	finalizeRequestDemandSources(statuses, modelPredictions)
 	return predictedReplicas, modelPredictions, statuses
 }
 

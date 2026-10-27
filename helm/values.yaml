@@ -21,6 +21,10 @@ logging:
 # and reactive evaluation, and requires the collector below.
 cpuHistorySource: metrics-server
 
+# Trusted Prometheus origin for explicitly configured requestDemand models.
+# Empty disables traffic collection; CPU-only configurations keep existing behavior.
+trafficPrometheusURL: ""
+
 cgroupCollector:
   enabled: false
   # Empty discovers pods cluster-wide; set for a namespace-owned installation.
