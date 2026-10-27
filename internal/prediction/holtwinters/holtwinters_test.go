@@ -24,6 +24,7 @@ import (
 
 	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/fake"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/holtwinters"
 	"github.com/google/go-cmp/cmp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -87,9 +88,9 @@ func TestPredict_GetPrediction(t *testing.T) {
 			[]hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
-			"Success, less than 2 * seasonal_periods observations",
+			"Fail, less than 2 * seasonal_periods observations",
 			0,
-			nil,
+			prediction.ErrInsufficientHistory,
 			&holtwinters.Predict{},
 			&hpaplusv1alpha1.Model{
 				Type: hpaplusv1alpha1.TypeLinear,
@@ -114,9 +115,9 @@ func TestPredict_GetPrediction(t *testing.T) {
 			},
 		},
 		{
-			"Success, less than 10 + 2 * (seasonal_periods // 2) observations",
+			"Fail, less than 10 + 2 * (seasonal_periods // 2) observations",
 			0,
-			nil,
+			prediction.ErrInsufficientHistory,
 			&holtwinters.Predict{},
 			&hpaplusv1alpha1.Model{
 				Type: hpaplusv1alpha1.TypeLinear,

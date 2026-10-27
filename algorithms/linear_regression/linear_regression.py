@@ -21,9 +21,21 @@ statsmodel library.
 import sys
 import math
 from json import JSONDecodeError
-from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from time import time_ns
 from dataclasses import dataclass
 from typing import List, Optional
+# Resolve shared helpers for both direct script execution and runpy dispatch.
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+try:
+    from forecast_trajectory import grid, emit
+    from forecast_diagnostics import stage
+    from forecast_budget import training_rows
+    from forecast_time import parse_timestamp
+finally:
+    sys.path.pop(0)
+
 import statsmodels.api as sm
 from dataclasses_json import dataclass_json, LetterCase
 
@@ -62,6 +74,7 @@ class AlgorithmInput:
     """
     look_ahead: int
     replica_history: List[TimestampedReplica]
+    return_trajectory: bool = False
     current_time: Optional[str] = None
 
 
@@ -73,6 +86,7 @@ if stdin is None or stdin == "":
 
 try:
     algorithm_input = AlgorithmInput.from_json(stdin)
+    training_rows(len(algorithm_input.replica_history))
 except JSONDecodeError as ex:
     print(f"Invalid JSON provided: {str(ex)}, exiting", file=sys.stderr)
     sys.exit(1)
@@ -80,16 +94,22 @@ except KeyError as ex:
     print(f"Invalid JSON provided: missing {str(ex)}, exiting", file=sys.stderr)
     sys.exit(1)
 
-current_time = datetime.now(timezone.utc).replace(tzinfo=None)
+if algorithm_input.look_ahead <= 0:
+    print("lookAhead must be > 0", file=sys.stderr)
+    sys.exit(1)
+
+timed_grid = grid([r.time for r in algorithm_input.replica_history], algorithm_input.look_ahead) if algorithm_input.return_trajectory else None
+
+current_time = Decimal(time_ns()) / Decimal(1000000000)
 
 if algorithm_input.current_time is not None:
     try:
-        current_time = datetime.strptime(algorithm_input.current_time, "%Y-%m-%dT%H:%M:%SZ")
+        current_time = parse_timestamp(algorithm_input.current_time)
     except ValueError as ex:
         print(f"Invalid datetime format: {str(ex)}", file=sys.stderr)
         sys.exit(1)
 
-search_time = datetime.timestamp(current_time + timedelta(milliseconds=int(algorithm_input.look_ahead)))
+search_time = current_time + Decimal(int(algorithm_input.look_ahead)) / Decimal(1000)
 
 x = []
 y = []
@@ -98,12 +118,12 @@ y = []
 # between the time being searched for and the metric recorded time in seconds
 for i, timestamped_replica in enumerate(algorithm_input.replica_history):
     try:
-        created = datetime.strptime(timestamped_replica.time, "%Y-%m-%dT%H:%M:%SZ")
+        created = parse_timestamp(timestamped_replica.time)
     except ValueError as ex:
         print(f"Invalid datetime format: {str(ex)}", file=sys.stderr)
         sys.exit(1)
 
-    x.append(search_time - datetime.timestamp(created))
+    x.append(float(search_time - created))
     if timestamped_replica.total_cpu_usage_millicores is None:
         print("Missing total_cpu_usage_millicores in history sample, exiting", file=sys.stderr)
         sys.exit(1)
@@ -113,8 +133,19 @@ for i, timestamped_replica in enumerate(algorithm_input.replica_history):
 # Add constant for OLS, constant is 1.0
 x = sm.add_constant(x)
 
-model = sm.OLS(y, x).fit()
+with stage("training"):
+    model = sm.OLS(y, x).fit()
 
 # Predict the value at the search time (0), include the constant (1).
 # The search time is 0 as the values used in training are search time - evaluation time, so the search time will be 0
-print(math.ceil(model.predict([[1, 0]])[0]), end="")
+with stage("inference"):
+    predicted = math.ceil(model.predict([[1, 0]])[0])
+    if timed_grid is not None:
+        end, step, count = timed_grid
+        # Evaluate the fitted line at each future timestamp, using the same
+        # search-relative feature coordinate as the original scalar forecast.
+        values = model.predict([[1, float(search_time-(end+step*(i+1)))] for i in range(count)])
+if timed_grid is not None:
+    emit(predicted, values, [r.time for r in algorithm_input.replica_history], algorithm_input.look_ahead, math.ceil)
+else:
+    print(predicted, end="")

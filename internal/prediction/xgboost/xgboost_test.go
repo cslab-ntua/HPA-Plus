@@ -76,15 +76,15 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 		{
 			description:    "Fail no evaluations",
 			expected:       0,
-			expectedErr:    errors.New("no CPU usage evaluations provided for XGBoost model"),
+			expectedErr:    prediction.ErrInsufficientHistory,
 			predicter:      &xgboost.Predict{},
 			model:          &hpaplusv1alpha1.Model{Type: hpaplusv1alpha1.TypeXGBoost, XGBoost: &hpaplusv1alpha1.XGBoost{HistorySize: 5, LookAhead: 1000, Lags: 2}},
 			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
-			description: "Success single CPU evaluation returns last replicas",
-			expected:    6,
-			expectedErr: nil,
+			description: "Fail single CPU evaluation",
+			expected:    0,
+			expectedErr: prediction.ErrInsufficientHistory,
 			predicter:   &xgboost.Predict{},
 			model: &hpaplusv1alpha1.Model{
 				Type:    hpaplusv1alpha1.TypeXGBoost,

@@ -17,27 +17,28 @@ limitations under the License.
 package linear
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"sort"
-	"strconv"
-	"strings"
 
 	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/algorithm"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
-	ctrlLog "sigs.k8s.io/controller-runtime/pkg/log"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
-	defaultTimeout = 30000
+	defaultTimeout = hpaplusv1alpha1.DefaultCalculationTimeoutMillis
 )
 
 const algorithmPath = "algorithms/linear_regression/linear_regression.py"
 
 type linearRegressionParameters struct {
-	LookAhead      int                                           `json:"lookAhead"`
-	ReplicaHistory []hpaplusv1alpha1.TimestampedReplicas `json:"replicaHistory"`
+	ReturnTrajectory bool                                `json:"returnTrajectory,omitempty"`
+	LookAhead        int                                 `json:"lookAhead"`
+	ReplicaHistory   []hpaplusv1alpha1.TimestampedSample `json:"replicaHistory"`
+	CurrentTime      *metav1.Time                        `json:"currentTime"`
 }
 
 // Config represents a linear regression prediction model configuration
@@ -58,7 +59,7 @@ type Predict struct {
 
 // GetPrediction uses linear regression to predict aggregate CPU usage and converts that prediction
 // back into a replica count.
-func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
+func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) (int32, error) {
 	result, err := p.GetPredictionResult(model, replicaHistory)
 	if err != nil {
 		return 0, err
@@ -68,36 +69,60 @@ func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []h
 
 // GetPredictionResult uses linear regression to predict aggregate CPU usage and converts that
 // prediction back into a replica count.
-func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (prediction.Result, error) {
+func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) (prediction.Result, error) {
+	return p.GetPredictionResultContext(context.Background(), model, replicaHistory)
+}
+
+func (p *Predict) GetPredictionResultContext(ctx context.Context, model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) (prediction.Result, error) {
+	return prediction.PredictCPU(ctx, p, model, replicaHistory)
+}
+
+func (p *Predict) AcceptedObservations() []prediction.MetricKind {
+	return []prediction.MetricKind{prediction.CPUKind()}
+}
+
+func (p *Predict) ForecastDemand(ctx context.Context, request prediction.DemandRequest) (prediction.DemandResult, error) {
+	if err := prediction.ValidateDemandRequest(request, p.AcceptedObservations()); err != nil {
+		return prediction.DemandResult{}, err
+	}
+	model, replicaHistory := request.Model, request.History
+
+	ctx, cancel, contextErr := prediction.ModelContext(ctx, model, defaultTimeout)
+	if contextErr != nil {
+		return prediction.DemandResult{}, contextErr
+	}
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return prediction.DemandResult{}, err
+	}
 	if model.Linear == nil {
-		return prediction.Result{}, errors.New("no Linear configuration provided for model")
+		return prediction.DemandResult{}, errors.New("no Linear configuration provided for model")
 	}
 
-	trainingHistory := filterHistoryWithCPUUsage(replicaHistory)
-	if len(trainingHistory) == 0 {
-		return prediction.Result{}, errors.New("no CPU usage evaluations provided for Linear regression model")
+	trainingHistory := prediction.FilterCPUHistory(replicaHistory)
+	if len(trainingHistory) < 2 {
+		return prediction.DemandResult{}, prediction.ErrInsufficientHistory
+	}
+	for _, entry := range trainingHistory {
+		if entry.Time == nil || entry.Time.IsZero() {
+			return prediction.DemandResult{}, errors.New("Linear CPU history requires timestamps")
+		}
 	}
 
 	sort.Slice(trainingHistory, func(i, j int) bool {
 		return trainingHistory[i].Time.Before(trainingHistory[j].Time)
 	})
 
-	if len(trainingHistory) == 1 {
-		// If only 1 evaluation is provided do not try and calculate using the linear regression model, just return
-		// the target replicas from the only evaluation.
-		return prediction.Result{
-			Replicas:      trainingHistory[0].Replicas,
-			ConsumedUntil: prediction.LatestTimestamp(trainingHistory),
-		}, nil
-	}
-
 	parameters, err := json.Marshal(linearRegressionParameters{
-		LookAhead:      model.Linear.LookAhead,
-		ReplicaHistory: trainingHistory,
+		ReturnTrajectory: model.PredictivePolicy != nil,
+		LookAhead:        model.Linear.LookAhead,
+		ReplicaHistory:   trainingHistory,
+		// Match the sample-based expiry policy and avoid extrapolating across
+		// queue or process startup delays. metav1.Time uses the history wire format.
+		CurrentTime: trainingHistory[len(trainingHistory)-1].Time,
 	})
 	if err != nil {
-		// Should not occur, panic
-		panic(err)
+		return prediction.DemandResult{}, err
 	}
 
 	timeout := defaultTimeout
@@ -105,35 +130,35 @@ func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHisto
 		timeout = *model.CalculationTimeout
 	}
 
-	value, err := p.Runner.RunAlgorithmWithValue(algorithmPath, string(parameters), timeout)
+	ctx, trajectory := algorithm.WithForecastTrajectory(ctx)
+	value, err := algorithm.RunCPUForecast(ctx, p.Runner, algorithmPath, string(parameters), timeout)
 	if err != nil {
-		return prediction.Result{}, err
+		return prediction.DemandResult{}, err
 	}
 
 	predictedUsage, err := parsePredictedCPUUsage(value)
 	if err != nil {
-		return prediction.Result{}, err
+		return prediction.DemandResult{}, err
 	}
 
-	predictedReplicas, err := convertPredictedCPUUsageToReplicas(model, predictedUsage)
-	if err != nil {
-		return prediction.Result{}, err
-	}
-	logRawForecast(model, predictedUsage, predictedReplicas)
-
-	return prediction.Result{
-		Replicas:      predictedReplicas,
+	return prediction.CompleteCPUForecast(model, prediction.DemandResult{
+		Trajectory:    trajectory.Last(),
+		Demand:        prediction.Demand{Kind: request.Observation.Kind, Target: request.Observation.Target, Value: predictedUsage},
 		ConsumedUntil: prediction.LatestTimestamp(trainingHistory),
-	}, nil
+	})
 }
 
-func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
+func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) ([]hpaplusv1alpha1.TimestampedSample, error) {
 	if model.Linear == nil {
 		return nil, errors.New("no Linear configuration provided for model")
 	}
 
-	cpuHistoryCount := countCPUUsageEntries(replicaHistory)
+	if model.Linear.HistorySize < 0 {
+		return nil, errors.New("historySize must be nonnegative for pruning")
+	}
+	cpuHistoryCount := prediction.CountCPUHistory(replicaHistory)
 	if cpuHistoryCount == 0 {
+		replicaHistory = prediction.CloneHistory(replicaHistory)
 		if len(replicaHistory) <= model.Linear.HistorySize {
 			return replicaHistory, nil
 		}
@@ -149,16 +174,7 @@ func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hp
 		return replicaHistory, nil
 	}
 
-	if cpuHistoryCount <= model.Linear.HistorySize {
-		return replicaHistory, nil
-	}
-
-	// Keep the newest CPU-backed samples even if the input history ordering is disturbed.
-	sort.Slice(replicaHistory, func(i, j int) bool {
-		return replicaHistory[i].Time.Before(replicaHistory[j].Time)
-	})
-
-	return pruneHistoryByCPUUsage(replicaHistory, model.Linear.HistorySize), nil
+	return prediction.PruneCPUHistory(replicaHistory, model.Linear.HistorySize), nil
 }
 
 // GetType returns the type of the Prediction model
@@ -166,104 +182,12 @@ func (p *Predict) GetType() string {
 	return hpaplusv1alpha1.TypeLinear
 }
 
-func filterHistoryWithCPUUsage(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
-	filtered := make([]hpaplusv1alpha1.TimestampedReplicas, 0, len(replicaHistory))
-	for _, entry := range replicaHistory {
-		if entry.TotalCPUUsageMillicores == nil {
-			continue
-		}
-		filtered = append(filtered, entry)
-	}
-	return filtered
-}
-
-func countCPUUsageEntries(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) int {
-	count := 0
-	for _, entry := range replicaHistory {
-		if entry.TotalCPUUsageMillicores != nil {
-			count++
-		}
-	}
-	return count
-}
-
-func pruneHistoryByCPUUsage(
-	replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
-	maxCPUEntries int,
-) []hpaplusv1alpha1.TimestampedReplicas {
-	if maxCPUEntries <= 0 {
-		return []hpaplusv1alpha1.TimestampedReplicas{}
-	}
-
-	cpuEntriesSeen := 0
-	start := len(replicaHistory)
-	for idx := len(replicaHistory) - 1; idx >= 0; idx-- {
-		if replicaHistory[idx].TotalCPUUsageMillicores != nil {
-			cpuEntriesSeen++
-		}
-		if cpuEntriesSeen >= maxCPUEntries {
-			start = idx
-			break
-		}
-	}
-
-	if start <= 0 {
-		return replicaHistory
-	}
-
-	return replicaHistory[start:]
-}
-
 func parsePredictedCPUUsage(value string) (int64, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, errors.New("empty Linear regression prediction output")
-	}
-
-	predictedUsage, err := strconv.ParseInt(value, 10, 64)
-	if err == nil {
-		return predictedUsage, nil
-	}
-
-	predictedUsageFloat, floatErr := strconv.ParseFloat(value, 64)
-	if floatErr != nil {
-		return 0, err
-	}
-
-	return int64(math.Ceil(predictedUsageFloat)), nil
+	return prediction.ParseCPUForecast(value, "Linear regression")
 }
 
-func convertPredictedCPUUsageToReplicas(model *hpaplusv1alpha1.Model, predictedUsage int64) (int32, error) {
-	if model.CPURequestPerPodMillicores <= 0 {
-		return 0, errors.New("missing CPU request per pod for Linear CPU-history prediction")
-	}
-	if model.TargetCPUUtilizationPercentage <= 0 {
-		return 0, errors.New("missing target CPU utilization for Linear CPU-history prediction")
-	}
-
-	if predictedUsage < 0 {
-		predictedUsage = 0
-	}
-
-	targetPerPod := float64(model.CPURequestPerPodMillicores) * (float64(model.TargetCPUUtilizationPercentage) / 100.0)
-	if targetPerPod <= 0 {
-		return 0, errors.New("invalid CPU target conversion values for Linear CPU-history prediction")
-	}
-
-	return int32(math.Ceil(float64(predictedUsage) / targetPerPod)), nil
-}
-
-func logRawForecast(model *hpaplusv1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
-	sessionID := model.Name
-	if model.SessionID != "" {
-		sessionID = model.SessionID
-	}
-
-	ctrlLog.Log.WithName("linear").Info(
-		"Linear raw CPU forecast ready",
-		"sessionID", sessionID,
-		"modelName", model.Name,
-		"predictedUsageMillicores", predictedUsage,
-		"predictedReplicas", predictedReplicas,
-	)
+// PrepareAdaptation confirms that the next normal prediction refits from the
+// configured rolling history. It does not shorten the model's history window.
+func (p *Predict) PrepareAdaptation(ctx context.Context, model *hpaplusv1alpha1.Model) (string, error) {
+	return "Refit", ctx.Err()
 }

@@ -17,23 +17,23 @@ limitations under the License.
 package holtwinters
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
 	"sort"
-	"strconv"
-	"strings"
+	"time"
 
 	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/algorithm"
 	"github.com/cslab-ntua/HPA-Plus/internal/hook"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
-	ctrlLog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const algorithmPath = "algorithms/holt_winters/holt_winters.py"
 
 const (
-	defaultTimeout = 30000
+	defaultTimeout = hpaplusv1alpha1.DefaultCalculationTimeoutMillis
 )
 
 // Runner defines an algorithm runner, allowing algorithms to be run
@@ -48,23 +48,26 @@ type Predict struct {
 }
 
 type holtWintersParametersParameters struct {
-	Series               []float64 `json:"series"`
-	Alpha                float64   `json:"alpha"`
-	Beta                 float64   `json:"beta"`
-	Gamma                float64   `json:"gamma"`
-	Trend                string    `json:"trend"`
-	Seasonal             string    `json:"seasonal"`
-	SeasonalPeriods      int       `json:"seasonalPeriods"`
-	DampedTrend          *bool     `json:"dampedTrend,omitempty"`
-	InitializationMethod *string   `json:"initializationMethod,omitempty"`
-	InitialLevel         *float64  `json:"initialLevel,omitempty"`
-	InitialTrend         *float64  `json:"initialTrend,omitempty"`
-	InitialSeasonal      *float64  `json:"initialSeasonal,omitempty"`
+	ReturnTrajectory     bool     `json:"returnTrajectory,omitempty"`
+	LookAhead            *int     `json:"lookAhead,omitempty"`
+	Timestamps           []string `json:"timestamps,omitempty"`
+	Series               []int64  `json:"series"`
+	Alpha                float64  `json:"alpha"`
+	Beta                 float64  `json:"beta"`
+	Gamma                float64  `json:"gamma"`
+	Trend                string   `json:"trend"`
+	Seasonal             string   `json:"seasonal"`
+	SeasonalPeriods      int      `json:"seasonalPeriods"`
+	DampedTrend          *bool    `json:"dampedTrend,omitempty"`
+	InitializationMethod *string  `json:"initializationMethod,omitempty"`
+	InitialLevel         *float64 `json:"initialLevel,omitempty"`
+	InitialTrend         *float64 `json:"initialTrend,omitempty"`
+	InitialSeasonal      *float64 `json:"initialSeasonal,omitempty"`
 }
 
 type runTimeTuningFetchHookRequest struct {
-	Model          hpaplusv1alpha1.Model                 `json:"model"`
-	ReplicaHistory []hpaplusv1alpha1.TimestampedReplicas `json:"replicaHistory"`
+	Model          hpaplusv1alpha1.Model               `json:"model"`
+	ReplicaHistory []hpaplusv1alpha1.TimestampedSample `json:"replicaHistory"`
 }
 
 type runTimeTuningFetchHookResult struct {
@@ -75,7 +78,7 @@ type runTimeTuningFetchHookResult struct {
 
 // GetPrediction uses Holt-Winters to predict aggregate CPU usage and converts that prediction
 // back into a replica count.
-func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
+func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) (int32, error) {
 	result, err := p.GetPredictionResult(model, replicaHistory)
 	if err != nil {
 		return 0, err
@@ -85,15 +88,40 @@ func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []h
 
 // GetPredictionResult uses Holt-Winters to predict aggregate CPU usage and converts that
 // prediction back into a replica count.
-func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (prediction.Result, error) {
+func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) (prediction.Result, error) {
+	return p.GetPredictionResultContext(context.Background(), model, replicaHistory)
+}
+
+func (p *Predict) GetPredictionResultContext(ctx context.Context, model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) (prediction.Result, error) {
+	return prediction.PredictCPU(ctx, p, model, replicaHistory)
+}
+
+func (p *Predict) AcceptedObservations() []prediction.MetricKind {
+	return []prediction.MetricKind{prediction.CPUKind()}
+}
+
+func (p *Predict) ForecastDemand(ctx context.Context, request prediction.DemandRequest) (prediction.DemandResult, error) {
+	if err := prediction.ValidateDemandRequest(request, p.AcceptedObservations()); err != nil {
+		return prediction.DemandResult{}, err
+	}
+	model, replicaHistory := request.Model, request.History
+
+	ctx, cancel, contextErr := prediction.ModelContext(ctx, model, defaultTimeout)
+	if contextErr != nil {
+		return prediction.DemandResult{}, contextErr
+	}
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return prediction.DemandResult{}, err
+	}
 	err := p.validate(model)
 	if err != nil {
-		return prediction.Result{}, err
+		return prediction.DemandResult{}, err
 	}
 
-	trainingHistory := filterHistoryWithCPUUsage(replicaHistory)
+	trainingHistory := prediction.FilterCPUHistory(replicaHistory)
 	if len(trainingHistory) == 0 {
-		return prediction.Result{}, errors.New("no CPU usage evaluations provided for Holt-Winters model")
+		return prediction.DemandResult{}, prediction.ErrInsufficientHistory
 	}
 
 	sort.Slice(trainingHistory, func(i, j int) bool {
@@ -103,13 +131,13 @@ func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHisto
 	// Statsmodels requires at least 2 * seasonal_periods to make a prediction with Holt Winters
 	// https://github.com/statsmodels/statsmodels/blob/77bb1d276c7d11bc8657497b4307aa7575c3e65c/statsmodels/tsa/exponential_smoothing/initialization.py#L57-L61
 	if len(trainingHistory) < 2*model.HoltWinters.SeasonalPeriods {
-		return prediction.Result{}, nil
+		return prediction.DemandResult{}, prediction.ErrInsufficientHistory
 	}
 
 	// Statsmodels requires at least 10 + 2 * (seasonal_periods // 2) to make a prediction with Holt Winters
 	// https://github.com/statsmodels/statsmodels/blob/77bb1d276c7d11bc8657497b4307aa7575c3e65c/statsmodels/tsa/exponential_smoothing/initialization.py#L66-L71
 	if len(trainingHistory) < 10+2*(model.HoltWinters.SeasonalPeriods/2) {
-		return prediction.Result{}, nil
+		return prediction.DemandResult{}, prediction.ErrInsufficientHistory
 	}
 
 	alpha := model.HoltWinters.Alpha
@@ -118,27 +146,30 @@ func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHisto
 
 	if model.HoltWinters.RuntimeTuningFetchHook != nil {
 
+		// Never send hook URLs, headers or credential configuration as model data.
+		requestModel := model.DeepCopy()
+		requestModel.HoltWinters.RuntimeTuningFetchHook = nil
+
 		// Convert request into JSON string
 		request, err := json.Marshal(&runTimeTuningFetchHookRequest{
-			Model:          *model,
+			Model:          *requestModel,
 			ReplicaHistory: trainingHistory,
 		})
 		if err != nil {
-			// Should not occur
-			panic(err)
+			return prediction.DemandResult{}, err
 		}
 
 		// Request runtime tuning values
-		hookResult, err := p.HookExecute.ExecuteWithValue(model.HoltWinters.RuntimeTuningFetchHook, string(request))
+		hookResult, err := hook.Execute(ctx, p.HookExecute, model.HoltWinters.RuntimeTuningFetchHook, string(request))
 		if err != nil {
-			return prediction.Result{}, err
+			return prediction.DemandResult{}, err
 		}
 
 		// Parse result
 		var result runTimeTuningFetchHookResult
 		err = json.Unmarshal([]byte(hookResult), &result)
 		if err != nil {
-			return prediction.Result{}, err
+			return prediction.DemandResult{}, err
 		}
 
 		if result.Alpha != nil {
@@ -153,23 +184,40 @@ func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHisto
 	}
 
 	if alpha == nil {
-		return prediction.Result{}, errors.New("no alpha tuning value provided for Holt-Winters prediction")
+		return prediction.DemandResult{}, errors.New("no alpha tuning value provided for Holt-Winters prediction")
 	}
 	if beta == nil {
-		return prediction.Result{}, errors.New("no beta tuning value provided for Holt-Winters prediction")
+		return prediction.DemandResult{}, errors.New("no beta tuning value provided for Holt-Winters prediction")
 	}
 	if gamma == nil {
-		return prediction.Result{}, errors.New("no gamma tuning value provided for Holt-Winters prediction")
+		return prediction.DemandResult{}, errors.New("no gamma tuning value provided for Holt-Winters prediction")
+	}
+	for _, value := range []float64{*alpha, *beta, *gamma} {
+		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1 {
+			return prediction.DemandResult{}, errors.New("Holt-Winters tuning values must be finite and in [0, 1]")
+		}
 	}
 
 	// Collect data for historical series
-	series := make([]float64, len(trainingHistory))
+	series := make([]int64, len(trainingHistory))
+	timestamps := make([]string, len(trainingHistory))
 	for i, timestampedReplica := range trainingHistory {
-		series[i] = float64(*timestampedReplica.TotalCPUUsageMillicores)
+		series[i] = *timestampedReplica.TotalCPUUsageMillicores
+		if timestampedReplica.Time == nil || timestampedReplica.Time.IsZero() {
+			if model.HoltWinters.LookAhead != nil {
+				return prediction.DemandResult{}, errors.New("Holt-Winters lookAhead requires timestamped history")
+			}
+			timestamps = nil
+		} else if timestamps != nil {
+			timestamps[i] = timestampedReplica.Time.UTC().Format(time.RFC3339Nano)
+		}
 	}
 
 	parameters, err := json.Marshal(holtWintersParametersParameters{
+		ReturnTrajectory:     model.PredictivePolicy != nil,
 		Series:               series,
+		LookAhead:            model.HoltWinters.LookAhead,
+		Timestamps:           timestamps,
 		Alpha:                *alpha,
 		Beta:                 *beta,
 		Gamma:                *gamma,
@@ -183,8 +231,7 @@ func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHisto
 		InitialSeasonal:      model.HoltWinters.InitialSeasonal,
 	})
 	if err != nil {
-		// Should not occur, panic
-		panic(err)
+		return prediction.DemandResult{}, err
 	}
 
 	timeout := defaultTimeout
@@ -192,35 +239,36 @@ func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHisto
 		timeout = *model.CalculationTimeout
 	}
 
-	value, err := p.Runner.RunAlgorithmWithValue(algorithmPath, string(parameters), timeout)
+	ctx, trajectory := algorithm.WithForecastTrajectory(ctx)
+	value, err := algorithm.RunCPUForecast(ctx, p.Runner, algorithmPath, string(parameters), timeout)
 	if err != nil {
-		return prediction.Result{}, err
+		return prediction.DemandResult{}, err
 	}
 
 	predictedUsage, err := parsePredictedCPUUsage(value)
 	if err != nil {
-		return prediction.Result{}, err
+		return prediction.DemandResult{}, err
 	}
 
-	predictedReplicas, err := convertPredictedCPUUsageToReplicas(model, predictedUsage)
-	if err != nil {
-		return prediction.Result{}, err
-	}
-	logRawForecast(model, predictedUsage, predictedReplicas)
-
-	return prediction.Result{
-		Replicas:      predictedReplicas,
+	return prediction.CompleteCPUForecast(model, prediction.DemandResult{
+		Trajectory:    trajectory.Last(),
+		Demand:        prediction.Demand{Kind: request.Observation.Kind, Target: request.Observation.Target, Value: predictedUsage},
 		ConsumedUntil: prediction.LatestTimestamp(trainingHistory),
-	}, nil
+	})
 }
 
-func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
+func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) ([]hpaplusv1alpha1.TimestampedSample, error) {
 	err := p.validate(model)
 	if err != nil {
 		return nil, err
 	}
 
-	cpuHistoryCount := countCPUUsageEntries(replicaHistory)
+	if model.HoltWinters.SeasonalPeriods <= 0 || model.HoltWinters.StoredSeasons < 0 ||
+		model.HoltWinters.StoredSeasons > math.MaxInt/model.HoltWinters.SeasonalPeriods {
+		return nil, errors.New("invalid or overflowing seasonal history window")
+	}
+	replicaHistory = prediction.CloneHistory(replicaHistory)
+	cpuHistoryCount := prediction.CountCPUHistory(replicaHistory)
 	if cpuHistoryCount == 0 {
 		// Sort by date created, oldest first to preserve chronological order
 		sort.Slice(replicaHistory, func(i, j int) bool {
@@ -236,7 +284,7 @@ func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hp
 
 		numberOfReplicasToRemove := numberOfSeasonsToRemove * seasonLength
 		if numberOfReplicasToRemove >= len(replicaHistory) {
-			return []hpaplusv1alpha1.TimestampedReplicas{}, nil
+			return []hpaplusv1alpha1.TimestampedSample{}, nil
 		}
 
 		return replicaHistory[numberOfReplicasToRemove:], nil
@@ -255,7 +303,7 @@ func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hp
 	}
 
 	maxCPUEntries := model.HoltWinters.StoredSeasons * seasonLength
-	return pruneHistoryByCPUUsage(replicaHistory, maxCPUEntries), nil
+	return prediction.PruneCPUHistory(replicaHistory, maxCPUEntries), nil
 }
 
 // GetType returns the type of the Prediction model
@@ -268,6 +316,9 @@ func (p *Predict) validate(model *hpaplusv1alpha1.Model) error {
 		return errors.New("no HoltWinters configuration provided for model")
 	}
 
+	if model.HoltWinters.LookAhead != nil && (*model.HoltWinters.LookAhead < 1 || int64(*model.HoltWinters.LookAhead) > math.MaxInt64/int64(time.Millisecond)) {
+		return errors.New("invalid Holt-Winters lookAhead duration")
+	}
 	if model.HoltWinters.Trend == "" {
 		return errors.New("no required 'trend' value provided for model")
 	}
@@ -275,104 +326,12 @@ func (p *Predict) validate(model *hpaplusv1alpha1.Model) error {
 	return nil
 }
 
-func filterHistoryWithCPUUsage(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
-	filtered := make([]hpaplusv1alpha1.TimestampedReplicas, 0, len(replicaHistory))
-	for _, entry := range replicaHistory {
-		if entry.TotalCPUUsageMillicores == nil {
-			continue
-		}
-		filtered = append(filtered, entry)
-	}
-	return filtered
-}
-
-func countCPUUsageEntries(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) int {
-	count := 0
-	for _, entry := range replicaHistory {
-		if entry.TotalCPUUsageMillicores != nil {
-			count++
-		}
-	}
-	return count
-}
-
-func pruneHistoryByCPUUsage(
-	replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
-	maxCPUEntries int,
-) []hpaplusv1alpha1.TimestampedReplicas {
-	if maxCPUEntries <= 0 {
-		return []hpaplusv1alpha1.TimestampedReplicas{}
-	}
-
-	cpuEntriesSeen := 0
-	start := len(replicaHistory)
-	for idx := len(replicaHistory) - 1; idx >= 0; idx-- {
-		if replicaHistory[idx].TotalCPUUsageMillicores != nil {
-			cpuEntriesSeen++
-		}
-		if cpuEntriesSeen >= maxCPUEntries {
-			start = idx
-			break
-		}
-	}
-
-	if start <= 0 {
-		return replicaHistory
-	}
-
-	return replicaHistory[start:]
-}
-
 func parsePredictedCPUUsage(value string) (int64, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, errors.New("empty Holt-Winters prediction output")
-	}
-
-	predictedUsage, err := strconv.ParseInt(value, 10, 64)
-	if err == nil {
-		return predictedUsage, nil
-	}
-
-	predictedUsageFloat, floatErr := strconv.ParseFloat(value, 64)
-	if floatErr != nil {
-		return 0, err
-	}
-
-	return int64(math.Ceil(predictedUsageFloat)), nil
+	return prediction.ParseCPUForecast(value, "Holt-Winters")
 }
 
-func convertPredictedCPUUsageToReplicas(model *hpaplusv1alpha1.Model, predictedUsage int64) (int32, error) {
-	if model.CPURequestPerPodMillicores <= 0 {
-		return 0, errors.New("missing CPU request per pod for Holt-Winters CPU-history prediction")
-	}
-	if model.TargetCPUUtilizationPercentage <= 0 {
-		return 0, errors.New("missing target CPU utilization for Holt-Winters CPU-history prediction")
-	}
-
-	if predictedUsage < 0 {
-		predictedUsage = 0
-	}
-
-	targetPerPod := float64(model.CPURequestPerPodMillicores) * (float64(model.TargetCPUUtilizationPercentage) / 100.0)
-	if targetPerPod <= 0 {
-		return 0, errors.New("invalid CPU target conversion values for Holt-Winters CPU-history prediction")
-	}
-
-	return int32(math.Ceil(float64(predictedUsage) / targetPerPod)), nil
-}
-
-func logRawForecast(model *hpaplusv1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
-	sessionID := model.Name
-	if model.SessionID != "" {
-		sessionID = model.SessionID
-	}
-
-	ctrlLog.Log.WithName("holtwinters").Info(
-		"Holt-Winters raw CPU forecast ready",
-		"sessionID", sessionID,
-		"modelName", model.Name,
-		"predictedUsageMillicores", predictedUsage,
-		"predictedReplicas", predictedReplicas,
-	)
+// PrepareAdaptation confirms that the next normal prediction refits from the
+// configured rolling history. It does not shorten the model's history window.
+func (p *Predict) PrepareAdaptation(ctx context.Context, model *hpaplusv1alpha1.Model) (string, error) {
+	return "Refit", ctx.Err()
 }

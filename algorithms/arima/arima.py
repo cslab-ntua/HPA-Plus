@@ -20,13 +20,23 @@ overall trends.
 """
 
 import math
-import statistics
+from decimal import Decimal
 import sys
 import warnings
 from dataclasses import dataclass
-from datetime import datetime
 from json import JSONDecodeError
 from typing import List, Optional, Tuple
+
+# Resolve shared helpers for both direct script execution and runpy dispatch.
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+try:
+    from forecast_trajectory import grid, emit
+    from forecast_diagnostics import stage
+    from forecast_budget import arima_budget
+    from forecast_time import parse_timestamp, median_interval_ms as shared_interval_ms, forecast_steps as shared_forecast_steps
+finally:
+    sys.path.pop(0)
 
 import statsmodels.api as sm
 from dataclasses_json import LetterCase, dataclass_json
@@ -85,6 +95,7 @@ class AlgorithmInput:
     look_ahead: int
     replica_history: List[TimestampedReplica]
     current_time: Optional[str] = None
+    return_trajectory: bool = False
     trend: Optional[str] = None
     auto_arima: bool = False
     information_criterion: str = "aic"
@@ -97,15 +108,11 @@ class AlgorithmInput:
     seasonal_periods: Optional[int] = None
 
 
-def parse_time(time_str: str) -> float:
-    """Parse ISO 8601 time string to timestamp"""
+def parse_time(time_str):
     try:
-        normalized = time_str
-        if normalized.endswith("Z"):
-            normalized = normalized[:-1] + "+00:00"
-        return datetime.fromisoformat(normalized).timestamp()
-    except ValueError as ex:
-        print(f"Invalid datetime format: {str(ex)}", file=sys.stderr)
+        return parse_timestamp(time_str)
+    except ValueError as exc:
+        print(f"Invalid datetime format: {exc}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -124,20 +131,36 @@ def validate_arima_input(algorithm_input: AlgorithmInput) -> None:
         print("Invalid data provided, ARIMA requires at least 3 observations, exiting", file=sys.stderr)
         sys.exit(1)
 
+    if algorithm_input.look_ahead <= 0:
+        raise ValueError("lookAhead must be > 0")
+    if algorithm_input.trend not in (None, "n", "c", "t", "ct"):
+        raise ValueError("invalid ARIMA trend")
+    if algorithm_input.information_criterion not in ("aic", "bic"):
+        raise ValueError("informationCriterion must be aic or bic")
+    if algorithm_input.max_order is not None:
+        if len(algorithm_input.max_order) != 3 or any(value < 0 for value in algorithm_input.max_order):
+            raise ValueError("maxOrder must contain three non-negative integers")
+        if algorithm_input.auto_arima and any(value > bound for value, bound in zip(algorithm_input.order, algorithm_input.max_order)):
+            raise ValueError("order must not exceed maxOrder during auto selection")
+
     if algorithm_input.use_sarima or algorithm_input.seasonal_order is not None or algorithm_input.seasonal_periods is not None:
+        if algorithm_input.auto_arima:
+            raise ValueError("autoArima supports non-seasonal ARIMA only")
         if algorithm_input.seasonal_order is None or len(algorithm_input.seasonal_order) != 3:
             print("Invalid SARIMA seasonal_order provided, must be [P, D, Q]", file=sys.stderr)
             sys.exit(1)
-        if algorithm_input.seasonal_periods is None or algorithm_input.seasonal_periods <= 0:
-            print("Invalid SARIMA seasonal_periods provided, must be > 0", file=sys.stderr)
+        if algorithm_input.seasonal_periods is None or algorithm_input.seasonal_periods < 2:
+            print("Invalid SARIMA seasonal_periods provided, must be >= 2", file=sys.stderr)
             sys.exit(1)
         P, D, Q = algorithm_input.seasonal_order
         if P < 0 or D < 0 or Q < 0:
             print("SARIMA seasonal order parameters must be non-negative", file=sys.stderr)
             sys.exit(1)
+    elif not algorithm_input.auto_arima and ((d > 0 and algorithm_input.trend in ("c", "ct")) or (d > 1 and algorithm_input.trend == "t")):
+        raise ValueError("ARIMA trend degree must be at least the differencing order")
 
 
-def sort_history_by_time(replica_history: List[TimestampedReplica]) -> Tuple[List[TimestampedReplica], List[float]]:
+def sort_history_by_time(replica_history: List[TimestampedReplica]) -> Tuple[List[TimestampedReplica], List[Decimal]]:
     """
     Sort replica history by timestamp. If any timestamps are missing, preserve the original order and
     return an empty timestamp list to signal that time-based calculations should fall back to defaults.
@@ -155,21 +178,8 @@ def sort_history_by_time(replica_history: List[TimestampedReplica]) -> Tuple[Lis
     return sorted_history, timestamps
 
 
-def calculate_median_interval_ms(timestamps: List[float]) -> int:
-    """Return the median interval between timestamps in milliseconds, defaulting to 1000ms when unavailable."""
-    if len(timestamps) < 2:
-        return 1000
-
-    deltas = [timestamps[i] - timestamps[i - 1] for i in range(1, len(timestamps))]
-    positive_deltas = [delta for delta in deltas if delta > 0]
-
-    if not positive_deltas:
-        return 1000
-
-    median_seconds = statistics.median(positive_deltas)
-    median_ms = int(round(median_seconds * 1000))
-
-    return max(median_ms, 1)
+def calculate_median_interval_ms(timestamps):
+    return shared_interval_ms(timestamps)
 
 
 def extract_cpu_usage_series(replica_history: List[TimestampedReplica]) -> List[float]:
@@ -183,15 +193,14 @@ def extract_cpu_usage_series(replica_history: List[TimestampedReplica]) -> List[
     return series
 
 
-def determine_forecast_steps(look_ahead_ms: int, timestamps: List[float]) -> int:
-    """Translate the look ahead (ms) into the number of forecast steps."""
-    median_interval_ms = calculate_median_interval_ms(timestamps)
-    return max(1, int(round(look_ahead_ms / median_interval_ms)))
+def determine_forecast_steps(look_ahead_ms, timestamps):
+    return shared_forecast_steps(look_ahead_ms, timestamps)
 
 
 def evaluate_configuration(series: List[int], order: Tuple[int, int, int],
                            algorithm_input: AlgorithmInput) -> float:
     """Fit a model for a given configuration and return the requested information criterion."""
+    arima_budget(len(series), order, algorithm_input.seasonal_order, algorithm_input.seasonal_periods)
     model_kwargs = {
         'order': order,
         'trend': algorithm_input.trend,
@@ -211,10 +220,9 @@ def evaluate_configuration(series: List[int], order: Tuple[int, int, int],
 def auto_select_arima(series: List[int], algorithm_input: AlgorithmInput) -> Tuple[int, int, int]:
     """Automatically select non-seasonal ARIMA parameters using information criteria."""
     manual_order = tuple(algorithm_input.order)
-    max_order = algorithm_input.max_order or [5, 2, 5]
-    max_p = max(max_order[0], manual_order[0])
-    max_d = manual_order[1]
-    max_q = max(max_order[2], manual_order[2])
+    max_order = algorithm_input.max_order or [max(5, manual_order[0]), max(2, manual_order[1]), max(5, manual_order[2])]
+    arima_budget(len(series), manual_order, max_order=max_order)
+    max_p, max_d, max_q = max_order
 
     if len(series) < 6:
         return manual_order
@@ -224,8 +232,9 @@ def auto_select_arima(series: List[int], algorithm_input: AlgorithmInput) -> Tup
 
     try:
         baseline_ic = evaluate_configuration(series, manual_order, algorithm_input)
-        best_ic = baseline_ic
-        best_config = manual_order
+        if math.isfinite(baseline_ic):
+            best_ic = baseline_ic
+            best_config = manual_order
     except Exception:
         # Baseline configuration invalid, continue searching
         pass
@@ -244,7 +253,7 @@ def auto_select_arima(series: List[int], algorithm_input: AlgorithmInput) -> Tup
                 evaluated_configs.add(config)
                 try:
                     ic = evaluate_configuration(series, config, algorithm_input)
-                    if ic < best_ic:
+                    if math.isfinite(ic) and ic < best_ic:
                         best_ic = ic
                         best_config = config
                 except Exception:
@@ -261,6 +270,7 @@ def build_model(series: List[float], algorithm_input: AlgorithmInput,
                 arima_order: Tuple[int, int, int],
                 exog: Optional[List[List[float]]] = None):
     """Build an ARIMA/SARIMA model, switching to SARIMAX when exogenous regressors are used."""
+    arima_budget(len(series), arima_order, algorithm_input.seasonal_order, algorithm_input.seasonal_periods)
     use_sarima = algorithm_input.use_sarima or algorithm_input.seasonal_order is not None or algorithm_input.seasonal_periods is not None
 
     if use_sarima or exog is not None:
@@ -319,30 +329,37 @@ replica_history, timestamps = sort_history_by_time(algorithm_input.replica_histo
 series = extract_cpu_usage_series(replica_history)
 
 try:
-    # Auto-select ARIMA parameters if requested
-    if algorithm_input.auto_arima:
-        selected_order = auto_select_arima(series, algorithm_input)
-        print(f"# Auto-selected ARIMA order: {selected_order}", file=sys.stderr)
-        arima_order = selected_order
-    else:
-        arima_order = tuple(algorithm_input.order)
-
-    # Forecast ahead for the specified number of steps (based on timestamps when available)
+    # Reject oversized forecast allocations before auto-search or fitting.
     forecast_steps = determine_forecast_steps(algorithm_input.look_ahead, timestamps)
-    model = build_model(series, algorithm_input, arima_order)
-    fitted_model = fit_model(model)
-    forecast = fitted_model.forecast(steps=forecast_steps)
+    if algorithm_input.return_trajectory:
+        grid(timestamps, algorithm_input.look_ahead)
+    with stage("training"):
+        # Auto-select ARIMA parameters if requested
+        if algorithm_input.auto_arima:
+            selected_order = auto_select_arima(series, algorithm_input)
+            print(f"# Auto-selected ARIMA order: {selected_order}", file=sys.stderr)
+            arima_order = selected_order
+        else:
+            arima_order = tuple(algorithm_input.order)
+
+        # Forecast ahead for the specified number of steps (based on timestamps when available)
+        model = build_model(series, algorithm_input, arima_order)
+        fitted_model = fit_model(model)
+    with stage("inference"):
+        forecast = fitted_model.forecast(steps=forecast_steps)
 
     # Return the forecast value at the requested horizon, rounded up to nearest integer
-    if len(forecast) > 0:
-        prediction = math.ceil(forecast[-1])
-    else:
-        prediction = series[-1]
+    if len(forecast) == 0:
+        raise ValueError("ARIMA returned an empty forecast")
+    prediction = math.ceil(forecast[-1])
 
-    print(int(prediction), end="")
+    if algorithm_input.return_trajectory:
+        emit(prediction, forecast, timestamps, algorithm_input.look_ahead, math.ceil)
+    else:
+        print(int(prediction), end="")
 
 except Exception as ex:
-    print(f"ARIMA model fitting failed: {str(ex)}, falling back to last observed value", file=sys.stderr)
-    # Fallback to the last observed value if ARIMA fails
-    fallback_value = math.ceil(series[-1]) if series else 1
-    print(int(fallback_value), end="")
+    print(f"ARIMA forecasting failed: {str(ex)}", file=sys.stderr)
+    # The controller owns fallback and backoff. A copied observation must not
+    # be persisted as a successfully fitted forecast or advance model cadence.
+    sys.exit(1)

@@ -24,6 +24,7 @@ import (
 
 	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/fake"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/linear"
 	"github.com/google/go-cmp/cmp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,6 +41,10 @@ func withCPUHistory(history []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1al
 		if out[i].TotalCPUUsageMillicores == nil {
 			value := int64(out[i].Replicas)
 			out[i].TotalCPUUsageMillicores = &value
+		}
+		if out[i].Time == nil {
+			ts := metav1.NewTime(time.Date(2026, 1, 1, 0, 0, i*15, 0, time.UTC))
+			out[i].Time = &ts
 		}
 	}
 	return out
@@ -72,7 +77,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 		{
 			description: "Fail no evaluations",
 			expected:    0,
-			expectedErr: errors.New("no CPU usage evaluations provided for Linear regression model"),
+			expectedErr: prediction.ErrInsufficientHistory,
 			predicter:   &linear.Predict{},
 			model: &hpaplusv1alpha1.Model{
 				Type: hpaplusv1alpha1.TypeLinear,
@@ -84,9 +89,9 @@ func TestPredict_GetPrediction(t *testing.T) {
 			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
-			description: "Success, only one evaluation, return without the prediction",
-			expected:    32,
-			expectedErr: nil,
+			description: "Fail, only one evaluation",
+			expected:    0,
+			expectedErr: prediction.ErrInsufficientHistory,
 			predicter:   &linear.Predict{},
 			model: &hpaplusv1alpha1.Model{
 				Type: hpaplusv1alpha1.TypeLinear,
