@@ -35,7 +35,7 @@ Admission does **not** materialize these defaults. Existing manifests remain unc
 | `cpuInitializationPeriod`, `initialReadinessDelay` | 300 and 30 seconds |
 | `tolerance` | 0.1 |
 | `decisionType`, `includeHPA` | maximum, false |
-| `behavior.scaleUp` | 0-second stabilization, Max selection, 100% or four pods per 60 seconds |
+| `behavior.scaleUp` | 0-second stabilization, Max selection, 100% or four pods per 15 seconds (the Kubernetes default) |
 | `behavior.scaleDown` | 0-second stabilization, Max selection, 100% per 60 seconds |
 | Model `perSyncPeriod`, `calculationTimeout` | 1 and 30000 milliseconds for every family |
 | ARIMA `historySize` | 50 |
