@@ -102,18 +102,22 @@ def test_linear_regression(subtests):
                 "replicaHistory": [
                     {
                         "replicas": 1,
+                        "totalCpuUsageMillicores": 1,
                         "time": "2020-02-01T00:55:33Z"
                     },
                     {
                         "replicas": 2,
+                        "totalCpuUsageMillicores": 2,
                         "time": "2020-02-01T00:55:43Z"
                     },
                     {
                         "replicas": 3,
+                        "totalCpuUsageMillicores": 3,
                         "time": "2020-02-01T00:55:53Z"
                     },
                     {
                         "replicas": 4,
+                        "totalCpuUsageMillicores": 4,
                         "time": "2020-02-01T00:56:03Z"
                     }
                 ]
@@ -134,18 +138,22 @@ def test_linear_regression(subtests):
                 "replicaHistory": [
                     {
                         "replicas": 1,
+                        "totalCpuUsageMillicores": 1,
                         "time": "2020-02-01T00:55:33Z"
                     },
                     {
                         "replicas": 2,
+                        "totalCpuUsageMillicores": 2,
                         "time": "2020-02-01T00:55:43Z"
                     },
                     {
                         "replicas": 3,
+                        "totalCpuUsageMillicores": 3,
                         "time": "2020-02-01T00:55:53Z"
                     },
                     {
                         "replicas": 4,
+                        "totalCpuUsageMillicores": 4,
                         "time": "2020-02-01T00:56:03Z"
                     }
                 ]
@@ -166,18 +174,22 @@ def test_linear_regression(subtests):
                 "replicaHistory": [
                     {
                         "replicas": 1,
+                        "totalCpuUsageMillicores": 1,
                         "time": "2020-02-01T00:55:33Z"
                     },
                     {
                         "replicas": 2,
+                        "totalCpuUsageMillicores": 2,
                         "time": "2020-02-01T00:55:43Z"
                     },
                     {
                         "replicas": 3,
+                        "totalCpuUsageMillicores": 3,
                         "time": "2020-02-01T00:55:53Z"
                     },
                     {
                         "replicas": 4,
+                        "totalCpuUsageMillicores": 4,
                         "time": "2020-02-01T00:56:03Z"
                     }
                 ]

@@ -2,3 +2,26 @@
 # Ignore build and test binaries.
 bin/
 testbin/
+.git/
+.kube/
+.aws/
+.venv/
+.cache/
+**/__pycache__/
+**/.pytest_cache/
+**/.coverage*
+.algorithm_coverage/
+*.out
+*.cover
+*.log
+.env
+.env.*
+.mypy_cache/
+node_modules/
+
+# local experiments, keep them out of the build context
+benchmarks/
+hack/cluster_benchmark/
+docs/reference/measurements/
+docs/implementation-progress.md
+test/console/

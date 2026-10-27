@@ -21,7 +21,7 @@ statsmodel library.
 import sys
 import math
 from json import JSONDecodeError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import List, Optional
 import statsmodels.api as sm
@@ -80,7 +80,7 @@ except KeyError as ex:
     print(f"Invalid JSON provided: missing {str(ex)}, exiting", file=sys.stderr)
     sys.exit(1)
 
-current_time = datetime.utcnow()
+current_time = datetime.now(timezone.utc).replace(tzinfo=None)
 
 if algorithm_input.current_time is not None:
     try:

@@ -5,8 +5,10 @@ GOBIN = $(shell go env GOBIN)
 GOPATH = $(shell go env GOPATH)
 GO_BIN_DIR = $(if $(GOBIN),$(GOBIN),$(GOPATH)/bin)
 CONTROLLER_GEN = $(GO_BIN_DIR)/controller-gen
+CONTROLLER_GEN_VERSION = v0.16.4
 
 py_dependencies:
+	python -m pip install --require-hashes -r algorithms/requirements.txt
 	python -m pip install -r requirements-dev.txt
 
 test: gotest pytest
@@ -15,7 +17,7 @@ gotest:
 	export GOCOVERDIR='.' && go test ./... -cover -coverprofile unit_cover.out
 
 pytest:
-	pytest algorithms/ --cov-report term --cov-report=xml:algorithm_coverage.out --cov-report=html:.algorithm_coverage --cov=algorithms/
+	pytest --import-mode=importlib algorithms/ --cov-report term --cov-report=xml:algorithm_coverage.out --cov-report=html:.algorithm_coverage --cov=algorithms/
 
 docker:
 	docker build . -t $(REGISTRY)/$(NAME):$(VERSION)
@@ -25,12 +27,11 @@ push:
 
 generate: get_controller-gen
 	@echo "=============Generating Golang and YAML============="
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	$(CONTROLLER_GEN) rbac:roleName=hpa-plus-operator webhook crd:allowDangerousTypes=true \
-		paths="./..." \
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+	$(CONTROLLER_GEN) rbac:roleName=hpa-plus-operator crd:allowDangerousTypes=true \
+		paths="./api/...;./internal/...;." \
 		output:crd:artifacts:config=helm/templates/crd \
-		output:rbac:artifacts:config=helm/templates/cluster \
-		output:webhook:artifacts:config=helm/templates/cluster
+		output:rbac:artifacts:config=helm/templates/cluster
 
 view_coverage:
 	@echo "=============Loading coverage HTML============="
@@ -38,4 +39,4 @@ view_coverage:
 	python -m webbrowser file://$(shell pwd)/.algorithm_coverage/index.html
 
 get_controller-gen:
-	go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.16.4
+	go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION)

@@ -1,7 +1,5 @@
-pylint==2.13.9
-pytest==7.1.2
-pytest-subtests==0.7.0
-pytest-cov==3.0.0
-yapf==0.31.0
--r algorithms/requirements.txt
+pylint==4.1.3
+pytest==9.1.1
+pytest-cov==7.1.0
+yapf==0.43.0
 -r docs/requirements.txt

@@ -1,0 +1,9 @@
+# Direct runtime dependencies. Regenerate the complete hash lock with
+# hack/lock-python.sh on Python 3.14 / Linux amd64.
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
+xgboost-cpu==3.4.1
+lightgbm==4.7.0
+statsmodels==0.15.0
+dataclasses-json==0.6.7

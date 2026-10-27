@@ -238,7 +238,7 @@ func TestPython_RunAlgorithmWithValue(t *testing.T) {
 		t.Run(test.description, func(t *testing.T) {
 			result, err := test.python.RunAlgorithmWithValue(test.algorithmPath, test.pipeValue, test.timeout)
 			if !cmp.Equal(&err, &test.expectedErr, equateErrorMessage) {
-				t.Errorf(result)
+				t.Error(result)
 				t.Errorf("error mismatch (-want +got):\n%s", cmp.Diff(test.expectedErr, err, equateErrorMessage))
 				return
 			}
