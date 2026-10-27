@@ -27,7 +27,8 @@ COPY . .
 
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o manager main.go && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o worker-server ./cmd/worker-server
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o worker-server ./cmd/worker-server && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o cgroup-collector ./cmd/cgroup-collector
 
 FROM python:3.14.7-slim-trixie@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2
 WORKDIR /app
@@ -43,7 +44,7 @@ COPY algorithms/requirements.txt ./algorithms/requirements.txt
 RUN python -m pip install --no-cache-dir --require-hashes -r algorithms/requirements.txt
 
 COPY algorithms/ ./algorithms
-COPY --from=builder /workspace/manager /workspace/worker-server ./
+COPY --from=builder /workspace/manager /workspace/worker-server /workspace/cgroup-collector ./
 RUN chmod -R go+rX /app/algorithms && \
     chmod +x /app/manager && \
     chown -R 65532:65532 /app
