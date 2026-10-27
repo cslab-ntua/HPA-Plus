@@ -17,11 +17,15 @@ limitations under the License.
 package algorithm
 
 import (
-	"bytes"
+	"context"
+	"errors"
 	"fmt"
+	"github.com/cslab-ntua/HPA-Plus/internal/observability"
+	"math"
 	"os"
 	"os/exec"
-	"path"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -33,37 +37,73 @@ type command = func(name string, arg ...string) *exec.Cmd
 
 func NewAlgorithmPython() *Python {
 	return &Python{
-		Command: exec.Command,
-		Getwd:   os.Getwd,
+		Command:      exec.Command,
+		Getwd:        os.Getwd,
+		MaxMemoryMiB: 1024,
 	}
 }
 
 // Python is an implementation of an algorithm runner that runs algorithms using Python commands
 type Python struct {
-	Command command
-	Getwd   func() (dir string, err error)
+	Telemetry *observability.Metrics
+	Command   command
+	Getwd     func() (dir string, err error)
+	// Set before first use. Zero selects four concurrent child processes.
+	MaxConcurrent int
+	MaxMemoryMiB  int
+	once          sync.Once
+	slots         chan struct{}
 }
 
 // RunAlgorithmWithValue runs an algorithm at the path provided, passing through the value provided
 func (r *Python) RunAlgorithmWithValue(algorithmPath string, value string, timeout int) (string, error) {
+	return r.RunAlgorithmWithValueContext(context.Background(), algorithmPath, value, timeout)
+}
+
+func (r *Python) RunAlgorithmWithValueContext(parent context.Context, algorithmPath string, value string, timeout int) (string, error) {
+	if timeout <= 0 || int64(timeout) > math.MaxInt64/int64(time.Millisecond) {
+		return "", fmt.Errorf("invalid algorithm timeout")
+	}
+	if len(value) > MaxInputBytes {
+		return "", fmt.Errorf("algorithm input exceeds %d bytes", MaxInputBytes)
+	}
+	ctx, cancel := context.WithTimeout(parent, time.Duration(timeout)*time.Millisecond)
+	defer cancel()
+	r.once.Do(func() {
+		n := r.MaxConcurrent
+		if n <= 0 {
+			n = 4
+		}
+		r.slots = make(chan struct{}, n)
+	})
+	queued := time.Now()
+	select {
+	case r.slots <- struct{}{}:
+		defer func() { <-r.slots }()
+	case <-ctx.Done():
+		r.Telemetry.ObserveWorkerQueue("one_shot", "slot", time.Since(queued))
+		return "", ctx.Err()
+	}
+	r.Telemetry.ObserveWorkerQueue("one_shot", "slot", time.Since(queued))
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 
 	wd, err := r.Getwd()
 	if err != nil {
 		return "", err
 	}
 
-	cmd := r.Command(entrypoint, path.Join(wd, algorithmPath))
+	cmd, err := workerCommand(r.Command, wd, algorithmPath, r.MaxMemoryMiB)
+	if err != nil {
+		return "", err
+	}
 
-	// Set up byte buffer to write values to stdin
-	inb := bytes.Buffer{}
-	// No need to catch error, doesn't produce error, instead it panics if buffer too large
-	inb.WriteString(value)
-	cmd.Stdin = &inb
-
-	// Set up byte buffers to read stdout and stderr
-	var outb, errb bytes.Buffer
-	cmd.Stdout = &outb
-	cmd.Stderr = &errb
+	cmd.Stdin = strings.NewReader(value)
+	outb, errb := newBoundedBuffer(MaxOutputBytes), newBoundedBuffer(MaxOutputBytes)
+	cmd.Stdout, cmd.Stderr = outb, errb
+	cmd.WaitDelay = time.Second
+	prepareProcess(cmd)
 
 	// Start command
 	err = cmd.Start()
@@ -71,21 +111,50 @@ func (r *Python) RunAlgorithmWithValue(algorithmPath string, value string, timeo
 		return "", err
 	}
 
+	r.Telemetry.WorkerActivity("one_shot", "processes", 1)
+	r.Telemetry.ObserveWorkerEvent("one_shot", "started")
+	defer r.Telemetry.WorkerActivity("one_shot", "processes", -1)
 	// Set up channel to wait for command to finish
-	done := make(chan error)
-	go func() { done <- cmd.Wait() }()
-
-	// Set up a timeout, after which if the command hasn't finished it will be stopped
-	timeoutListener := time.After(time.Duration(timeout) * time.Millisecond)
-
-	select {
-	case <-timeoutListener:
-		cmd.Process.Kill()
-		return "", fmt.Errorf("entrypoint '%s', command '%s' timed out", entrypoint, algorithmPath)
-	case err = <-done:
+	done := make(chan error, 1)
+	go func() {
+		err := cmd.Wait()
+		r.Telemetry.ObserveWorkerEvent("one_shot", "exited")
 		if err != nil {
-			return "", fmt.Errorf("%v: %s", err, errb.String())
+			r.Telemetry.ObserveWorkerEvent("one_shot", "failed")
 		}
+		done <- err
+	}()
+	select {
+	case <-ctx.Done():
+		killProcess(cmd)
+		<-done // Reap before returning; no blocked sender or racing buffer reads.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", &timeoutError{script: algorithmPath}
+		}
+		return "", ctx.Err()
+	case <-outb.exceeded:
+		killProcess(cmd)
+		<-done
+		return "", fmt.Errorf("algorithm stdout exceeds %d bytes", MaxOutputBytes)
+	case <-errb.exceeded:
+		killProcess(cmd)
+		<-done
+		return "", fmt.Errorf("algorithm stderr exceeds %d bytes", MaxOutputBytes)
+	case err = <-done:
+	}
+	if outb.overflowed() || errb.overflowed() {
+		return "", fmt.Errorf("algorithm output exceeds %d bytes", MaxOutputBytes)
+	}
+	if err != nil {
+		killProcess(cmd)
+		return "", fmt.Errorf("%v: %s", err, errb.String())
 	}
 	return outb.String(), nil
 }
+
+type timeoutError struct{ script string }
+
+func (e *timeoutError) Error() string {
+	return fmt.Sprintf("entrypoint '%s', command '%s' timed out", entrypoint, e.script)
+}
+func (e *timeoutError) Unwrap() error { return context.DeadlineExceeded }

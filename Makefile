@@ -7,6 +7,14 @@ GO_BIN_DIR = $(if $(GOBIN),$(GOBIN),$(GOPATH)/bin)
 CONTROLLER_GEN = $(GO_BIN_DIR)/controller-gen
 CONTROLLER_GEN_VERSION = v0.16.4
 
+.PHONY: build worker py_dependencies test gotest pytest docker push generate view_coverage get_controller-gen
+
+build: worker
+	go build -trimpath -o bin/manager .
+
+worker:
+	go build -trimpath -o bin/worker-server ./cmd/worker-server
+
 py_dependencies:
 	python -m pip install --require-hashes -r algorithms/requirements.txt
 	python -m pip install -r requirements-dev.txt
