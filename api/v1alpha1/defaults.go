@@ -86,12 +86,14 @@ const (
 	defaultDownscalePercentagePolicyValue         = int32(100)
 )
 
-// Upscale constants
+// Upscale constants: Kubernetes' implemented default, double or +4 pods per
+// 15 seconds. The API field comment in k8s.io/api still says 60 seconds;
+// pkg/apis/autoscaling/v2/defaults.go uses 15.
 const (
 	defaultUpscaleStabilization                 = int32(0)
-	defaultUpscalePercentagePolicyPeriodSeconds = int32(60)
+	defaultUpscalePercentagePolicyPeriodSeconds = int32(15)
 	defaultUpscalePercentagePolicyValue         = int32(100)
-	defaultUpscalePodsPolicyPeriodSeconds       = int32(60)
+	defaultUpscalePodsPolicyPeriodSeconds       = int32(15)
 	defaultUpscalePodsPolicyValue               = int32(4)
 )
 
