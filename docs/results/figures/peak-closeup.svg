@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="649" viewBox="0 0 1000 649" role="img" aria-labelledby="title desc">
+<title id="title">One peak up close</title>
+<desc id="desc">At the third peak HPA+ request demand had 5 pods ready as the peak started and answered almost every request within 500 ms. The CPU forecast had 2 pods at the start and answered 53% in time during the first 15 seconds. The reactive formula stayed at 1 to 2 pods and answered 2 to 7% in time.</desc>
+<style>text{font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}.display{font-family:"IBM Plex Sans Condensed","Arial Narrow",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-weight:600}.mono{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;font-variant-numeric:tabular-nums}.line{fill:none;stroke-linejoin:round;stroke-linecap:round}.hair{fill:none;stroke-width:1}.plane{fill:#f4f4f1}.card{fill:#fcfcfb;stroke:rgba(11,11,11,0.12)}.grid{stroke:#e1e0d9}.axis{stroke:#c3c2b7}.band{fill:rgba(42,120,214,0.07)}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.muted{fill:#7d7b75}.l-cand{stroke:#2a78d6}.l-cpu{stroke:#eb6834}.l-react{stroke:#1baf7a}.l-load{stroke:#52514e}.f-load{fill:rgba(82,81,78,0.12)}.f-heavy{fill:rgba(82,81,78,0.36)}.f-seg{fill:#e1e0d9}.f-jump{fill:rgba(42,120,214,0.20)}.f-wcand{fill:rgba(42,120,214,0.30)}.f-wcpu{fill:rgba(235,104,52,0.30)}.f-wreact{fill:rgba(27,175,122,0.32)}.l-req{stroke:#0b0b0b}.f-cand{fill:#2a78d6}.f-cpu{fill:#eb6834}.f-react{fill:#1baf7a}.ring{stroke:#fcfcfb}.marker{stroke:#52514e}@media (prefers-color-scheme:dark){.plane{fill:#0f0f0e}.card{fill:#1a1a19;stroke:rgba(255,255,255,0.12)}.grid{stroke:#2c2c2a}.axis{stroke:#44443f}.band{fill:rgba(57,135,229,0.10)}.ink{fill:#f0efec}.ink2{fill:#c3c2b7}.muted{fill:#94928b}.l-cand{stroke:#3987e5}.l-cpu{stroke:#d95926}.l-react{stroke:#199e70}.l-load{stroke:#c3c2b7}.f-load{fill:rgba(195,194,183,0.12)}.f-heavy{fill:rgba(195,194,183,0.34)}.f-seg{fill:#2c2c2a}.f-jump{fill:rgba(57,135,229,0.28)}.f-wcand{fill:rgba(57,135,229,0.36)}.f-wcpu{fill:rgba(217,89,38,0.36)}.f-wreact{fill:rgba(25,158,112,0.40)}.l-req{stroke:#f0efec}.f-cand{fill:#3987e5}.f-cpu{fill:#d95926}.f-react{fill:#199e70}.ring{stroke:#1a1a19}.marker{stroke:#c3c2b7}}</style>
+<rect x="0.5" y="0.5" width="999" height="648" rx="6" class="card"/>
+<text x="24.0" y="44.0" class="ink display" font-size="20">One peak up close</text>
+<text x="24.0" y="68.0" class="muted" font-size="13.5">The third of the 12 peaks in the measured hour. The others looked the same: HPA+ request demand had 5 pods</text>
+<text x="24.0" y="87.0" class="muted" font-size="13.5">ready as each of the 12 peaks started, the CPU forecast at 5 of them and the reactive formula at none.</text>
+<rect x="24" y="110" width="18" height="10" rx="2" class="f-load"/><line x1="24" y1="109.5" x2="42" y2="109.5" class="hair l-load" stroke-width="1.5"/>
+<text x="49.0" y="121.0" class="ink2" font-size="13">Offered load</text>
+<line x1="159.92" y1="116.5" x2="177.92" y2="116.5" class="line l-cand" stroke-width="2.5"/>
+<text x="184.9" y="121.0" class="ink2" font-size="13">HPA+ request demand</text>
+<line x1="347.71" y1="116.5" x2="365.71" y2="116.5" class="line l-cpu" stroke-width="2.5"/>
+<text x="372.7" y="121.0" class="ink2" font-size="13">HPA+ CPU forecast</text>
+<line x1="520.68" y1="116.5" x2="538.68" y2="116.5" class="line l-react" stroke-width="2.5"/>
+<text x="545.7" y="121.0" class="ink2" font-size="13">Reactive HPA formula</text>
+<rect x="368.0" y="167" width="253.3" height="70" class="band"/>
+<line x1="368.5" y1="167" x2="368.5" y2="237" class="hair marker" stroke-width="1"/>
+<rect x="368.0" y="281" width="253.3" height="150" class="band"/>
+<line x1="368.5" y1="281" x2="368.5" y2="431" class="hair marker" stroke-width="1"/>
+<rect x="368.0" y="475" width="253.3" height="110" class="band"/>
+<line x1="368.5" y1="475" x2="368.5" y2="585" class="hair marker" stroke-width="1"/>
+<text x="24.0" y="157.0" class="ink2" font-size="13" font-weight="600">Offered load (requests per second)</text>
+<line x1="64" y1="237.5" x2="976" y2="237.5" class="hair axis"/>
+<text x="56.0" y="241.5" class="muted mono" font-size="11.5" text-anchor="end">0</text>
+<line x1="64" y1="202.5" x2="976" y2="202.5" class="hair grid"/>
+<text x="56.0" y="206.5" class="muted mono" font-size="11.5" text-anchor="end">50</text>
+<line x1="64" y1="167.5" x2="976" y2="167.5" class="hair grid"/>
+<text x="56.0" y="171.5" class="muted mono" font-size="11.5" text-anchor="end">100</text>
+<path d="M64.0,237.0L64.0,230.8H114.7V230.6H165.3V230.8H216.0V231.3H266.7V230.9H317.3V231.1H368.0V182.3H418.7V187.6H469.3V183.2H520.0V184.6H570.7V183.9H621.3V231.0H672.0V230.3H722.7V230.4H773.3V231.2H824.0V230.8H874.7V230.6H925.3V230.5H976.0V237.0Z" class="f-load"/>
+<path d="M64.0,230.8H114.7V230.6H165.3V230.8H216.0V231.3H266.7V230.9H317.3V231.1H368.0V182.3H418.7V187.6H469.3V183.2H520.0V184.6H570.7V183.9H621.3V231.0H672.0V230.3H722.7V230.4H773.3V231.2H824.0V230.8H874.7V230.6H925.3V230.5H976.0" class="line l-load" stroke-width="1.4"/>
+<text x="374.0" y="180.0" class="muted mono" font-size="11.5">peak starts</text>
+<text x="24.0" y="271.0" class="ink2" font-size="13" font-weight="600">Ready pods</text>
+<line x1="64" y1="431.5" x2="976" y2="431.5" class="hair axis"/>
+<text x="56.0" y="435.5" class="muted mono" font-size="11.5" text-anchor="end">0</text>
+<line x1="64" y1="401.5" x2="976" y2="401.5" class="hair grid"/>
+<text x="56.0" y="405.5" class="muted mono" font-size="11.5" text-anchor="end">2</text>
+<line x1="64" y1="371.5" x2="976" y2="371.5" class="hair grid"/>
+<text x="56.0" y="375.5" class="muted mono" font-size="11.5" text-anchor="end">4</text>
+<line x1="64" y1="341.5" x2="976" y2="341.5" class="hair grid"/>
+<text x="56.0" y="345.5" class="muted mono" font-size="11.5" text-anchor="end">6</text>
+<line x1="64" y1="311.5" x2="976" y2="311.5" class="hair grid"/>
+<text x="56.0" y="315.5" class="muted mono" font-size="11.5" text-anchor="end">8</text>
+<line x1="64" y1="281.5" x2="976" y2="281.5" class="hair grid"/>
+<text x="56.0" y="285.5" class="muted mono" font-size="11.5" text-anchor="end">10</text>
+<path d="M64.0,416.0H114.7V416.0H165.3V416.0H216.0V416.0H266.7V416.0H317.3V416.0H368.0V416.0H418.7V416.0H469.3V416.0H520.0V401.0H570.7V401.0H621.3V401.0H672.0V401.0H722.7V416.0H773.3V416.0H824.0V416.0H874.7V416.0H925.3V416.0H976.0" class="line l-react" stroke-width="2.4"/>
+<path d="M64.0,416.0H114.7V416.0H165.3V416.0H216.0V416.0H266.7V401.0H317.3V401.0H368.0V401.0H418.7V356.0H469.3V356.0H520.0V356.0H570.7V356.0H621.3V356.0H672.0V386.0H722.7V386.0H773.3V386.0H824.0V401.0H874.7V401.0H925.3V416.0H976.0" class="line l-cpu" stroke-width="2.4"/>
+<path d="M64.0,416.0H114.7V416.0H165.3V416.0H216.0V416.0H266.7V416.0H317.3V416.0H368.0V356.0H418.7V356.0H469.3V356.0H520.0V356.0H570.7V356.0H621.3V371.0H672.0V401.0H722.7V401.0H773.3V401.0H824.0V416.0H874.7V416.0H925.3V416.0H976.0" class="line l-cand" stroke-width="2.4"/>
+<circle cx="643.2" cy="294.5" r="4.5" class="f-cand"/>
+<text x="653.2" y="299.0" class="ink" font-size="12">HPA+ request demand: 5 pods at the start</text>
+<circle cx="643.2" cy="313.5" r="4.5" class="f-cpu"/>
+<text x="653.2" y="318.0" class="ink" font-size="12">HPA+ CPU forecast: 2 pods, 5 after 15 s</text>
+<circle cx="643.2" cy="332.5" r="4.5" class="f-react"/>
+<text x="653.2" y="337.0" class="ink" font-size="12">Reactive HPA formula: 1–2 pods throughout</text>
+<text x="24.0" y="465.0" class="ink2" font-size="13" font-weight="600">Requests answered within 500 ms (each 15 s window)</text>
+<line x1="64" y1="585.5" x2="976" y2="585.5" class="hair axis"/>
+<text x="56.0" y="589.5" class="muted mono" font-size="11.5" text-anchor="end">0%</text>
+<line x1="64" y1="558.5" x2="976" y2="558.5" class="hair grid"/>
+<text x="56.0" y="562.5" class="muted mono" font-size="11.5" text-anchor="end">25%</text>
+<line x1="64" y1="530.5" x2="976" y2="530.5" class="hair grid"/>
+<text x="56.0" y="534.5" class="muted mono" font-size="11.5" text-anchor="end">50%</text>
+<line x1="64" y1="502.5" x2="976" y2="502.5" class="hair grid"/>
+<text x="56.0" y="506.5" class="muted mono" font-size="11.5" text-anchor="end">75%</text>
+<line x1="64" y1="475.5" x2="976" y2="475.5" class="hair grid"/>
+<text x="56.0" y="479.5" class="muted mono" font-size="11.5" text-anchor="end">100%</text>
+<path d="M64.0,475.0H114.7V475.0H165.3V475.0H216.0V475.0H266.7V475.0H317.3V475.0H368.0V580.3H418.7V582.2H469.3V582.4H520.0V577.9H570.7V582.1H621.3V479.3H672.0V475.0H722.7V475.0H773.3V475.0H824.0V475.0H874.7V475.0H925.3V475.0H976.0" class="line l-react" stroke-width="2"/>
+<path d="M64.0,475.0H114.7V475.0H165.3V475.0H216.0V475.0H266.7V475.0H317.3V475.0H368.0V526.7H418.7V475.1H469.3V475.1H520.0V475.1H570.7V475.0H621.3V475.0H672.0V475.8H722.7V475.0H773.3V475.0H824.0V475.0H874.7V475.0H925.3V475.0H976.0" class="line l-cpu" stroke-width="2"/>
+<path d="M64.0,475.0H114.7V475.0H165.3V475.0H216.0V475.0H266.7V475.0H317.3V475.0H368.0V475.1H418.7V475.2H469.3V475.0H520.0V475.0H570.7V475.0H621.3V475.0H672.0V475.0H722.7V475.0H773.3V475.0H824.0V475.0H874.7V475.0H925.3V475.0H976.0" class="line l-cand" stroke-width="2"/>
+<text x="424.7" y="530.7" class="ink2 mono" font-size="12">53%</text>
+<text x="494.7" y="570.9" class="ink2 mono" font-size="12" text-anchor="middle">2–7%</text>
+<line x1="64.5" y1="585" x2="64.5" y2="590" class="hair axis"/>
+<text x="64.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">-90</text>
+<line x1="165.5" y1="585" x2="165.5" y2="590" class="hair axis"/>
+<text x="165.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">-60</text>
+<line x1="267.5" y1="585" x2="267.5" y2="590" class="hair axis"/>
+<text x="267.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">-30</text>
+<line x1="368.5" y1="585" x2="368.5" y2="590" class="hair axis"/>
+<text x="368.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">0</text>
+<line x1="469.5" y1="585" x2="469.5" y2="590" class="hair axis"/>
+<text x="469.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">+30</text>
+<line x1="571.5" y1="585" x2="571.5" y2="590" class="hair axis"/>
+<text x="571.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">+60</text>
+<line x1="672.5" y1="585" x2="672.5" y2="590" class="hair axis"/>
+<text x="672.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">+90</text>
+<line x1="773.5" y1="585" x2="773.5" y2="590" class="hair axis"/>
+<text x="773.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">+120</text>
+<line x1="875.5" y1="585" x2="875.5" y2="590" class="hair axis"/>
+<text x="875.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">+150</text>
+<line x1="976.5" y1="585" x2="976.5" y2="590" class="hair axis"/>
+<text x="976.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">+180</text>
+<text x="976.0" y="625.0" class="muted" font-size="12" text-anchor="end">seconds from the start of the peak</text>
+</svg>
