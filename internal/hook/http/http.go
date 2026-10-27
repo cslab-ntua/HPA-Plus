@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	gohttp "net/http"
 	"strings"
 	"time"
@@ -48,19 +49,30 @@ const (
 
 // Execute represents a way to execute HTTP requests with values as parameters.
 type Execute struct {
-	Client gohttp.Client
+	Client      gohttp.Client
+	origins     map[string]struct{}
+	credentials *credentials
 }
+
+const MaxResponseBytes = 64 * 1024
 
 // ExecuteWithValue executes an HTTP request with the value provided as
 // parameter, configurable to be either in the body or query string
 func (e *Execute) ExecuteWithValue(definition *hpaplusv1alpha1.HookDefinition, value string) (string, error) {
-	if definition.HTTP == nil {
+	return e.ExecuteWithValueContext(context.Background(), definition, value)
+}
+
+func (e *Execute) ExecuteWithValueContext(parent context.Context, definition *hpaplusv1alpha1.HookDefinition, value string) (string, error) {
+	if definition == nil || definition.HTTP == nil {
 		return "", fmt.Errorf("missing required 'http' configuration on hook definition")
 	}
 
 	// Set up request using hook definition and URL provided
 	req, err := gohttp.NewRequest(definition.HTTP.Method, definition.HTTP.URL, nil)
 	if err != nil {
+		return "", ErrInvalidURL
+	}
+	if err := e.authorize(req.URL); err != nil {
 		return "", err
 	}
 
@@ -69,6 +81,7 @@ func (e *Execute) ExecuteWithValue(definition *hpaplusv1alpha1.HookDefinition, v
 	case BodyParameterMode:
 		// Set body parameter
 		req.Body = io.NopCloser(strings.NewReader(value))
+		req.ContentLength = int64(len(value))
 	case QueryParameterMode:
 		// Set query parameter
 		query := req.URL.Query()
@@ -82,21 +95,41 @@ func (e *Execute) ExecuteWithValue(definition *hpaplusv1alpha1.HookDefinition, v
 	for key, val := range definition.HTTP.Headers {
 		req.Header.Add(key, val)
 	}
+	if definition.HTTP.ParameterMode == BodyParameterMode && req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	// Set up a context to provide an HTTP request timeout
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(definition.Timeout)*time.Millisecond)
+	if definition.Timeout < 0 || int64(definition.Timeout) > math.MaxInt64/int64(time.Millisecond) {
+		return "", fmt.Errorf("invalid hook timeout")
+	}
+	ctx, cancel := context.WithTimeout(parent, time.Duration(definition.Timeout)*time.Millisecond)
 	defer cancel()
 
-	// Make request
-	resp, err := e.Client.Do(req.WithContext(ctx))
-	if err != nil {
+	// Read credentials under the same request/model budget, after origin authorization.
+	if err := e.authenticate(ctx, req); err != nil {
 		return "", err
 	}
 
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
+	// Make request
+	client := e.Client
+	client.CheckRedirect = func(*gohttp.Request, []*gohttp.Request) error { return gohttp.ErrUseLastResponse }
+	resp, err := client.Do(req.WithContext(ctx))
 	if err != nil {
-		return "", err
+		return "", safeRequestError(ctx, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return "", fmt.Errorf("hook redirects are disabled")
+	}
+
+	// Read the response body
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
+	if err != nil {
+		return "", safeRequestError(ctx, err)
+	}
+	if len(body) > MaxResponseBytes {
+		return "", fmt.Errorf("hook response exceeds %d bytes", MaxResponseBytes)
 	}
 
 	// Check for a successful response code
@@ -109,7 +142,7 @@ func (e *Execute) ExecuteWithValue(definition *hpaplusv1alpha1.HookDefinition, v
 	}
 
 	if !success {
-		return "", fmt.Errorf("http request failed, status: [%d], response: '%s'", resp.StatusCode, string(body))
+		return "", fmt.Errorf("hook returned unsuccessful HTTP status %d", resp.StatusCode)
 	}
 
 	return string(body), nil

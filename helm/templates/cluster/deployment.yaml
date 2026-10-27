@@ -10,12 +10,49 @@ spec:
       name: {{ .Chart.Name }}
   template:
     metadata:
+      {{- if .Values.hooks.credentials }}
+      annotations:
+        checksum/hook-credentials: {{ .Values.hooks.credentials | toJson | sha256sum | quote }}
+      {{- end }}
       labels:
         name: {{ .Chart.Name }}
     spec:
       serviceAccountName: {{ .Chart.Name }}-cluster
+      {{- if .Values.hooks.credentials }}
+      volumes:
+        - name: hook-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - configMap:
+                  name: {{ .Chart.Name }}-hook-auth
+                  items:
+                    - key: bindings.json
+                      path: bindings.json
+              {{- range .Values.hooks.credentials }}
+              - secret:
+                  name: {{ .secretName | quote }}
+                  items:
+                    - key: {{ .secretKey | quote }}
+                      path: {{ printf "tokens/%s" .name | quote }}
+              {{- end }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ default "Always" .Values.image.pullPolicy }}
+          args:
+            - --leader-elect={{ .Values.leaderElection }}
+            {{- if .Values.hooks.credentials }}
+            - --hook-credentials-dir=/var/run/hpaplus-hook-auth
+            {{- end }}
+            {{- if .Values.hooks.allowedOrigins }}
+            - {{ printf "--hook-allowed-origins=%s" (join "," .Values.hooks.allowedOrigins) | quote }}
+            {{- end }}
+          {{- if .Values.hooks.credentials }}
+          volumeMounts:
+            - name: hook-credentials
+              mountPath: /var/run/hpaplus-hook-auth
+              readOnly: true
+          {{- end }}
 {{ end }}

@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -75,6 +76,9 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	var hookAllowedOrigins, hookCredentialsDir string
+	flag.StringVar(&hookCredentialsDir, "hook-credentials-dir", "", "Directory containing administrator-owned hook bindings and projected Secret tokens.")
+	flag.StringVar(&hookAllowedOrigins, "hook-allowed-origins", "", "Comma-separated exact HTTP(S) origins allowed for tuning hooks; empty disables hooks.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -82,6 +86,17 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	var origins []string
+	if hookAllowedOrigins != "" {
+		origins = strings.Split(hookAllowedOrigins, ",")
+	}
+	httpExec, err := http.NewWithCredentials(origins, hookCredentialsDir)
+	if err != nil {
+		setupLog.Error(err, "Invalid hook destination policy")
+		os.Exit(1)
+	}
+	defer httpExec.Client.CloseIdleConnections()
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -132,7 +147,6 @@ func main() {
 	defer func() {
 		_ = persistentPyRunner.CloseAll()
 	}()
-	httpExec := &http.Execute{}
 
 	reconciler := &controllers.HPAPlusReconciler{
 		Client:      mgr.GetClient(),

@@ -4,3 +4,21 @@ image:
   repository: dimitrisde/hpa-plus-operator
   tag: cpu-history-all-models-20260323-113811
   pullPolicy: Always
+
+leaderElection: true
+
+# Requires a NetworkPolicy-enforcing CNI. Enabling with empty lists isolates
+# operator pods in both directions; configure API/DNS and optional hook/scraper
+# rules first. See docs/reference/network-policy.md.
+networkPolicy:
+  enabled: false
+  ingress: []
+  egress: []
+
+# Operator-owned exact HTTP(S) origins. Empty disables runtime tuning hooks.
+# Existing hook users must opt in when upgrading to this source-built version.
+hooks:
+  allowedOrigins: []
+  # Admin-owned bindings to pre-existing Secrets in the release namespace.
+  # See docs/reference/hook-security.md; tokens are never Helm values.
+  credentials: []

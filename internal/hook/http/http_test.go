@@ -17,6 +17,7 @@ limitations under the License.
 package http_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -49,6 +50,9 @@ func (f *testReader) Read(p []byte) (n int, err error) {
 }
 
 func (f *testReader) Close() error {
+	if f.CloseReactor == nil {
+		return nil
+	}
 	return f.CloseReactor()
 }
 
@@ -80,12 +84,27 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 		{
 			description: "Fail, invalid HTTP method",
 			expected:    "",
-			expectedErr: errors.New(`net/http: invalid method "*?"`),
+			expectedErr: http.ErrInvalidURL,
 			definition: &hpaplusv1alpha1.HookDefinition{
 				Type: "http",
 				HTTP: &hpaplusv1alpha1.HTTPHook{
 					Method: "*?",
 					URL:    "https://custompodautoscaler.com",
+				},
+			},
+			value:   "test",
+			execute: http.Execute{},
+		},
+		{
+			description: "Fail, destination not allowed",
+			expected:    "",
+			expectedErr: http.ErrDestinationDenied,
+			definition: &hpaplusv1alpha1.HookDefinition{
+				Type: "http",
+				HTTP: &hpaplusv1alpha1.HTTPHook{
+					Method:        "GET",
+					URL:           "https://other.example.com",
+					ParameterMode: "query",
 				},
 			},
 			value:   "test",
@@ -109,7 +128,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 		{
 			description: "Fail, request fail",
 			expected:    "",
-			expectedErr: errors.New(`Get "https://custompodautoscaler.com?value=test": Test network error!`),
+			expectedErr: errors.New(`hook request failed`),
 			definition: &hpaplusv1alpha1.HookDefinition{
 				Type: "http",
 				HTTP: &hpaplusv1alpha1.HTTPHook{
@@ -117,6 +136,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 					URL:           "https://custompodautoscaler.com",
 					ParameterMode: "query",
 				},
+				Timeout: 1000,
 			},
 			value: "test",
 			execute: http.Execute{
@@ -132,7 +152,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 		{
 			description: "Fail, timeout",
 			expected:    "",
-			expectedErr: errors.New(`Get "https://custompodautoscaler.com?value=test": context deadline exceeded`),
+			expectedErr: context.DeadlineExceeded,
 			definition: &hpaplusv1alpha1.HookDefinition{
 				Type: "http",
 				HTTP: &hpaplusv1alpha1.HTTPHook{
@@ -159,7 +179,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 		{
 			description: "Fail, invalid response body",
 			expected:    "",
-			expectedErr: errors.New(`Fail to read body!`),
+			expectedErr: errors.New(`hook request failed`),
 			definition: &hpaplusv1alpha1.HookDefinition{
 				Type: "http",
 				HTTP: &hpaplusv1alpha1.HTTPHook{
@@ -167,6 +187,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 					URL:           "https://custompodautoscaler.com",
 					ParameterMode: "query",
 				},
+				Timeout: 1000,
 			},
 			value: "test",
 			execute: http.Execute{
@@ -191,7 +212,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 		{
 			description: "Fail, bad response code",
 			expected:    "",
-			expectedErr: errors.New(`http request failed, status: [400], response: 'bad request!'`),
+			expectedErr: errors.New(`hook returned unsuccessful HTTP status 400`),
 			definition: &hpaplusv1alpha1.HookDefinition{
 				Type: "http",
 				HTTP: &hpaplusv1alpha1.HTTPHook{
@@ -203,6 +224,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 						202,
 					},
 				},
+				Timeout: 1000,
 			},
 			value: "test",
 			execute: http.Execute{
@@ -239,6 +261,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 						202,
 					},
 				},
+				Timeout: 1000,
 			},
 			value: "test",
 			execute: http.Execute{
@@ -297,6 +320,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 						202,
 					},
 				},
+				Timeout: 1000,
 			},
 			value: "test",
 			execute: http.Execute{
@@ -343,6 +367,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 						202,
 					},
 				},
+				Timeout: 1000,
 			},
 			value: "test",
 			execute: http.Execute{
@@ -385,6 +410,7 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 						202,
 					},
 				},
+				Timeout: 1000,
 			},
 			value: "test",
 			execute: http.Execute{
@@ -419,7 +445,12 @@ func TestExecute_ExecuteWithValue(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
-			result, err := test.execute.ExecuteWithValue(test.definition, test.value)
+			execute, err := http.New([]string{"https://custompodautoscaler.com"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			execute.Client = test.execute.Client
+			result, err := execute.ExecuteWithValue(test.definition, test.value)
 			if !cmp.Equal(&err, &test.expectedErr, equateErrorMessage) {
 				t.Errorf("error mismatch (-want +got):\n%s", cmp.Diff(test.expectedErr, err, equateErrorMessage))
 				return
