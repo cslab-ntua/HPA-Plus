@@ -1,209 +1,58 @@
-[![Docs](https://img.shields.io/badge/docs-GitHub-blue)](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs)
-[![License](https://img.shields.io/:license-apache-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
-
 # HPA+
 
-HPA+ is a benchmark-first predictive autoscaling operator for Kubernetes.
+HPA+ is a Kubernetes predictive autoscaling operator. It keeps the familiar Horizontal Pod Autoscaler configuration and adds a modular suite of models that forecast aggregate CPU demand. The operator converts those forecasts into replica recommendations using CPU requests and the configured utilization target.
 
-The point of this repository is not just “run a forecasting model next to HPA.” It is to keep the HPA control shape,
-capture runtime history, benchmark competing predictive strategies against that history, and then ship the chosen model
-back into the running autoscaler.
+Supported models are Linear, Holt-Winters, ARIMA/SARIMA, XGBoost and LightGBM. Models share history collection, workload identity checks, forecast validity checks, worker limits and the scaling decision path. Predictive performance depends on the workload, measurements and configuration.
 
-## Project lineage and attribution
+## Results
 
-HPA+ is an extension of the original Predictive Horizontal Pod Autoscaler (PHPA).
+In a 4-hour test on a live cluster, HPA+ with [request-demand forecasting](docs/user-guide/request-demand.md) answered 99.9% of requests within 500 ms during repeated traffic peaks. HPA+ forecasting from CPU alone answered 93.6%, and the reactive HPA formula with the same scaling limits answered 28.5%. The [benchmark results](docs/results/README.md) describe the setup, every number and the limits.
 
-The upstream project is maintained at:
-<https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler>
+![Headline numbers from the 4-hour benchmark run](docs/results/figures/overview.svg)
 
-We explicitly acknowledge and credit Jamie Thompson (GitHub: `jthomperoo`) as the original writer and maintainer of
-PHPA, along with all upstream contributors who designed, implemented, and evolved the project over time. HPA+ builds
-on that foundation and continues development for our current use cases, while preserving attribution to the original
-work and its Apache-2.0 licensed codebase.
+## How it works
 
-## What This Repository Is
+1. Collect workload metrics and retain complete CPU observations in durable history.
+2. Compute the reactive HPA-style recommendation and evaluate eligible models.
+3. Convert forecast CPU demand into replicas, optionally combining it with the reactive recommendation through `includeHPA`.
+4. Apply the configured decision policy, rollout mode, replica bounds and scaling behavior.
+5. Update the workload's Scale resource and publish status, logs and operational metrics.
 
-This repo contains:
+Sampling and reconciliation run independently. Missing CPU remains missing; forecasts have source timestamps and expiry. Timed predictive policies can preserve the forecast covering the current interval and defer future decreases until their interval begins.
 
-- a Kubernetes operator and Helm chart for `HPAPlus`
-- multiple prediction backends, from simple trend-following to boosted trees
-- docs for installing the operator and configuring HPA+ resources
-- a Helm-based deployment flow for running the controller in a cluster
-- a workflow oriented around tuning from real workload history instead of picking model settings blindly
+## Build and install
 
-## Where It Helps
-
-HPA+ is useful when reactive-only scaling is systematically late for the workload you care about.
-
-Some use cases:
-
-- services with repeated daily or weekly ramps
-- short spikes where the normal HPA loop reacts after saturation has already started
-- workloads with expensive warm-up time, where being slightly early is cheaper than being slightly late
-- teams that want to compare multiple predictive models against the same captured history before standardizing on one
-
-## Where It Does Not Help
-
-HPA+ is not a blanket upgrade over HPA.
-
-It is a bad fit when:
-
-- demand is mostly random and not learnable from recent history
-- there is not enough runtime history to warm the model families you want to use
-- there is no appetite to benchmark and tune against real traces
-- operational simplicity matters more than shaving reaction time
-
-If you skip the tuning step, predictive autoscaling can easily be worse than plain HPA.
-
-## Control Loop
-
-At each sync, the operator:
-
-1. computes the baseline desired replicas using HPA-style metric evaluation
-2. records the runtime history needed by the configured model family
-3. runs the selected model or models against that history
-4. optionally keeps the plain HPA baseline in the decision set via `includeHPA`
-5. combines the candidate outputs using `decisionType`
-6. applies the normal scale constraints such as behavior policies, stabilization windows, and min/max replicas
-
-So HPA+ does not replace the HPA mental model. It inserts prediction into the decision path and keeps the rest of the
-autoscaling envelope intact.
-
-## Supported Kubernetes versions
-
-The minimum Kubernetes version the autoscaler can run on is `v1.23` because it relies on the `autoscaling/v2` API which
-was only available in `v1.23` and above.
-
-The autoscaler is only tested against the latest Kubernetes version - if there are bugs that affect older Kubernetes
-versions we will try to fix them, but there is no guarantee of support.
-
-## Model Families In This Repo
-
-- All current predictors in this repo operate over aggregate CPU-history inputs
-- `Linear` and `HoltWinters` are the lighter statistical options
-- `ARIMA`, `XGBoost`, and `LightGBM` add progressively more modeling capacity and tuning surface
-- tree-based models require realistic captured history and careful parameter tuning before production use
-
-See [models.md](./docs/user-guide/models.md) for the current repo-specific model guide.
-
-## Resource Shape
-
-The custom resource keeps the HPA shape on purpose. `scaleTargetRef`, `metrics`, `behavior`, `minReplicas`, and
-`maxReplicas` stay familiar; prediction is introduced through `spec.models`.
-
-HPA+ has its own custom resource:
-
-```yaml
-apiVersion: hpa.plus/v1alpha1
-kind: HPAPlus
-metadata:
-  name: simple-linear
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: hpa-plus-apache
-  minReplicas: 1
-  maxReplicas: 10
-  behavior:
-    scaleDown:
-      stabilizationWindowSeconds: 0
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          averageUtilization: 50
-          type: Utilization
-  models:
-    - type: Linear
-      name: simple-linear
-      linear:
-        lookAhead: 10000
-        historySize: 6
-```
-
-This object still behaves like a CPU-targeted autoscaler. The difference is that the controller now records history for
-the `Linear` model and lets that model contribute to the final replica decision.
-
-## Installation
-
-Because the project now lives in a private repository the recommended workflow is to build and deploy the operator from
-source:
-
-1. Build and push the controller image.
-
-   ```bash
-   export REGISTRY=<your-registry-or-dockerhub-user>
-   export VERSION=$(git rev-parse --short HEAD)
-
-   make docker REGISTRY=${REGISTRY} VERSION=${VERSION}
-   make push REGISTRY=${REGISTRY} VERSION=${VERSION}
-   ```
-
-2. Install the Helm chart directly from this repository, pointing it at the image you just built.
-
-   ```bash
-   helm upgrade --install hpa-plus-operator ./helm \
-     --namespace hpa-plus-system \
-     --create-namespace \
-     --set image.repository=${REGISTRY}/hpa-plus-operator \
-     --set image.tag=${VERSION} \
-     --set mode=cluster
-   ```
-
-3. Create an `HPAPlus` resource using the model configuration from the getting started guide or model reference, then
-   apply it with `kubectl`.
-
-## Common workflows
-
-For local development, build the image, install the Helm chart, deploy a workload, and apply an `HPAPlus` resource that
-targets that workload. The operator stores model history in ConfigMaps and reconciles the target replica count from the
-configured HPA and predictive model inputs.
-
-## Quick start
-
-Check out the [getting started
-guide](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/getting-started.md) for a complete local
-walkthrough.
-
-## More information
-
-See the [docs directory](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs) for guides and reference material.
-
-See the [model reference](https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/models.md) for supported
-model configuration blocks.
-
-## Developing this project
-
-Developing this project requires these dependencies:
-
-* [Go](https://golang.org/doc/install) >= `1.27`
-* [Python](https://www.python.org/downloads/) == `3.14.x`
-* [Helm](https://helm.sh/) == `3.9.x`
-
-Any Python dependencies must be installed by running:
+The operator requires Kubernetes `autoscaling/v2` support and a working resource metrics API for CPU forecasting. The supplied image targets Linux/amd64. Use an image tag that identifies your actual checkout:
 
 ```bash
-make py_dependencies
+export REGISTRY=your-registry
+export VERSION=your-build-tag
+make docker REGISTRY="$REGISTRY" VERSION="$VERSION"
+make push REGISTRY="$REGISTRY" VERSION="$VERSION"
+helm upgrade --install hpa-plus-operator ./helm \
+  --namespace hpa-plus-system --create-namespace \
+  --set image.repository="$REGISTRY/hpa-plus-operator" \
+  --set image.tag="$VERSION"
 ```
 
-This extensively uses the the k8shorizmetrics library
-to gather metrics and to evaluate them as the Kubernetes Horizontal Pod Autoscaler does.
+The Helm chart installs the CRD, operator and required permissions. Each `HPAPlus` belongs in the same namespace as its target workload. Start new configurations in `observe` mode and inspect their status before enabling control. Only one autoscaler should write a workload's replica count.
 
-It is recommended to test locally using a local Kubernetes managment system, such as
-[k3d](https://github.com/rancher/k3d) (allows running a small Kubernetes cluster locally using Docker).
+See [installation](docs/user-guide/installation.md), [getting started](docs/user-guide/getting-started.md), [configuration](docs/reference/configuration.md) and [models](docs/user-guide/models.md).
 
-You can test changes by deploying a simple workload, applying an `HPAPlus` object from the getting started guide, and
-watching the target deployment's replica count and HPA+ status.
+To watch what HPA+ decides and why, run `make ui` and open the address it prints. The [UI guide](docs/user-guide/ui.md) explains the read-only page.
 
-### Commands
+## Development
 
-* `make py_dependencies` - installs Python development dependencies.
-* `make docker` - builds the HPA+ image.
-* `make push` - pushes the HPA+ image.
-* `make generate` - regenerates Go deepcopy code, RBAC, webhook manifests, and CRDs.
-* `make test` - runs the unit tests.
-* `make gotest` - runs Go tests with coverage.
-* `make pytest` - runs Python algorithm tests with coverage.
-* `make view_coverage` - opens up any generated coverage reports in the browser.
+Use the Go version declared in `go.mod` and the Python runtime/dependencies pinned by `Dockerfile` and `algorithms/requirements.txt`.
+
+- `make build`: build the manager and worker service.
+- `make py_dependencies`: install the pinned model dependencies.
+- `make generate`: regenerate deepcopy code, the CRD and operator RBAC.
+- `make docker` / `make push`: build or publish an operator image.
+- `make ui`: serve the read-only local UI on http://hpaplus.localtest.me:8080.
+
+The [architecture guide](docs/architecture.md) describes the controller, forecasting interface, history and worker boundaries. [Operations](docs/user-guide/operations.md) covers status, resources, logs and recovery.
+
+## Attribution and license
+
+HPA+ extends [Predictive Horizontal Pod Autoscaler](https://github.com/jthomperoo/predictive-horizontal-pod-autoscaler), created and maintained by Jamie Thompson (`jthomperoo`) and its upstream contributors. Their work and attribution are preserved under the [Apache License 2.0](LICENSE).
