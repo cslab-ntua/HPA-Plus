@@ -92,7 +92,7 @@ spec:
           latencyBucketMetric: app_request_duration_seconds_bucket
 ```
 
-These metric names are illustrative: configure the actual counters exported by your telemetry source. `errorsMetric` counts failed attempts, including admission rejections, at the same observation point. The controller excludes CPU-cost accounting windows when observed errors exceed 1% of processed completions, because those windows may contain work that the successful-completion counter cannot explain. It can combine HTTP/gRPC outcomes through a correctly scoped recording rule. Latency buckets must contain seconds and an initialized `+Inf` bucket. Optional `additionalLabels` restricts a particular reporter or observation point; it cannot override the workload identity labels or histogram `le` label.
+These metric names are illustrative: configure the actual counters exported by your telemetry source. `errorsMetric` counts failed attempts, including admission rejections, at the same observation point. Optional `outcomesMetric` counts every finished HTTP/gRPC outcome, errors included, at that same point. It supplies the denominator of the error fraction; `completionsMetric` stays the processed-work counter. Without it, errors per second are available but the error fraction is not. The controller excludes CPU-cost accounting windows when observed errors exceed 1% of processed completions, because those windows may contain work that the successful-completion counter cannot explain. It can combine HTTP/gRPC outcomes through a correctly scoped recording rule. Latency buckets must contain seconds and an initialized `+Inf` bucket. Optional `additionalLabels` restricts a particular reporter or observation point; it cannot override the workload identity labels or histogram `le` label.
 
 This initial mode requires an explicit `spec.syncPeriod: 30000`; omission retains the legacy fifteen-second default and is rejected for request-demand models. The request predictor uses thirty-second intervals. `lookAhead: 90000` produces three forecast intervals; other supported horizons round up to thirty-second intervals. Sixty genuine arrival samples need at least thirty minutes; missing samples extend warm-up. The configured quantile, tree count, depth, lag count and inferred seasonality are recorded in worker diagnostics. Predictors see observed telemetry and availability timestamps only. Future schedules, manually calibrated request costs and future optional-feature values are not inputs.
 
@@ -126,6 +126,33 @@ The decision path is:
 This mode requires explicit `includeHPA: false`, `predictionFailurePolicy: HoldCurrent`, and `control` or `observe` mode. It does not use a reactive recommendation as a fallback. Reactive recommendations remain available for comparison. Existing configurations outside this mode retain their legacy failure policy. If all configured resource measurements are unavailable, the existing metric guard also prevents a scale write; inspect `MetricsAvailable` for that case.
 
 Learning state and issued request forecasts are persisted in an owned ConfigMap, separately from CPU fallback history. Workload identity, relevant configuration and telemetry semantics fence reuse; controller restart does not make an expired estimate fresh. `status.modelStatuses[].requestDemand` reports learning state, CPU cost, background CPU, qualified sample count, last observation, expiry, selected source (`request-demand`, `cpu-forecast` or `hold`) and fallback reason.
+
+## Forecast target
+
+`requestDemand.forecastTarget` selects what the model forecasts:
+
+- `arrivals` (the default when omitted) forecasts incoming requests per second and converts them to replicas with the learned CPU cost described above.
+- `reconstructedCPU` forecasts CPU demand instead. Each closed thirty-second window is rebuilt as measured CPU multiplied by its arrivals per completed unit of work. While pods keep up the ratio is about one; when completions fall behind it rises, so a saturated pod no longer hides the work it could not serve. The model's ordinary CPU forecaster runs on this rebuilt history, and no learned request cost is needed.
+
+With `reconstructedCPU` the recommendation never falls below the replicas that the current reconstructed demand needs. That demand is measured at decision time over the most recent part of a sampling period, so a sudden step is acted on within seconds; decisions run at least once per fast window. A forecast can still add capacity early, before a predicted rise. When a newer forecast takes back a rise that the previous one expected by now, the previous forecast's pods are kept until the window in progress ends. `status.modelStatuses[].requestDemand` reports which of these decided each recommendation.
+
+```yaml
+requestDemand:
+  forecastTarget: reconstructedCPU
+  traffic:
+    # Same required traffic settings as above.
+```
+
+## Lead time from pod startup
+
+With `predictivePolicy.scaleUpLeadFromStartup: true`, the scale-up lead follows how fast the workload actually starts. It is the longest time a current pod of the target took from creation to readiness, plus five seconds for the decision and the scale write. `scaleUpLeadSeconds` applies until a start has been observed. This option requires `requestDemand`.
+
+```yaml
+predictivePolicy:
+  scaleUpLeadSeconds: 15
+  scaleUpLeadFromStartup: true
+  tolerance: 0.1
+```
 
 ## Optional historical inputs
 
