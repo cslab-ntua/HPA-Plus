@@ -1,40 +1,47 @@
 package xgboost
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"sort"
-	"strconv"
-	"strings"
 
 	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/algorithm"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
-	ctrlLog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
-	defaultTimeout = 30000
+	defaultTimeout = hpaplusv1alpha1.DefaultCalculationTimeoutMillis
 )
 
 const algorithmPath = "algorithms/xgboost/xgboost.py"
 
 type xgboostParameters struct {
-	LookAhead       int                                           `json:"lookAhead"`
-	Lags            int                                           `json:"lags"`
-	ReplicaHistory  []hpaplusv1alpha1.TimestampedReplicas `json:"replicaHistory"`
-	MetricHistory   []float64                                     `json:"metricHistory,omitempty"`
-	WindowSize      *int                                          `json:"windowSize,omitempty"`
-	MaxDepth        *int                                          `json:"maxDepth,omitempty"`
-	NEstimators     *int                                          `json:"nEstimators,omitempty"`
-	LearningRate    *float64                                      `json:"learningRate,omitempty"`
-	Subsample       *float64                                      `json:"subsample,omitempty"`
-	ColsampleBytree *float64                                      `json:"colsampleBytree,omitempty"`
-	Objective       *string                                       `json:"objective,omitempty"`
-	MinChildWeight  *float64                                      `json:"minChildWeight,omitempty"`
-	Gamma           *float64                                      `json:"gamma,omitempty"`
-	RegLambda       *float64                                      `json:"regLambda,omitempty"`
-	RegAlpha        *float64                                      `json:"regAlpha,omitempty"`
+	ReturnTrajectory                 bool                                `json:"returnTrajectory,omitempty"`
+	ForecastStrategy                 string                              `json:"forecastStrategy,omitempty"`
+	SeasonalFeatures                 bool                                `json:"seasonalFeatures,omitempty"`
+	ForecastAggregation              string                              `json:"forecastAggregation,omitempty"`
+	DiagnosticScope                  string                              `json:"diagnosticScope,omitempty"`
+	LookAhead                        int                                 `json:"lookAhead"`
+	Lags                             int                                 `json:"lags"`
+	ReplicaHistory                   []hpaplusv1alpha1.TimestampedSample `json:"replicaHistory"`
+	MetricHistory                    []float64                           `json:"metricHistory,omitempty"`
+	WindowSize                       *int                                `json:"windowSize,omitempty"`
+	MaxDepth                         *int                                `json:"maxDepth,omitempty"`
+	NEstimators                      *int                                `json:"nEstimators,omitempty"`
+	LearningRate                     *float64                            `json:"learningRate,omitempty"`
+	Subsample                        *float64                            `json:"subsample,omitempty"`
+	ColsampleBytree                  *float64                            `json:"colsampleBytree,omitempty"`
+	Objective                        *string                             `json:"objective,omitempty"`
+	QuantileAlpha                    *float64                            `json:"quantileAlpha,omitempty"`
+	CPUDemandWeightExponent          *float64                            `json:"cpuDemandWeightExponent,omitempty"`
+	AFTLossDistributionScale         *float64                            `json:"aftLossDistributionScale,omitempty"`
+	CPUCensoringUtilizationThreshold *float64                            `json:"cpuCensoringUtilizationThreshold,omitempty"`
+	MinChildWeight                   *float64                            `json:"minChildWeight,omitempty"`
+	Gamma                            *float64                            `json:"gamma,omitempty"`
+	RegLambda                        *float64                            `json:"regLambda,omitempty"`
+	RegAlpha                         *float64                            `json:"regAlpha,omitempty"`
 }
 
 // AlgorithmRunner defines an algorithm runner, allowing algorithms to be run
@@ -49,7 +56,7 @@ type Predict struct {
 
 // GetPrediction uses XGBoost to predict aggregate CPU usage based on historical evaluations
 // and converts that prediction back into a replica count.
-func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (int32, error) {
+func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) (int32, error) {
 	result, err := p.GetPredictionResult(model, replicaHistory)
 	if err != nil {
 		return 0, err
@@ -59,44 +66,84 @@ func (p *Predict) GetPrediction(model *hpaplusv1alpha1.Model, replicaHistory []h
 
 // GetPredictionResult uses XGBoost to predict aggregate CPU usage based on historical evaluations
 // and converts that prediction back into a replica count.
-func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) (prediction.Result, error) {
+func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) (prediction.Result, error) {
+	return p.GetPredictionResultContext(context.Background(), model, replicaHistory)
+}
+
+func (p *Predict) GetPredictionResultContext(ctx context.Context, model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) (prediction.Result, error) {
+	return prediction.PredictCPU(ctx, p, model, replicaHistory)
+}
+
+func (p *Predict) AcceptedObservations() []prediction.MetricKind {
+	return []prediction.MetricKind{prediction.CPUKind()}
+}
+
+func (p *Predict) ForecastDemand(ctx context.Context, request prediction.DemandRequest) (prediction.DemandResult, error) {
+	if err := prediction.ValidateDemandRequest(request, p.AcceptedObservations()); err != nil {
+		return prediction.DemandResult{}, err
+	}
+	model, replicaHistory := request.Model, request.History
+
+	ctx, cancel, contextErr := prediction.ModelContext(ctx, model, defaultTimeout)
+	if contextErr != nil {
+		return prediction.DemandResult{}, contextErr
+	}
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return prediction.DemandResult{}, err
+	}
 	if model.XGBoost == nil {
-		return prediction.Result{}, errors.New("no XGBoost configuration provided for model")
+		return prediction.DemandResult{}, errors.New("no XGBoost configuration provided for model")
 	}
 
-	trainingHistory := filterHistoryWithCPUUsage(replicaHistory)
+	trainingHistory := prediction.FilterCPUHistory(replicaHistory)
 	if len(trainingHistory) == 0 {
-		return prediction.Result{}, errors.New("no CPU usage evaluations provided for XGBoost model")
+		return prediction.DemandResult{}, prediction.ErrInsufficientHistory
 	}
 
-	if len(trainingHistory) == 1 {
-		return prediction.Result{
-			Replicas:      trainingHistory[0].Replicas,
-			ConsumedUntil: prediction.LatestTimestamp(trainingHistory),
-		}, nil
+	if len(trainingHistory) < 2 || len(trainingHistory) <= model.XGBoost.Lags {
+		return prediction.DemandResult{}, prediction.ErrInsufficientHistory
 	}
 
-	metrics := extractMetricHistory(trainingHistory)
+	metrics := prediction.MetricHistory(trainingHistory)
+	if model.XGBoost.UseUtilizationFeatures != nil && !*model.XGBoost.UseUtilizationFeatures {
+		if model.XGBoost.Objective != nil && *model.XGBoost.Objective == "survival:aft" {
+			return prediction.DemandResult{}, errors.New("censored CPU forecasting requires utilization features")
+		}
+		metrics = nil
+	}
+	if model.XGBoost.Objective != nil && *model.XGBoost.Objective == "survival:aft" && len(metrics) != len(trainingHistory) {
+		return prediction.DemandResult{}, errors.New("censored CPU forecasting requires complete utilization history")
+	}
 
 	params, err := json.Marshal(xgboostParameters{
-		LookAhead:       model.XGBoost.LookAhead,
-		Lags:            model.XGBoost.Lags,
-		ReplicaHistory:  trainingHistory,
-		MetricHistory:   metrics,
-		WindowSize:      model.XGBoost.WindowSize,
-		MaxDepth:        model.XGBoost.MaxDepth,
-		NEstimators:     model.XGBoost.NEstimators,
-		LearningRate:    model.XGBoost.LearningRate,
-		Subsample:       model.XGBoost.Subsample,
-		ColsampleBytree: model.XGBoost.ColsampleBytree,
-		Objective:       model.XGBoost.Objective,
-		MinChildWeight:  model.XGBoost.MinChildWeight,
-		Gamma:           model.XGBoost.Gamma,
-		RegLambda:       model.XGBoost.RegLambda,
-		RegAlpha:        model.XGBoost.RegAlpha,
+		ReturnTrajectory:                 model.PredictivePolicy != nil || (model.ForecastReliability != nil && model.XGBoost.ForecastStrategy == "direct"),
+		ForecastStrategy:                 model.XGBoost.ForecastStrategy,
+		SeasonalFeatures:                 model.XGBoost.SeasonalFeatures,
+		ForecastAggregation:              model.XGBoost.ForecastAggregation,
+		DiagnosticScope:                  prediction.DiagnosticScope(model),
+		LookAhead:                        model.XGBoost.LookAhead,
+		Lags:                             model.XGBoost.Lags,
+		ReplicaHistory:                   trainingHistory,
+		MetricHistory:                    metrics,
+		WindowSize:                       model.XGBoost.WindowSize,
+		MaxDepth:                         model.XGBoost.MaxDepth,
+		NEstimators:                      model.XGBoost.NEstimators,
+		LearningRate:                     model.XGBoost.LearningRate,
+		Subsample:                        model.XGBoost.Subsample,
+		ColsampleBytree:                  model.XGBoost.ColsampleBytree,
+		Objective:                        model.XGBoost.Objective,
+		QuantileAlpha:                    model.XGBoost.QuantileAlpha,
+		CPUDemandWeightExponent:          model.XGBoost.CPUDemandWeightExponent,
+		AFTLossDistributionScale:         model.XGBoost.AFTLossDistributionScale,
+		CPUCensoringUtilizationThreshold: model.XGBoost.CPUCensoringUtilizationThreshold,
+		MinChildWeight:                   model.XGBoost.MinChildWeight,
+		Gamma:                            model.XGBoost.Gamma,
+		RegLambda:                        model.XGBoost.RegLambda,
+		RegAlpha:                         model.XGBoost.RegAlpha,
 	})
 	if err != nil {
-		panic(err)
+		return prediction.DemandResult{}, err
 	}
 
 	timeout := defaultTimeout
@@ -104,36 +151,37 @@ func (p *Predict) GetPredictionResult(model *hpaplusv1alpha1.Model, replicaHisto
 		timeout = *model.CalculationTimeout
 	}
 
-	value, err := p.Runner.RunAlgorithmWithValue(algorithmPath, string(params), timeout)
+	ctx, trajectory := algorithm.WithForecastTrajectory(ctx)
+	value, err := algorithm.RunCPUForecast(ctx, p.Runner, algorithmPath, string(params), timeout)
 	if err != nil {
-		return prediction.Result{}, err
+		return prediction.DemandResult{}, err
 	}
 
 	predictedUsage, err := parsePredictedCPUUsage(value)
 	if err != nil {
-		return prediction.Result{}, err
+		return prediction.DemandResult{}, err
 	}
 
-	predictedReplicas, err := convertPredictedCPUUsageToReplicas(model, predictedUsage)
-	if err != nil {
-		return prediction.Result{}, err
-	}
-	logRawForecast(model, predictedUsage, predictedReplicas)
-
-	return prediction.Result{
-		Replicas:      predictedReplicas,
+	points := trajectory.Last()
+	return prediction.CompleteCPUForecast(model, prediction.DemandResult{
+		Trajectory:    points,
+		Demand:        prediction.Demand{Kind: request.Observation.Kind, Target: request.Observation.Target, Value: predictedUsage},
 		ConsumedUntil: prediction.LatestTimestamp(trainingHistory),
-	}, nil
+	})
 }
 
 // PruneHistory ensures replica history does not exceed configured history size
-func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) ([]hpaplusv1alpha1.TimestampedReplicas, error) {
+func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) ([]hpaplusv1alpha1.TimestampedSample, error) {
 	if model.XGBoost == nil {
 		return nil, errors.New("no XGBoost configuration provided for model")
 	}
 
-	cpuHistoryCount := countCPUUsageEntries(replicaHistory)
+	if model.XGBoost.HistorySize < 0 {
+		return nil, errors.New("historySize must be nonnegative for pruning")
+	}
+	cpuHistoryCount := prediction.CountCPUHistory(replicaHistory)
 	if cpuHistoryCount == 0 {
+		replicaHistory = prediction.CloneHistory(replicaHistory)
 		if len(replicaHistory) <= model.XGBoost.HistorySize {
 			return replicaHistory, nil
 		}
@@ -149,11 +197,7 @@ func (p *Predict) PruneHistory(model *hpaplusv1alpha1.Model, replicaHistory []hp
 		return replicaHistory, nil
 	}
 
-	if cpuHistoryCount <= model.XGBoost.HistorySize {
-		return replicaHistory, nil
-	}
-
-	return pruneHistoryByCPUUsage(replicaHistory, model.XGBoost.HistorySize), nil
+	return prediction.PruneCPUHistory(replicaHistory, model.XGBoost.HistorySize), nil
 }
 
 // GetType returns the type of the Prediction model
@@ -161,120 +205,12 @@ func (p *Predict) GetType() string {
 	return hpaplusv1alpha1.TypeXGBoost
 }
 
-func extractMetricHistory(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) []float64 {
-	metrics := make([]float64, 0, len(replicaHistory))
-	for _, entry := range replicaHistory {
-		if entry.Metric == nil {
-			return nil
-		}
-		metrics = append(metrics, *entry.Metric)
-	}
-
-	if len(metrics) == 0 {
-		return nil
-	}
-
-	return metrics
-}
-
-func filterHistoryWithCPUUsage(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) []hpaplusv1alpha1.TimestampedReplicas {
-	filtered := make([]hpaplusv1alpha1.TimestampedReplicas, 0, len(replicaHistory))
-	for _, entry := range replicaHistory {
-		if entry.TotalCPUUsageMillicores == nil {
-			continue
-		}
-		filtered = append(filtered, entry)
-	}
-	return filtered
-}
-
-func countCPUUsageEntries(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) int {
-	count := 0
-	for _, entry := range replicaHistory {
-		if entry.TotalCPUUsageMillicores != nil {
-			count++
-		}
-	}
-	return count
-}
-
-func pruneHistoryByCPUUsage(
-	replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
-	maxCPUEntries int,
-) []hpaplusv1alpha1.TimestampedReplicas {
-	if maxCPUEntries <= 0 {
-		return []hpaplusv1alpha1.TimestampedReplicas{}
-	}
-
-	cpuEntriesSeen := 0
-	start := len(replicaHistory)
-	for idx := len(replicaHistory) - 1; idx >= 0; idx-- {
-		if replicaHistory[idx].TotalCPUUsageMillicores != nil {
-			cpuEntriesSeen++
-		}
-		if cpuEntriesSeen >= maxCPUEntries {
-			start = idx
-			break
-		}
-	}
-
-	if start <= 0 {
-		return replicaHistory
-	}
-
-	return replicaHistory[start:]
-}
-
 func parsePredictedCPUUsage(value string) (int64, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, errors.New("empty XGBoost prediction output")
-	}
-
-	predictedUsage, err := strconv.ParseInt(value, 10, 64)
-	if err == nil {
-		return predictedUsage, nil
-	}
-
-	predictedUsageFloat, floatErr := strconv.ParseFloat(value, 64)
-	if floatErr != nil {
-		return 0, err
-	}
-
-	return int64(math.Ceil(predictedUsageFloat)), nil
+	return prediction.ParseCPUForecast(value, "XGBoost")
 }
 
-func convertPredictedCPUUsageToReplicas(model *hpaplusv1alpha1.Model, predictedUsage int64) (int32, error) {
-	if model.CPURequestPerPodMillicores <= 0 {
-		return 0, errors.New("missing CPU request per pod for XGBoost CPU-history prediction")
-	}
-	if model.TargetCPUUtilizationPercentage <= 0 {
-		return 0, errors.New("missing target CPU utilization for XGBoost CPU-history prediction")
-	}
-
-	if predictedUsage < 0 {
-		predictedUsage = 0
-	}
-
-	targetPerPod := float64(model.CPURequestPerPodMillicores) * (float64(model.TargetCPUUtilizationPercentage) / 100.0)
-	if targetPerPod <= 0 {
-		return 0, errors.New("invalid CPU target conversion values for XGBoost CPU-history prediction")
-	}
-
-	return int32(math.Ceil(float64(predictedUsage) / targetPerPod)), nil
-}
-
-func logRawForecast(model *hpaplusv1alpha1.Model, predictedUsage int64, predictedReplicas int32) {
-	sessionID := model.Name
-	if model.SessionID != "" {
-		sessionID = model.SessionID
-	}
-
-	ctrlLog.Log.WithName("xgboost").Info(
-		"XGBoost raw CPU forecast ready",
-		"sessionID", sessionID,
-		"modelName", model.Name,
-		"predictedUsageMillicores", predictedUsage,
-		"predictedReplicas", predictedReplicas,
-	)
+// PrepareAdaptation confirms that the next normal prediction refits from the
+// configured rolling history. It does not shorten the model's history window.
+func (p *Predict) PrepareAdaptation(ctx context.Context, model *hpaplusv1alpha1.Model) (string, error) {
+	return "Refit", ctx.Err()
 }

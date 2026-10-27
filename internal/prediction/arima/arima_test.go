@@ -74,6 +74,28 @@ func (f *fakeIncrementalRunner) ResetSession(sessionID string) error {
 	return f.ResetSessionReactor(sessionID)
 }
 
+// sessionResponse answers a versioned incremental request like the python worker does.
+func sessionResponse(t *testing.T, request string, prediction int64) string {
+	t.Helper()
+	var req struct {
+		RequestID string `json:"requestId"`
+	}
+	if err := json.Unmarshal([]byte(request), &req); err != nil {
+		t.Fatal(err)
+	}
+	response, err := json.Marshal(map[string]interface{}{
+		"protocolVersion": 1,
+		"unit":            "cpu_millicores",
+		"requestId":       req.RequestID,
+		"ok":              true,
+		"prediction":      prediction,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(response)
+}
+
 func TestPredict_GetPrediction(t *testing.T) {
 	equateErrorMessage := cmp.Comparer(func(x, y error) bool {
 		if x == nil || y == nil {
@@ -101,7 +123,7 @@ func TestPredict_GetPrediction(t *testing.T) {
 		{
 			description: "Fail no evaluations",
 			expected:    0,
-			expectedErr: errors.New("no CPU usage evaluations provided for ARIMA model"),
+			expectedErr: prediction.ErrInsufficientHistory,
 			predicter:   &arima.Predict{},
 			model: &hpaplusv1alpha1.Model{
 				Type: hpaplusv1alpha1.TypeArima,
@@ -113,9 +135,9 @@ func TestPredict_GetPrediction(t *testing.T) {
 			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
-			description: "Success, only one evaluation, return last value",
-			expected:    32,
-			expectedErr: nil,
+			description: "Fail, only one evaluation",
+			expected:    0,
+			expectedErr: prediction.ErrInsufficientHistory,
 			predicter:   &arima.Predict{},
 			model: &hpaplusv1alpha1.Model{
 				Type: hpaplusv1alpha1.TypeArima,
@@ -131,9 +153,9 @@ func TestPredict_GetPrediction(t *testing.T) {
 			},
 		},
 		{
-			description: "Success, two evaluations, return last value",
-			expected:    16,
-			expectedErr: nil,
+			description: "Fail, two evaluations",
+			expected:    0,
+			expectedErr: prediction.ErrInsufficientHistory,
 			predicter:   &arima.Predict{},
 			model: &hpaplusv1alpha1.Model{
 				Type: hpaplusv1alpha1.TypeArima,
@@ -547,14 +569,7 @@ func TestPredict_GetPrediction_IncrementalSuccess(t *testing.T) {
 		},
 		IncrementalRunner: &fakeIncrementalRunner{
 			RunSessionWithValueReactor: func(sessionID, algorithmPath, value string, timeout int) (string, error) {
-				response, err := json.Marshal(map[string]interface{}{
-					"ok":         true,
-					"prediction": 7,
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-				return string(response), nil
+				return sessionResponse(t, value, 7), nil
 			},
 		},
 	}
@@ -666,14 +681,7 @@ func TestPredict_GetPrediction_IncrementalUsesSessionID(t *testing.T) {
 		IncrementalRunner: &fakeIncrementalRunner{
 			RunSessionWithValueReactor: func(sessionID, algorithmPath, value string, timeout int) (string, error) {
 				capturedSessionID = sessionID
-				response, err := json.Marshal(map[string]interface{}{
-					"ok":         true,
-					"prediction": 9,
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-				return string(response), nil
+				return sessionResponse(t, value, 9), nil
 			},
 		},
 	}

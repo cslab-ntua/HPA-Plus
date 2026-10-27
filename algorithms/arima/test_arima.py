@@ -134,7 +134,7 @@ def test_arima(subtests):
     }, {
         "description": "Invalid timestamp provided",
         "expected_status_code": 1,
-        "expected_stderr": "Invalid datetime format: Invalid isoformat string: 'invalid'\n",
+        "expected_stderr": "Invalid datetime format: timestamps require RFC3339 with an explicit timezone and at most nine fractional digits\n",
         "expected_stdout": "",
         "stdin": """{
                 "order": [1, 1, 1],

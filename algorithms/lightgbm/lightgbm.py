@@ -4,16 +4,26 @@ Train-and-predict loop for LightGBM using recent aggregate CPU history
 (and optional metric history) to forecast the next CPU usage value.
 """
 
-import csv
 import json
 import math
 import os
-import statistics
 import sys
 from dataclasses import dataclass
-from datetime import datetime
 from importlib import import_module
 from typing import List, Optional, Tuple
+
+# Resolve shared helpers for both direct script execution and runpy dispatch.
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+try:
+    from forecast_trajectory import grid, emit
+    from forecast_diagnostics import stage
+    from feature_diagnostics import dump_features
+    from forecast_budget import tree_budget
+    from forecast_features import build_feature_row, build_training_matrix, forecast, feature_header
+    from forecast_time import parse_timestamp, median_interval_ms as shared_interval_ms, forecast_steps as shared_forecast_steps
+finally:
+    sys.path.pop(0)
 
 import numpy as np
 from dataclasses_json import LetterCase, dataclass_json
@@ -22,15 +32,12 @@ from dataclasses_json import LetterCase, dataclass_json
 def _import_lightgbm():
     """Ensure we import the external lightgbm package, not this script."""
     script_dir = os.path.abspath(os.path.dirname(__file__))
-    removed = False
-    if sys.path and os.path.abspath(sys.path[0]) == script_dir:
-        sys.path.pop(0)
-        removed = True
+    original_path = sys.path[:]
+    sys.path[:] = [path for path in sys.path if os.path.abspath(path) != script_dir]
     try:
         return import_module("lightgbm")
     finally:
-        if removed:
-            sys.path.insert(0, script_dir)
+        sys.path[:] = original_path
 
 
 lgb = _import_lightgbm()
@@ -53,6 +60,8 @@ class AlgorithmInput:
     look_ahead: int
     lags: int
     replica_history: List[TimestampedReplica]
+    return_trajectory: bool = False
+    diagnostic_scope: Optional[str] = None
     metric_history: Optional[List[float]] = None
     window_size: Optional[int] = None
     max_depth: Optional[int] = None
@@ -84,39 +93,25 @@ def read_input() -> AlgorithmInput:
         sys.exit(1)
 
 
-def parse_time(timestamp: Optional[str]) -> Optional[float]:
-    """Parse ISO 8601 time string to a UNIX timestamp in seconds."""
-    if timestamp is None:
-        return None
-    try:
-        return datetime.timestamp(datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ"))
-    except ValueError as exc:
-        print(f"Invalid datetime format: {exc}", file=sys.stderr)
-        return None
+def parse_time(timestamp):
+    return None if timestamp is None else parse_timestamp(timestamp)
 
 
-def median_interval_ms(replica_history: List[TimestampedReplica]) -> int:
-    """Calculate median interval between timestamps in milliseconds; default to 1000 if unavailable."""
-    timestamps = [parse_time(item.time) for item in replica_history if item.time is not None]
-    if len(timestamps) < 2:
-        return 1000
-
-    deltas = [t2 - t1 for t1, t2 in zip(timestamps, timestamps[1:]) if (t2 - t1) > 0]
-    if not deltas:
-        return 1000
-
-    med = statistics.median(deltas)
-    return max(int(round(med * 1000)), 1)
+def median_interval_ms(replica_history):
+    return shared_interval_ms([parse_time(item.time) for item in replica_history if item.time is not None])
 
 
-def determine_steps(look_ahead_ms: int, replica_history: List[TimestampedReplica]) -> int:
-    """Translate look-ahead milliseconds into forecast steps."""
-    interval = median_interval_ms(replica_history)
-    return max(1, int(round(look_ahead_ms / interval)))
+def determine_steps(look_ahead_ms, replica_history):
+    return shared_forecast_steps(look_ahead_ms, [parse_time(item.time) for item in replica_history if item.time is not None])
 
 
 def validate_input(alg_input: AlgorithmInput) -> None:
     """Validate required parameters and available data."""
+    if alg_input.objective not in (None, "regression", "regression_l2", "l2", "mean_squared_error", "mse",
+                                   "regression_l1", "l1", "mean_absolute_error", "mae", "huber", "fair",
+                                   "poisson", "quantile", "mape", "mean_absolute_percentage_error", "gamma", "tweedie"):
+        print("Unsupported CPU regression objective", file=sys.stderr)
+        sys.exit(1)
     if alg_input.look_ahead <= 0:
         print("lookAhead must be > 0", file=sys.stderr)
         sys.exit(1)
@@ -126,6 +121,11 @@ def validate_input(alg_input: AlgorithmInput) -> None:
     if not alg_input.replica_history:
         print("No replica history provided", file=sys.stderr)
         sys.exit(1)
+    for name in ("learning_rate", "subsample", "colsample_bytree", "reg_lambda", "reg_alpha"):
+        value = getattr(alg_input, name)
+        if value is not None and not math.isfinite(value):
+            print(f"{name} must be finite", file=sys.stderr)
+            sys.exit(1)
     if alg_input.window_size is not None:
         if alg_input.window_size <= 0:
             print("windowSize must be > 0 when provided", file=sys.stderr)
@@ -160,8 +160,6 @@ def validate_input(alg_input: AlgorithmInput) -> None:
     if alg_input.reg_alpha is not None and alg_input.reg_alpha < 0:
         print("regAlpha must be >= 0 when provided", file=sys.stderr)
         sys.exit(1)
-    if len(alg_input.replica_history) <= alg_input.lags:
-        return
     if alg_input.metric_history is not None and len(alg_input.metric_history) != len(alg_input.replica_history):
         print("metricHistory must match length of replicaHistory when provided", file=sys.stderr)
         sys.exit(1)
@@ -197,111 +195,16 @@ def extract_cpu_usage_series(replica_history: List[TimestampedReplica]) -> List[
     return series
 
 
-def build_feature_row(rep_window: List[float], metric_window: Optional[List[float]]) -> List[float]:
-    """Compose a single feature row from CPU and metric windows."""
-    row: List[float] = []
-    row.extend(rep_window)
-    if len(rep_window) > 1:
-        diffs = np.diff(rep_window)
-        row.extend(diffs.tolist())
-        row.append(float(np.mean(rep_window)))
-        row.append(float(np.std(rep_window)))
-    else:
-        row.extend([0.0])
-        row.append(float(rep_window[0]))
-        row.append(0.0)
-
-    if metric_window:
-        row.extend(metric_window)
-        if len(metric_window) > 1:
-            row.append(float(np.mean(metric_window)))
-            row.append(float(np.std(metric_window)))
-        else:
-            row.append(float(metric_window[0]))
-            row.append(0.0)
-
-    return row
-
-
-def build_training_matrix(
-    series: List[float],
-    metrics: Optional[List[float]],
-    lags: int,
-    rolling_window: int,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Create supervised learning matrix using lagged features."""
-    X, y = [], []
-    for idx in range(lags, len(series)):
-        cpu_window = series[idx - lags:idx]
-        metric_window = metrics[idx - lags:idx] if metrics else None
-
-        cpu_slice = cpu_window[-rolling_window:]
-        metric_slice = metric_window[-rolling_window:] if metric_window else None
-
-        row = build_feature_row(cpu_slice, metric_slice)
-        X.append(row)
-        y.append(series[idx])
-    return np.array(X), np.array(y)
-
-
-def forecast(
-    model: lgb.LGBMRegressor,
-    history: List[float],
-    metrics: Optional[List[float]],
-    lags: int,
-    steps: int,
-    rolling_window: int,
-) -> float:
-    """Iteratively forecast forward and return the final predicted CPU usage."""
-    cpu_series = list(history)
-    metric_series = list(metrics) if metrics else None
-
-    for _ in range(steps):
-        if len(cpu_series) < lags:
-            return cpu_series[-1]
-
-        cpu_window = cpu_series[-lags:]
-        metric_window = metric_series[-lags:] if metric_series else None
-
-        cpu_slice = cpu_window[-rolling_window:]
-        metric_slice = metric_window[-rolling_window:] if metric_window else None
-        features = np.array([build_feature_row(cpu_slice, metric_slice)])
-
-        next_val = float(model.predict(features)[0])
-        cpu_series.append(next_val)
-
-        if metric_series is not None:
-            metric_series.append(metric_series[-1])
-
-    return cpu_series[-1]
-
-
 def emit_prediction(value: float) -> None:
     """Print integer prediction without trailing newline so Go parser stays happy."""
     sys.stdout.write(str(int(round(value))))
     sys.stdout.flush()
 
 
-def maybe_dump_features(X_train: np.ndarray, rolling_window: int, metrics_used: bool) -> None:
-    """Append feature matrix to CSV for debugging at a fixed path."""
-    path = os.environ.get("LGBM_FEATURE_DUMP", "/tmp/lgbm_features.csv")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
-    cpu_header = [f"cpu_lag_{i}" for i in range(rolling_window)]
-    cpu_diff_header = [f"cpu_diff_{i}" for i in range(rolling_window - 1)] if rolling_window > 1 else []
-    header = cpu_header + cpu_diff_header + ["cpu_mean", "cpu_std"]
-
-    if metrics_used:
-        metric_header = [f"metric_lag_{i}" for i in range(rolling_window)]
-        metric_stats_header = ["metric_mean", "metric_std"]
-        header += metric_header + metric_stats_header
-
-    file_exists = os.path.isfile(path)
-    with open(path, "a", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        if not file_exists:
-            writer.writerow(header)
-        writer.writerows(X_train.tolist())
+def maybe_dump_features(X_train: np.ndarray, rolling_window: int, metrics_used: bool,
+                        scope: Optional[str] = None) -> None:
+    if os.environ.get("HPAPLUS_FEATURE_DUMP_DIR") and scope:
+        dump_features("lightgbm", scope, feature_header(rolling_window, metrics_used), X_train)
 
 
 def build_model_params(alg_input: AlgorithmInput) -> dict:
@@ -329,8 +232,14 @@ def build_model_params(alg_input: AlgorithmInput) -> dict:
 def main() -> None:
     alg_input = read_input()
     validate_input(alg_input)
+    tree_budget("LightGBM", len(alg_input.replica_history), alg_input.lags,
+                alg_input.window_size, alg_input.metric_history is not None, alg_input.n_estimators, alg_input.max_depth,
+                alg_input.num_leaves)
 
     sorted_history, sorted_metrics = sort_history(alg_input.replica_history, alg_input.metric_history)
+    steps = determine_steps(alg_input.look_ahead, sorted_history)
+    if alg_input.return_trajectory:
+        grid([r.time for r in sorted_history], alg_input.look_ahead)
     series = extract_cpu_usage_series(sorted_history)
 
     if len(series) <= alg_input.lags:
@@ -345,13 +254,17 @@ def main() -> None:
         emit_prediction(series[-1])
         return
 
-    maybe_dump_features(X_train, rolling_window, sorted_metrics is not None)
+    maybe_dump_features(X_train, rolling_window, sorted_metrics is not None, alg_input.diagnostic_scope)
 
     model = lgb.LGBMRegressor(**build_model_params(alg_input))
-    model.fit(X_train, y_train)
+    with stage("training"):
+        model.fit(X_train, y_train)
 
-    steps = determine_steps(alg_input.look_ahead, sorted_history)
-    prediction = forecast(model, series, sorted_metrics, alg_input.lags, steps, rolling_window)
+    with stage("inference"):
+        prediction = forecast(model, series, sorted_metrics, alg_input.lags, steps, rolling_window, return_values=alg_input.return_trajectory)
+    if alg_input.return_trajectory:
+        emit(max(0, int(round(prediction[-1]))), prediction, [r.time for r in sorted_history], alg_input.look_ahead)
+        return
     clamped = max(0, int(round(prediction)))
     emit_prediction(clamped)
 

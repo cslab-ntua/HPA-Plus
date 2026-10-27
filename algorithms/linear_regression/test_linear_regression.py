@@ -58,7 +58,7 @@ def test_linear_regression(subtests):
         "expected_status_code":
         1,
         "expected_stderr":
-        "Invalid datetime format: time data 'invalid' does not match format " + "'%Y-%m-%dT%H:%M:%SZ'\n",
+        "Invalid datetime format: timestamps require RFC3339 with an explicit timezone and at most nine fractional digits\n",
         "expected_stdout":
         "",
         "stdin":
@@ -77,7 +77,7 @@ def test_linear_regression(subtests):
         "expected_status_code":
         1,
         "expected_stderr":
-        "Invalid datetime format: time data 'invalid' does not match format " + "'%Y-%m-%dT%H:%M:%SZ'\n",
+        "Invalid datetime format: timestamps require RFC3339 with an explicit timezone and at most nine fractional digits\n",
         "expected_stdout":
         "",
         "stdin":
@@ -88,13 +88,13 @@ def test_linear_regression(subtests):
             }"""
     }, {
         "description":
-        "Successful prediction, now",
+        "Fail, look ahead of zero",
         "expected_status_code":
-        0,
+        1,
         "expected_stderr":
-        "",
+        "lookAhead must be > 0\n",
         "expected_stdout":
-        "5",
+        "",
         "stdin":
         """{
                 "lookAhead": 0,

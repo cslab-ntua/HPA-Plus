@@ -65,15 +65,15 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 		{
 			description:    "Fail no evaluations",
 			expected:       0,
-			expectedErr:    errors.New("no CPU usage evaluations provided for LightGBM model"),
+			expectedErr:    prediction.ErrInsufficientHistory,
 			predicter:      &lightgbm.Predict{},
 			model:          &hpaplusv1alpha1.Model{Type: hpaplusv1alpha1.TypeLightGBM, LightGBM: &hpaplusv1alpha1.LightGBM{HistorySize: 5, LookAhead: 1000, Lags: 2}},
 			replicaHistory: []hpaplusv1alpha1.TimestampedReplicas{},
 		},
 		{
-			description: "Success single CPU evaluation returns last replicas",
-			expected:    6,
-			expectedErr: nil,
+			description: "Fail single CPU evaluation",
+			expected:    0,
+			expectedErr: prediction.ErrInsufficientHistory,
 			predicter:   &lightgbm.Predict{},
 			model: &hpaplusv1alpha1.Model{
 				Type:     hpaplusv1alpha1.TypeLightGBM,
@@ -114,7 +114,7 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 		{
 			description: "Fail missing CPU request per pod",
 			expected:    0,
-			expectedErr: errors.New("missing CPU request per pod for LightGBM CPU-history prediction"),
+			expectedErr: errors.New("CPU capacity requires positive request and target utilization"),
 			predicter: &lightgbm.Predict{
 				Runner: &fake.Run{
 					RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
@@ -134,12 +134,13 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 			replicaHistory: attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 				{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
 				{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
+				{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}},
 			}),
 		},
 		{
 			description: "Fail missing target CPU utilization",
 			expected:    0,
-			expectedErr: errors.New("missing target CPU utilization for LightGBM CPU-history prediction"),
+			expectedErr: errors.New("CPU capacity requires positive request and target utilization"),
 			predicter: &lightgbm.Predict{
 				Runner: &fake.Run{
 					RunAlgorithmWithValueReactor: func(algorithmPath, value string, timeout int) (string, error) {
@@ -159,6 +160,7 @@ func TestPredict_GetPredictionResult(t *testing.T) {
 			replicaHistory: attachCPUUsage([]hpaplusv1alpha1.TimestampedReplicas{
 				{Replicas: 2, Time: &metav1.Time{Time: time.Time{}.Add(1 * time.Second)}},
 				{Replicas: 3, Time: &metav1.Time{Time: time.Time{}.Add(2 * time.Second)}},
+				{Replicas: 4, Time: &metav1.Time{Time: time.Time{}.Add(3 * time.Second)}},
 			}),
 		},
 	}
