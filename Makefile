@@ -6,8 +6,11 @@ GOPATH = $(shell go env GOPATH)
 GO_BIN_DIR = $(if $(GOBIN),$(GOBIN),$(GOPATH)/bin)
 CONTROLLER_GEN = $(GO_BIN_DIR)/controller-gen
 CONTROLLER_GEN_VERSION = v0.16.4
+UI_PORT ?= 8080
+UI_HOST ?= hpaplus.localtest.me
+UI_NAMESPACE ?=
 
-.PHONY: build worker py_dependencies test gotest pytest docker push generate view_coverage get_controller-gen
+.PHONY: build worker py_dependencies test gotest pytest docker push generate view_coverage get_controller-gen ui
 
 build: worker
 	go build -trimpath -o bin/manager .
@@ -37,7 +40,7 @@ generate: get_controller-gen
 	@echo "=============Generating Golang and YAML============="
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 	$(CONTROLLER_GEN) rbac:roleName=hpa-plus-operator crd:allowDangerousTypes=true \
-		paths="./api/...;./internal/...;." \
+		paths="./api/...;./internal/...;./cmd/worker-server;." \
 		output:crd:artifacts:config=helm/templates/crd \
 		output:rbac:artifacts:config=helm/templates/cluster
 
@@ -48,3 +51,6 @@ view_coverage:
 
 get_controller-gen:
 	go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION)
+
+ui:
+	go run ./cmd/hpaplus-ui --listen 127.0.0.1:$(UI_PORT) --host $(UI_HOST) --namespace "$(UI_NAMESPACE)"
