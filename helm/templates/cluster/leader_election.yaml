@@ -1,0 +1,28 @@
+{{- if .Values.leaderElection }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Chart.Name }}-leader-election
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["a07591f8.hpa.plus"]
+    verbs: ["get", "update"]
+  # Kubernetes cannot restrict a create request by resourceNames.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Chart.Name }}-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Chart.Name }}-cluster
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Chart.Name }}-leader-election
+{{- end }}
