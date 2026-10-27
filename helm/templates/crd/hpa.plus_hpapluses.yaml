@@ -65,18 +65,23 @@ spec:
           spec:
             description: HPAPlusSpec defines the desired state of HPAPlus
             properties:
+              predictionFailurePolicy:
+                type: string
+                enum:
+                - HoldCurrent
+                - Reactive
               behavior:
                 description: |-
                   behavior configures the scaling behavior of the target
                   in both Up and Down directions (scaleUp and scaleDown fields respectively).
                   If not set, the default HPAScalingRules for scale up and scale down are used.
+                  Both stabilization windows default to zero seconds; explicit windows are preserved.
                 properties:
                   scaleDown:
                     description: |-
                       scaleDown is scaling policy for scaling Down.
                       If not set, the default value is to allow to scale down to minReplicas pods, with a
-                      300 second stabilization window (i.e., the highest recommendation for
-                      the last 300sec is used).
+                      0 second stabilization window. Explicit windows are preserved.
                     properties:
                       policies:
                         description: |-
@@ -120,7 +125,7 @@ spec:
                           StabilizationWindowSeconds must be greater than or equal to zero and less than or equal to 3600 (one hour).
                           If not set, use the default values:
                           - For scale up: 0 (i.e. no stabilization is done).
-                          - For scale down: 300 (i.e. the stabilization window is 300 seconds long).
+                          - For scale down: 0 seconds (HPA+ default).
                         format: int32
                         type: integer
                     type: object
@@ -174,7 +179,7 @@ spec:
                           StabilizationWindowSeconds must be greater than or equal to zero and less than or equal to 3600 (one hour).
                           If not set, use the default values:
                           - For scale up: 0 (i.e. no stabilization is done).
-                          - For scale down: 300 (i.e. the stabilization window is 300 seconds long).
+                          - For scale down: 0 seconds (HPA+ default).
                         format: int32
                         type: integer
                     type: object
@@ -184,6 +189,7 @@ spec:
                   cpuInitializationPeriod is equivalent to --horizontal-pod-autoscaler-cpu-initialization-period; the period after
                   pod start when CPU samples might be skipped.
                   Default value 300 seconds (5 minutes).
+                maximum: 9223372036
                 minimum: 0
                 type: integer
               decisionType:
@@ -201,15 +207,16 @@ spec:
                 type: string
               includeHPA:
                 description: |-
-                  includeHPA controls whether the baseline HPA calculation should be part of the decision strategy after models have
-                  accumulated enough history to run. By default it is disabled so that only model predictions are considered once
-                  available.
+                  includeHPA controls whether the baseline HPA calculation joins available model predictions in the decision.
+                  It defaults to false. If no model supplies a prediction in the current cycle, the baseline is used regardless
+                  of this setting, including during warmup, cadence skips, and forecast failures.
                 type: boolean
               initialReadinessDelay:
                 description: |-
                   initialReadinessDelay is equivalent to --horizontal-pod-autoscaler-initial-readiness-delay; the period after pod
                   start during which readiness changes will be treated as initial readiness.
                   Default value 30 seconds.
+                maximum: 9223372036
                 minimum: 0
                 type: integer
               maxReplicas:
@@ -219,13 +226,20 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              metricMaxAge:
+                description: |-
+                  metricMaxAge optionally limits source metric age in milliseconds. Unset preserves legacy age behavior.
+                  Missing/future timestamps are unavailable when enabled; freshness is checked again before decisions and sampling writes.
+                maximum: 9223372036854
+                minimum: 1
+                type: integer
               metrics:
                 description: |-
                   metrics contains the specifications for which to use to calculate the desired replica count (the maximum replica
                   count across all metrics will be used).  The desired replica count is calculated multiplying the ratio between
                   the target value and the current value by the current number of pods.  Ergo, metrics used must decrease as the
                   pod count is increased, and vice-versa.  See the individual metric source types for more information about how
-                  each type of metric must respond. If not set, the default metric will be set to 80% average CPU utilization.
+                  each type of metric must respond. Metrics must be configured explicitly; no default metric is injected.
                 items:
                   description: |-
                     MetricSpec specifies how to scale based on a single metric
@@ -688,13 +702,121 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              mode:
+                description: |-
+                  mode controls rollout: observe never writes Scale, assist never selects below the reactive baseline,
+                  control uses decisionType/includeHPA. Omitted/null preserves legacy control behavior.
+                enum:
+                - observe
+                - assist
+                - control
+                type: string
               models:
                 description: models is the list of models to apply to the calculated
                   replica count to calculate predicted replica values.
                 items:
                   description: Model represents a prediction model to use, e.g. a
-                    linear regression
+                    linear regression.
                   properties:
+                    requestDemand:
+                      type: object
+                      required:
+                      - traffic
+                      properties:
+                        forecastIntervalSeconds:
+                          description: Future applicability window in seconds; zero keeps the existing thirty-second grid. Input history cadence remains thirty seconds.
+                          type: integer
+                          enum:
+                          - 0
+                          - 5
+                          - 10
+                          - 15
+                          - 30
+                        forecastTarget:
+                          description: What is forecast. Empty or arrivals forecasts incoming requests with the learned CPU cost; reconstructedCPU forecasts measured CPU x arrivals / completed work per closed window and never recommends fewer replicas than the current reconstructed demand needs.
+                          type: string
+                          enum:
+                          - arrivals
+                          - reconstructedCPU
+                        traffic:
+                          type: object
+                          required:
+                          - provider
+                          - arrivalsMetric
+                          - completionsMetric
+                          - arrivalSemantics
+                          - completionSemantics
+                          - retrySemantics
+                          properties:
+                            provider:
+                              type: string
+                              enum:
+                              - prometheus
+                            namespaceLabel:
+                              type: string
+                            podLabel:
+                              type: string
+                            podUIDLabel:
+                              type: string
+                            arrivalsMetric:
+                              type: string
+                            completionsMetric:
+                              type: string
+                            arrivalSemantics:
+                              type: string
+                              enum:
+                              - started
+                            completionSemantics:
+                              type: string
+                              enum:
+                              - finished
+                            retrySemantics:
+                              type: string
+                              enum:
+                              - attempts
+                              - original
+                            additionalLabels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            errorsMetric:
+                              type: string
+                            outcomesMetric:
+                              description: All finished HTTP/gRPC outcomes, including errors, at the same observation point. Supplies the error-fraction denominator without changing the processed-work completionsMetric.
+                              type: string
+                              pattern: '^[a-zA-Z_:][a-zA-Z0-9_:]*$'
+                            latencyBucketMetric:
+                              type: string
+                            maxAgeSeconds:
+                              type: integer
+                              minimum: 0
+                              maximum: 30
+                        extraMetrics:
+                          type: array
+                          items:
+                            type: object
+                            required:
+                            - name
+                            - metric
+                            - unit
+                            - kind
+                            properties:
+                              name:
+                                type: string
+                              metric:
+                                type: string
+                              unit:
+                                type: string
+                              kind:
+                                type: string
+                                enum:
+                                - gauge
+                                - counter
+                              maxAgeSeconds:
+                                type: integer
+                                minimum: 0
+                                maximum: 120
+                          maxItems: 16
                     arima:
                       description: |-
                         arima is the configuration to use for the ARIMA model, it will only be used if the type is set to
@@ -722,7 +844,7 @@ spec:
                             timestamped replica counts being removed from the data as new ones are added. For example a value of 50
                             means there will only be a maximum of 50 stored timestamped replica counts for this model.
                             Default is 50 if not specified.
-                          minimum: 1
+                          minimum: 3
                           type: integer
                         incrementalUpdates:
                           description: |-
@@ -734,17 +856,22 @@ spec:
                         informationCriterion:
                           description: 'informationCriterion is used when autoArima
                             is true: ''aic'' (default) or ''bic'''
+                          enum:
+                          - aic
+                          - bic
                           type: string
                         lookAhead:
                           description: |-
                             lookAhead is how far in the future should the ARIMA predict in milliseconds. For example a value of 10000
                             will predict 10 seconds into the future
+                          maximum: 9223372036854
                           minimum: 1
                           type: integer
                         maxOrder:
                           description: maxOrder defines bounds for automatic ARIMA
                             parameter selection [maxP, maxD, maxQ]
                           items:
+                            minimum: 0
                             type: integer
                           maxItems: 3
                           minItems: 3
@@ -756,6 +883,7 @@ spec:
                             d = degree of differencing (I part)
                             q = size of moving average window (MA part)
                           items:
+                            minimum: 0
                             type: integer
                           maxItems: 3
                           minItems: 3
@@ -770,6 +898,7 @@ spec:
                           description: seasonalOrder is the seasonal ARIMA order parameters
                             [P, D, Q].
                           items:
+                            minimum: 0
                             type: integer
                           maxItems: 3
                           minItems: 3
@@ -777,12 +906,17 @@ spec:
                         seasonalPeriods:
                           description: seasonalPeriods is the length of the seasonal
                             cycle (m) in sync periods.
-                          minimum: 1
+                          minimum: 2
                           type: integer
                         trend:
                           description: |-
-                            trend specifies the deterministic trend component. Can be:
-                            null (no trend), 'c' (constant), 't' (linear), 'ct' (both)
+                            trend specifies the deterministic trend component: 'n' (none), 'c' (constant),
+                            't' (linear), or 'ct' (both). When omitted, the underlying model chooses its default.
+                          enum:
+                          - "n"
+                          - c
+                          - t
+                          - ct
                           type: string
                         useSarima:
                           description: useSarima enables seasonal ARIMA. When true,
@@ -796,8 +930,37 @@ spec:
                       description: |-
                         calculationTimeout is how long HPA+ should allow for the model to calculate a value in milliseconds, if it
                         takes longer than this timeout it should skip processing the model.
-                        Default varies based on model type:
-                        Linear is 30000 milliseconds (30 seconds)
+                        Default is 30000 milliseconds (30 seconds) for every supported family.
+                      maximum: 9223372036854
+                      minimum: 1
+                      type: integer
+                    forecastReliability:
+                      description: ForecastReliability enables shared error detection
+                        and adapter-specific refitting.
+                      properties:
+                        breaches:
+                          maximum: 20
+                          minimum: 2
+                          type: integer
+                        calibrationSamples:
+                          maximum: 100
+                          minimum: 10
+                          type: integer
+                        minimumRelativeError:
+                          maximum: 1
+                          minimum: 0.001
+                          type: number
+                        window:
+                          maximum: 20
+                          minimum: 2
+                          type: integer
+                      type: object
+                    historyMaxAge:
+                      description: |-
+                        historyMaxAge limits retained training samples to this age in milliseconds.
+                        Omitted keeps count-only retention. Samples expire at the exact age boundary.
+                        The window must hold the configured training count at the nominal sampling cadence.
+                      maximum: 9223372036854
                       minimum: 1
                       type: integer
                     holtWinters:
@@ -806,14 +969,17 @@ spec:
                         'HoltWinters'
                       properties:
                         alpha:
+                          maximum: 1
                           minimum: 0
                           type: number
                         beta:
+                          maximum: 1
                           minimum: 0
                           type: number
                         dampedTrend:
                           type: boolean
                         gamma:
+                          maximum: 1
                           minimum: 0
                           type: number
                         initialLevel:
@@ -829,6 +995,13 @@ spec:
                           - known
                           - legacy-heuristic
                           type: string
+                        lookAhead:
+                          description: |-
+                            lookAhead is the horizon in milliseconds after the newest CPU sample.
+                            Omission preserves a single forecast step at the median observed interval.
+                          maximum: 9223372036854
+                          minimum: 1
+                          type: integer
                         runtimeTuningFetchHook:
                           description: HookDefinition describes a hook for passing
                             data/triggering logic, such as through a shell command
@@ -860,9 +1033,13 @@ spec:
                                   type: string
                                 successCodes:
                                   items:
+                                    maximum: 599
+                                    minimum: 100
                                     type: integer
+                                  minItems: 1
                                   type: array
                                 url:
+                                  minLength: 1
                                   type: string
                               required:
                               - method
@@ -871,6 +1048,7 @@ spec:
                               - url
                               type: object
                             timeout:
+                              maximum: 9223372036854
                               minimum: 1
                               type: integer
                             type:
@@ -889,7 +1067,7 @@ spec:
                           - multiplicative
                           type: string
                         seasonalPeriods:
-                          minimum: 1
+                          minimum: 2
                           type: integer
                         storedSeasons:
                           minimum: 1
@@ -913,6 +1091,7 @@ spec:
                         'LightGBM'
                       properties:
                         colsampleBytree:
+                          exclusiveMinimum: true
                           maximum: 1
                           minimum: 0
                           type: number
@@ -928,15 +1107,20 @@ spec:
                           minimum: 1
                           type: integer
                         learningRate:
+                          exclusiveMinimum: true
                           minimum: 0
                           type: number
                         lookAhead:
                           description: lookAhead is how far ahead (in milliseconds)
                             the prediction should forecast.
+                          maximum: 9223372036854
                           minimum: 1
                           type: integer
                         maxDepth:
-                          minimum: 1
+                          description: |-
+                            maxDepth follows LightGBM semantics; use -1 for no depth limit or a positive depth.
+                            Zero is rejected by controller-side validation.
+                          minimum: -1
                           type: integer
                         minChildSamples:
                           minimum: 1
@@ -952,13 +1136,21 @@ spec:
                             defaults to regression.
                           type: string
                         regAlpha:
+                          minimum: 0
                           type: number
                         regLambda:
+                          minimum: 0
                           type: number
                         subsample:
+                          exclusiveMinimum: true
                           maximum: 1
                           minimum: 0
                           type: number
+                        useUtilizationFeatures:
+                          description: |-
+                            useUtilizationFeatures controls optional usage/request lag features.
+                            Omitted or true preserves existing behavior. False uses aggregate CPU only.
+                          type: boolean
                         windowSize:
                           minimum: 1
                           type: integer
@@ -977,12 +1169,13 @@ spec:
                             historySize is how many timestamped replica counts should be stored for this linear regression, with older
                             timestamped replica counts being removed from the data as new ones are added. For example a value of 6 means
                             there will only be a maxmimu of 6 stored timestamped replica counts for this model.
-                          minimum: 1
+                          minimum: 2
                           type: integer
                         lookAhead:
                           description: |-
                             lookAhead is how far in the future the linear regression should predict in milliseconds. For example a value of
                             10000 will predict 10 seconds into the future
+                          maximum: 9223372036854
                           minimum: 1
                           type: integer
                       required:
@@ -993,6 +1186,7 @@ spec:
                       description: |-
                         name is the name of the model, this can be any arbitrary name and is just used to distinguish between models if
                         you have multiple and to keep track of model data if you modify your model parameters.
+                      minLength: 1
                       type: string
                     perSyncPeriod:
                       description: |-
@@ -1004,12 +1198,50 @@ spec:
                         Default value is 1 (run every sync period)
                       minimum: 1
                       type: integer
+                    predictionMaxAge:
+                      description: |-
+                        predictionMaxAge opts into reusing successful predictions, in milliseconds
+                        from their latest consumed sample. Omitted means fresh results only.
+                        Reuse is also bounded by the model forecast horizon (one sync period for Holt-Winters).
+                        Timed trajectories may use their final forecast interval when maximum age permits.
+                      maximum: 9223372036854
+                      minimum: 1
+                      type: integer
+                    predictivePolicy:
+                      description: |-
+                        predictivePolicy opts into timed decisions; supported by all built-in models and requires predictionMaxAge.
+                        Omission preserves scalar forecast behavior.
+                      properties:
+                        scaleUpLeadFromStartup:
+                          description: |-
+                            scaleUpLeadFromStartup replaces scaleUpLeadSeconds with the longest time a
+                            current pod of the target took from creation to readiness, plus five
+                            seconds for the decision and scale write, so the lead follows how fast the
+                            workload actually starts. scaleUpLeadSeconds applies until a start is
+                            observed. Supported with requestDemand.
+                          type: boolean
+                        scaleUpLeadSeconds:
+                          format: int32
+                          maximum: 3600
+                          minimum: 0
+                          type: integer
+                        tolerance:
+                          description: |-
+                            tolerance suppresses small upward rounding changes. Omitted/null defaults to 0.1 (10%).
+                            Explicit zero disables this tolerance.
+                          maximum: 0.2
+                          minimum: 0
+                          type: number
+                      required:
+                      - scaleUpLeadSeconds
+                      type: object
                     resetDuration:
                       description: |-
                         resetDuration is how long can pass without data for the model before the model should reset.
                         This is useful in case a model hasn't been calculated in a long time (e.g. a cluster being powered off) to
                         prevent it from operating on old data and to ensure that the start interval is recalculated.
                         This value is a string duration, e.g. 2m30s is 2 minutes and 30 seconds.
+                      pattern: ^\+?(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+$
                       type: string
                     startInterval:
                       description: |-
@@ -1017,6 +1249,7 @@ spec:
                         recording and being calculated only after a certain interval has passed, e.g. a Holt Winters model that only
                         runs at the top of every hour.
                         This value is a string duration, e.g. 2m30s is 2 minutes and 30 seconds.
+                      pattern: ^\+?(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+$
                       type: string
                     type:
                       description: |-
@@ -1034,11 +1267,55 @@ spec:
                         xgboost is the configuration to use for the XGBoost model, it will only be used if the type is set to
                         'XGBoost'
                       properties:
+                        aftLossDistributionScale:
+                          description: |-
+                            aftLossDistributionScale configures normal log-demand noise for survival:aft.
+                            Required only with that objective, which requires direct forecasting.
+                          maximum: 2
+                          minimum: 0.05
+                          type: number
                         colsampleBytree:
+                          exclusiveMinimum: true
                           maximum: 1
                           minimum: 0
                           type: number
+                        cpuCensoringUtilizationThreshold:
+                          description: |-
+                            cpuCensoringUtilizationThreshold explicitly identifies CPU saturation,
+                            expressed as usage/request percent. Required only for survival:aft.
+                            This is a workload-specific assertion about enforced CPU capacity, not
+                            automatically inferred from requests. Use 90 only when limits equal requests.
+                          maximum: 10000
+                          minimum: 90
+                          type: number
+                        cpuDemandWeightExponent:
+                          description: |-
+                            cpuDemandWeightExponent optionally weights observed training targets by
+                            their CPU demand relative to the median, clipped to [0.5, 4]. Omitted or
+                            zero preserves unweighted training. This changes loss weights, not samples.
+                          maximum: 2
+                          minimum: 0
+                          type: number
+                        forecastAggregation:
+                          description: |-
+                            forecastAggregation selects the final recursive forecast (last, the default)
+                            or the maximum predicted CPU demand across the look-ahead steps (maximum).
+                            maximum uses predictions from this single model, not the reactive baseline.
+                          enum:
+                          - last
+                          - maximum
+                          type: string
+                        forecastStrategy:
+                          description: |-
+                            forecastStrategy defaults to recursive. direct trains one XGBoost with a
+                            lead-time feature on matched historical targets, without feeding predictions
+                            back into lag features. Missing targets are omitted, not interpolated.
+                          enum:
+                          - recursive
+                          - direct
+                          type: string
                         gamma:
+                          minimum: 0
                           type: number
                         historySize:
                           description: historySize is how many timestamped replica
@@ -1052,17 +1329,19 @@ spec:
                           minimum: 1
                           type: integer
                         learningRate:
+                          exclusiveMinimum: true
                           minimum: 0
                           type: number
                         lookAhead:
                           description: lookAhead is how far ahead (in milliseconds)
                             the prediction should forecast.
+                          maximum: 9223372036854
                           minimum: 1
                           type: integer
                         maxDepth:
-                          description: maxDepth follows LightGBM semantics; use -1
-                            for no depth limit.
-                          minimum: -1
+                          description: maxDepth is the maximum tree depth; HPA+ requires
+                            a positive value for XGBoost.
+                          minimum: 1
                           type: integer
                         minChildWeight:
                           minimum: 0
@@ -1074,14 +1353,38 @@ spec:
                           description: objective defines the XGBoost objective function,
                             defaults to reg:squarederror.
                           type: string
-                        regAlpha:
-                          type: number
-                        regLambda:
-                          type: number
-                        subsample:
+                        quantileAlpha:
+                          description: |-
+                            quantileAlpha selects one CPU-demand quantile for reg:quantileerror.
+                            It must be supplied only with that objective. Other objectives keep their defaults.
+                          exclusiveMaximum: true
+                          exclusiveMinimum: true
                           maximum: 1
                           minimum: 0
                           type: number
+                        regAlpha:
+                          minimum: 0
+                          type: number
+                        regLambda:
+                          minimum: 0
+                          type: number
+                        seasonalFeatures:
+                          description: |-
+                            seasonalFeatures adds target-time phase features for a cycle inferred only
+                            from the retained CPU observations. Unreliable cycles leave these features missing.
+                          type: boolean
+                        subsample:
+                          exclusiveMinimum: true
+                          maximum: 1
+                          minimum: 0
+                          type: number
+                        useUtilizationFeatures:
+                          description: |-
+                            useUtilizationFeatures controls optional usage/request lag features.
+                            Omitted or true preserves existing behavior. False trains on aggregate CPU
+                            without making replica-dependent utilization an input to the forecaster.
+                            CPU history, scaling targets and replica conversion remain unchanged.
+                          type: boolean
                         windowSize:
                           minimum: 1
                           type: integer
@@ -1118,6 +1421,7 @@ spec:
                   syncPeriod is equivalent to --horizontal-pod-autoscaler-sync-period; the frequency with which HPA+
                   calculates replica counts and scales in milliseconds.
                   Default value 15000 milliseconds (15 seconds).
+                maximum: 9223372036854
                 minimum: 1
                 type: integer
               tolerance:
@@ -1133,11 +1437,72 @@ spec:
             - scaleTargetRef
             type: object
           status:
-            description: HPAPlusStatus defines the observed state of HPAPlus
+            description: HPAPlusStatus defines the observed state of HPAPlus.
             properties:
+              conditions:
+                description: conditions describe configuration, metrics, predictions
+                  and reconciliation health.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               currentMetrics:
-                description: currentMetrics is the last read state of the metrics
-                  used by this autoscaler.
+                description: currentMetrics reports gathered values before missing-pod
+                  substitutions, with up to 64 entries and 16 KiB.
                 items:
                   description: MetricStatus describes the last-read state of a single
                     metric.
@@ -1552,8 +1917,14 @@ spec:
                   required:
                   - type
                   type: object
+                maxItems: 64
                 type: array
                 x-kubernetes-list-type: atomic
+              currentMetricsOmitted:
+                description: currentMetricsOmitted counts gathered metrics excluded
+                  from the detailed report.
+                format: int32
+                type: integer
               currentReplicas:
                 description: |-
                   currentReplicas is current number of replicas of pods managed by this autoscaler,
@@ -1566,12 +1937,507 @@ spec:
                   as last calculated by the autoscaler.
                 format: int32
                 type: integer
+              historyCapacity:
+                description: historyCapacity reports capacity at the history read
+                  in this reconciliation. It does not limit sampling or scaling.
+                properties:
+                  currentJournalBytes:
+                    description: currentJournalBytes is the normalized pending journal
+                      size including field framing.
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  currentStateBytes:
+                    description: currentStateBytes is normalized state plus unrelated
+                      ConfigMap data, excluding the journal.
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  journalBudgetBytes:
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  projectedJournalBytes:
+                    description: |-
+                      projectedJournalBytes estimates a future journal at nominal reconciliation cadence,
+                      including at least the currently retained recommendation counts. It is advisory, not a reservation.
+                    format: int64
+                    maximum: 9007199254740991
+                    minimum: 0
+                    type: integer
+                  projectedStateBytes:
+                    description: |-
+                      projectedStateBytes estimates full configured windows plus runtime metadata and current unrelated data.
+                      Conservative numeric widths are used; estimates saturate at 9007199254740991 for JSON number compatibility.
+                    format: int64
+                    maximum: 9007199254740991
+                    minimum: 0
+                    type: integer
+                  stateBudgetBytes:
+                    format: int64
+                    minimum: 0
+                    type: integer
+                required:
+                - currentJournalBytes
+                - currentStateBytes
+                - journalBudgetBytes
+                - projectedStateBytes
+                - stateBudgetBytes
+                type: object
+              lastDecision:
+                description: |-
+                  lastDecision is bounded, generation-scoped evidence from the latest evaluated plan.
+                  It is not a durable command and does not maintain simulated stabilization histories.
+                properties:
+                  baselineDesiredReplicas:
+                    description: baselineDesiredReplicas is the reactive-only plan
+                      after safety constraints.
+                    format: int32
+                    type: integer
+                  baselineReplicas:
+                    description: baselineReplicas is the raw reactive recommendation
+                      before behavior.
+                    format: int32
+                    type: integer
+                  candidateMode:
+                    enum:
+                    - baseline
+                    - predictive
+                    - mixed
+                    - hold
+                    - hold
+                    type: string
+                  controlDesiredReplicas:
+                    description: controlDesiredReplicas is the configured control
+                      plan, including includeHPA.
+                    format: int32
+                    type: integer
+                  desiredReplicas:
+                    description: |-
+                      desiredReplicas is requested count in observe, otherwise this cycle's plan.
+                      An accepted write can still fail later accounting; consult scaleWrite/journal.
+                    format: int32
+                    type: integer
+                  evaluatedAt:
+                    format: date-time
+                    type: string
+                  evidence:
+                    description: |-
+                      evidence captures bounded inputs and constraints at evaluation time. Older
+                      operators omit it; consumers must not reconstruct it from later status.
+                    properties:
+                      baselineIncluded:
+                        type: boolean
+                      candidates:
+                        items:
+                          properties:
+                            model:
+                              maxLength: 256
+                              type: string
+                            replicas:
+                              format: int32
+                              type: integer
+                          required:
+                          - model
+                          - replicas
+                          type: object
+                        maxItems: 64
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      candidatesOmitted:
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      constraints:
+                        items:
+                          type: string
+                        maxItems: 16
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      guardedReplicas:
+                        format: int32
+                        type: integer
+                      models:
+                        description: |-
+                          models captures eligibility and source/expiry times at evaluation time,
+                          independently of the latest status.modelStatuses.
+                        items:
+                          description: ModelStatus describes the most recently evaluated
+                            eligibility and candidate from a configured model.
+                          properties:
+                            requestDemand:
+                              type: object
+                              required:
+                              - state
+                              properties:
+                                state:
+                                  type: string
+                                source:
+                                  type: string
+                                fallbackReason:
+                                  type: string
+                                cpuSecondsPerRequest:
+                                  type: number
+                                  format: double
+                                backgroundCoresPerPod:
+                                  type: number
+                                  format: double
+                                qualifiedSamples:
+                                  type: integer
+                                version:
+                                  type: integer
+                                  format: int64
+                                lastObservationAt:
+                                  type: string
+                                  format: date-time
+                                freshUntil:
+                                  type: string
+                                  format: date-time
+                                target:
+                                  type: string
+                                measuredCores:
+                                  type: number
+                                  format: double
+                                reconstructedCores:
+                                  type: number
+                                  format: double
+                                reconstructionFallbacks:
+                                  type: integer
+                                forecastOnlyReplicas:
+                                  type: integer
+                                  format: int32
+                                floorReplicas:
+                                  type: integer
+                                  format: int32
+                                decidedBy:
+                                  type: string
+                            consecutiveFailures:
+                              format: int32
+                              type: integer
+                            consumedUntil:
+                              format: date-time
+                              type: string
+                            expiresAt:
+                              format: date-time
+                              type: string
+                            forecastReplicas:
+                              format: int32
+                              type: integer
+                            historySamples:
+                              format: int64
+                              type: integer
+                            lastAttemptTime:
+                              description: |-
+                                LastAttemptTime and LastSuccessTime describe runtime executions, before persistence/expiry checks.
+                                These diagnostic fields do not grant forecast eligibility and may be omitted by the report budget.
+                              format: date-time
+                              type: string
+                            lastRunDurationMilliseconds:
+                              format: int64
+                              minimum: 0
+                              type: integer
+                            lastRunOutcome:
+                              enum:
+                              - success
+                              - insufficient_history
+                              - failed
+                              - timeout
+                              - canceled
+                              type: string
+                            lastSuccessTime:
+                              format: date-time
+                              type: string
+                            name:
+                              type: string
+                            reliability:
+                              description: |-
+                                ForecastReliabilityStatus reports diagnostic reliability independently of
+                                forecast eligibility. A degraded forecast is not replaced by reactive demand.
+                              properties:
+                                adaptation:
+                                  type: string
+                                adaptationPending:
+                                  type: boolean
+                                calibrationSamples:
+                                  type: integer
+                                errorBound:
+                                  type: number
+                                overpredictions:
+                                  type: integer
+                                recentSamples:
+                                  type: integer
+                                state:
+                                  type: string
+                                underpredictions:
+                                  type: integer
+                              required:
+                              - adaptationPending
+                              - calibrationSamples
+                              - errorBound
+                              - overpredictions
+                              - recentSamples
+                              - state
+                              - underpredictions
+                              type: object
+                            requiredSamples:
+                              format: int64
+                              type: integer
+                            retryAfter:
+                              format: date-time
+                              type: string
+                            state:
+                              enum:
+                              - Waiting
+                              - WarmingUp
+                              - Scheduled
+                              - Ready
+                              - Cached
+                              - Backoff
+                              - Failed
+                              - InvalidHistory
+                              - Unavailable
+                              - Expired
+                              type: string
+                          required:
+                          - historySamples
+                          - name
+                          - requiredSamples
+                          - state
+                          type: object
+                        maxItems: 64
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      modelsOmitted:
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      selectedReplicas:
+                        format: int32
+                        type: integer
+                    required:
+                    - baselineIncluded
+                    - candidates
+                    - candidatesOmitted
+                    - constraints
+                    - guardedReplicas
+                    - selectedReplicas
+                    type: object
+                  id:
+                    maxLength: 64
+                    type: string
+                  mode:
+                    enum:
+                    - observe
+                    - assist
+                    - control
+                    type: string
+                  observedGeneration:
+                    format: int64
+                    type: integer
+                  observedReplicas:
+                    format: int32
+                    type: integer
+                  requestedReplicas:
+                    format: int32
+                    type: integer
+                  scaleWrite:
+                    enum:
+                    - not_attempted
+                    - observed
+                    - unchanged
+                    - accepted
+                    - rejected
+                    - unknown
+                    type: string
+                  targetUID:
+                    maxLength: 128
+                    type: string
+                required:
+                - baselineDesiredReplicas
+                - baselineReplicas
+                - candidateMode
+                - controlDesiredReplicas
+                - desiredReplicas
+                - evaluatedAt
+                - id
+                - mode
+                - observedGeneration
+                - observedReplicas
+                - requestedReplicas
+                - scaleWrite
+                - targetUID
+                type: object
+              lastScaleDecisionID:
+                description: lastScaleDecisionID prevents duplicate accounting when
+                  recovering a scale/status partial write.
+                type: string
               lastScaleTime:
                 description: |-
                   lastScaleTime is the last time the HPAPlus scaled the number of pods,
                   used by the autoscaler to control how often the number of pods is changed.
                 format: date-time
                 type: string
+              modelStatuses:
+                description: modelStatuses reports up to 64 models, with a combined
+                  encoded budget of 16 KiB.
+                items:
+                  description: ModelStatus describes the most recently evaluated eligibility
+                    and candidate from a configured model.
+                  properties:
+                    requestDemand:
+                      type: object
+                      required:
+                      - state
+                      properties:
+                        state:
+                          type: string
+                        source:
+                          type: string
+                        fallbackReason:
+                          type: string
+                        cpuSecondsPerRequest:
+                          type: number
+                          format: double
+                        backgroundCoresPerPod:
+                          type: number
+                          format: double
+                        qualifiedSamples:
+                          type: integer
+                        version:
+                          type: integer
+                          format: int64
+                        lastObservationAt:
+                          type: string
+                          format: date-time
+                        freshUntil:
+                          type: string
+                          format: date-time
+                        target:
+                          type: string
+                        measuredCores:
+                          type: number
+                          format: double
+                        reconstructedCores:
+                          type: number
+                          format: double
+                        reconstructionFallbacks:
+                          type: integer
+                        forecastOnlyReplicas:
+                          type: integer
+                          format: int32
+                        floorReplicas:
+                          type: integer
+                          format: int32
+                        decidedBy:
+                          type: string
+                    consecutiveFailures:
+                      format: int32
+                      type: integer
+                    consumedUntil:
+                      format: date-time
+                      type: string
+                    expiresAt:
+                      format: date-time
+                      type: string
+                    forecastReplicas:
+                      format: int32
+                      type: integer
+                    historySamples:
+                      format: int64
+                      type: integer
+                    lastAttemptTime:
+                      description: |-
+                        LastAttemptTime and LastSuccessTime describe runtime executions, before persistence/expiry checks.
+                        These diagnostic fields do not grant forecast eligibility and may be omitted by the report budget.
+                      format: date-time
+                      type: string
+                    lastRunDurationMilliseconds:
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    lastRunOutcome:
+                      enum:
+                      - success
+                      - insufficient_history
+                      - failed
+                      - timeout
+                      - canceled
+                      type: string
+                    lastSuccessTime:
+                      format: date-time
+                      type: string
+                    name:
+                      type: string
+                    reliability:
+                      description: |-
+                        ForecastReliabilityStatus reports diagnostic reliability independently of
+                        forecast eligibility. A degraded forecast is not replaced by reactive demand.
+                      properties:
+                        adaptation:
+                          type: string
+                        adaptationPending:
+                          type: boolean
+                        calibrationSamples:
+                          type: integer
+                        errorBound:
+                          type: number
+                        overpredictions:
+                          type: integer
+                        recentSamples:
+                          type: integer
+                        state:
+                          type: string
+                        underpredictions:
+                          type: integer
+                      required:
+                      - adaptationPending
+                      - calibrationSamples
+                      - errorBound
+                      - overpredictions
+                      - recentSamples
+                      - state
+                      - underpredictions
+                      type: object
+                    requiredSamples:
+                      format: int64
+                      type: integer
+                    retryAfter:
+                      format: date-time
+                      type: string
+                    state:
+                      enum:
+                      - Waiting
+                      - WarmingUp
+                      - Scheduled
+                      - Ready
+                      - Cached
+                      - Backoff
+                      - Failed
+                      - InvalidHistory
+                      - Unavailable
+                      - Expired
+                      type: string
+                  required:
+                  - historySamples
+                  - name
+                  - requiredSamples
+                  - state
+                  type: object
+                maxItems: 64
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              modelStatusesOmitted:
+                description: modelStatusesOmitted counts models omitted from the bounded
+                  detailed report.
+                format: int32
+                type: integer
+              observedGeneration:
+                description: observedGeneration is the specification generation assessed
+                  by the controller.
+                format: int64
+                type: integer
               reference:
                 description: reference is the resource being referenced and targeted
                   for scaling.
@@ -1582,8 +2448,9 @@ spec:
                   this resource. A value of 5 means that at that scale event the resource was scaled down by 5 replicas.
                   Used for applying scale down policies.
                 items:
-                  description: TimestampedReplicas is a replica count paired with
-                    the time that the replica count was created at.
+                  description: |-
+                    TimestampedSample records CPU demand and replica context, or a replica recommendation/event.
+                    CPU fields are optional only for compatibility with replica-only accounting and legacy training records.
                   properties:
                     metric:
                       description: metric is the associated metric value (e.g. CPU
@@ -1623,8 +2490,9 @@ spec:
                   scaleDownReplicaHistory is a list of timestamped replicas within the scale down stabilization window.
                   Used for calculating downscale stabilization.
                 items:
-                  description: TimestampedReplicas is a replica count paired with
-                    the time that the replica count was created at.
+                  description: |-
+                    TimestampedSample records CPU demand and replica context, or a replica recommendation/event.
+                    CPU fields are optional only for compatibility with replica-only accounting and legacy training records.
                   properties:
                     metric:
                       description: metric is the associated metric value (e.g. CPU
@@ -1665,8 +2533,9 @@ spec:
                   this resource. A value of 5 means that at that scale event the resource was scaled up by 5 replicas.
                   Used for applying scale up policies.
                 items:
-                  description: TimestampedReplicas is a replica count paired with
-                    the time that the replica count was created at.
+                  description: |-
+                    TimestampedSample records CPU demand and replica context, or a replica recommendation/event.
+                    CPU fields are optional only for compatibility with replica-only accounting and legacy training records.
                   properties:
                     metric:
                       description: metric is the associated metric value (e.g. CPU
@@ -1706,8 +2575,9 @@ spec:
                   scaleUpReplicaHistory is a list of timestamped replicas within the scale up stabilization window.
                   Used for calculating upscale stabilization.
                 items:
-                  description: TimestampedReplicas is a replica count paired with
-                    the time that the replica count was created at.
+                  description: |-
+                    TimestampedSample records CPU demand and replica context, or a replica recommendation/event.
+                    CPU fields are optional only for compatibility with replica-only accounting and legacy training records.
                   properties:
                     metric:
                       description: metric is the associated metric value (e.g. CPU
@@ -1742,6 +2612,10 @@ spec:
                   - time
                   type: object
                 type: array
+              targetIdentity:
+                description: targetIdentity identifies the workload whose scaling
+                  history is recorded here.
+                type: string
             required:
             - desiredReplicas
             - reference
