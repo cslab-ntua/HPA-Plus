@@ -1,10 +1,18 @@
 {{ if eq .Values.mode "cluster"}}
+{{- if and (gt (int .Values.replicaCount) 1) (not .Values.leaderElection) }}
+{{- fail "replicaCount > 1 requires leaderElection=true" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Chart.Name }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.deploymentStrategy }}
+    {{- if eq .Values.deploymentStrategy "Recreate" }}
+    rollingUpdate: null
+    {{- end }}
   selector:
     matchLabels:
       name: {{ .Chart.Name }}
@@ -18,8 +26,21 @@ spec:
         name: {{ .Chart.Name }}
     spec:
       serviceAccountName: {{ .Chart.Name }}-cluster
-      {{- if .Values.hooks.credentials }}
+      {{- if .Values.workerIsolation.enabled }}
+      automountServiceAccountToken: false
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
       volumes:
+        {{- if .Values.hooks.credentials }}
         - name: hook-credentials
           projected:
             defaultMode: 288
@@ -36,23 +57,178 @@ spec:
                     - key: {{ .secretKey | quote }}
                       path: {{ printf "tokens/%s" .name | quote }}
               {{- end }}
-      {{- end }}
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmpSizeLimit }}
+        {{- if .Values.workerIsolation.enabled }}
+        - name: worker-socket
+          emptyDir:
+            sizeLimit: 1Mi
+        - name: worker-tmp
+          emptyDir:
+            sizeLimit: {{ .Values.workerIsolation.tmpSizeLimit }}
+        - name: manager-api-access
+          projected:
+            defaultMode: 420
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3607
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        apiVersion: v1
+                        fieldPath: metadata.namespace
+        {{- end }}
       containers:
         - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ default "Always" .Values.image.pullPolicy }}
+          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --leader-elect={{ .Values.leaderElection }}
+            - --zap-log-level={{ .Values.logging.level }}
+            - --cpu-history-source={{ .Values.cpuHistorySource }}
+            {{- if eq .Values.cpuHistorySource "cgroup" }}
+            - --cgroup-collector-namespace={{ .Release.Namespace }}
+            - --cgroup-collector-selector=app.kubernetes.io/component=cgroup-collector
+            - --cgroup-collector-port={{ .Values.cgroupCollector.port }}
+            {{- end }}
+            {{- if .Values.workerIsolation.enabled }}
+            - --worker-socket=/var/run/hpaplus/worker.sock
+            {{- end }}
+            - --worker-memory-mib={{ .Values.workers.memoryMiB }}
+            - --worker-concurrency={{ .Values.workers.concurrency }}
+            - --worker-sessions={{ .Values.workers.sessions }}
+            - --model-retry-initial={{ .Values.modelRetry.initial }}
+            - --model-retry-max={{ .Values.modelRetry.maximum }}
             {{- if .Values.hooks.credentials }}
             - --hook-credentials-dir=/var/run/hpaplus-hook-auth
             {{- end }}
             {{- if .Values.hooks.allowedOrigins }}
             - {{ printf "--hook-allowed-origins=%s" (join "," .Values.hooks.allowedOrigins) | quote }}
             {{- end }}
-          {{- if .Values.hooks.credentials }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            {{- if and .Values.featureDiagnostics.enabled (not .Values.workerIsolation.enabled) }}
+            {{- include "hpaplus.featureDiagnosticsEnv" . | nindent 12 }}
+            {{- end }}
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: OPENBLAS_NUM_THREADS
+              value: "1"
+            - name: OMP_NUM_THREADS
+              value: "1"
           volumeMounts:
+            {{- if .Values.hooks.credentials }}
             - name: hook-credentials
               mountPath: /var/run/hpaplus-hook-auth
               readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.workerIsolation.enabled }}
+            - name: worker-socket
+              mountPath: /var/run/hpaplus
+            - name: manager-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            {{- end }}
+          ports:
+            - name: health
+              containerPort: 8081
+            - name: metrics
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+        {{- if .Values.workerIsolation.enabled }}
+        - name: model-workers
+          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/worker-server"]
+          args:
+            - --socket=/var/run/hpaplus/worker.sock
+            - --worker-memory-mib={{ .Values.workers.memoryMiB }}
+            - --worker-concurrency={{ .Values.workers.concurrency }}
+            - --worker-sessions={{ .Values.workers.sessions }}
+          {{- if .Values.featureDiagnostics.enabled }}
+          env:
+            {{- include "hpaplus.featureDiagnosticsEnv" . | nindent 12 }}
           {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.workerIsolation.resources | nindent 12 }}
+          volumeMounts:
+            - name: worker-socket
+              mountPath: /var/run/hpaplus
+            - name: worker-tmp
+              mountPath: /tmp
+          ports:
+            - name: worker-metrics
+              containerPort: 8082
+          startupProbe:
+            {{- if eq .Values.workerIsolation.probeTransport "exec" }}
+            exec:
+              command: ["/app/worker-server", "--check"]
+            {{- else }}
+            httpGet:
+              path: /healthz
+              port: worker-metrics
+            {{- end }}
+            timeoutSeconds: 2
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            {{- if eq .Values.workerIsolation.probeTransport "exec" }}
+            exec:
+              command: ["/app/worker-server", "--check"]
+            {{- else }}
+            httpGet:
+              path: /healthz
+              port: worker-metrics
+            {{- end }}
+            timeoutSeconds: 2
+            periodSeconds: 10
+          readinessProbe:
+            {{- if eq .Values.workerIsolation.probeTransport "exec" }}
+            exec:
+              command: ["/app/worker-server", "--check"]
+            {{- else }}
+            httpGet:
+              path: /healthz
+              port: worker-metrics
+            {{- end }}
+            timeoutSeconds: 2
+            periodSeconds: 5
+        {{- end }}
 {{ end }}

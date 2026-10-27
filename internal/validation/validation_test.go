@@ -37,9 +37,10 @@ func makeCPUUtilizationMetric(target int32) autoscalingv2.MetricSpec {
 func makeInstance(model hpaplusv1alpha1.Model) *hpaplusv1alpha1.HPAPlus {
 	return &hpaplusv1alpha1.HPAPlus{
 		Spec: hpaplusv1alpha1.HPAPlusSpec{
-			MaxReplicas: 10,
-			Metrics:     []autoscalingv2.MetricSpec{makeCPUUtilizationMetric(70)},
-			Models:      []hpaplusv1alpha1.Model{model},
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: "app"},
+			MaxReplicas:    10,
+			Metrics:        []autoscalingv2.MetricSpec{makeCPUUtilizationMetric(70)},
+			Models:         []hpaplusv1alpha1.Model{model},
 		},
 	}
 }

@@ -196,12 +196,13 @@ func TestDecideTargetReplicasByScalingStrategy(t *testing.T) {
 	var tests = []struct {
 		description       string
 		expected          int32
+		expectedErr       bool
 		decisionType      string
 		predictedReplicas []int32
 	}{
 		{
 			description:       "Max decision type, no predicted replicas",
-			expected:          0,
+			expectedErr:       true,
 			decisionType:      hpaplusv1alpha1.DecisionMaximum,
 			predictedReplicas: []int32{},
 		},
@@ -213,7 +214,7 @@ func TestDecideTargetReplicasByScalingStrategy(t *testing.T) {
 		},
 		{
 			description:       "Min decision type, no predicted replicas",
-			expected:          0,
+			expectedErr:       true,
 			decisionType:      hpaplusv1alpha1.DecisionMinimum,
 			predictedReplicas: []int32{},
 		},
@@ -225,7 +226,7 @@ func TestDecideTargetReplicasByScalingStrategy(t *testing.T) {
 		},
 		{
 			description:       "Mean decision type, no predicted replicas",
-			expected:          0,
+			expectedErr:       true,
 			decisionType:      hpaplusv1alpha1.DecisionMean,
 			predictedReplicas: []int32{},
 		},
@@ -237,7 +238,7 @@ func TestDecideTargetReplicasByScalingStrategy(t *testing.T) {
 		},
 		{
 			description:       "Median decision type, no predicted replicas",
-			expected:          0,
+			expectedErr:       true,
 			decisionType:      hpaplusv1alpha1.DecisionMedian,
 			predictedReplicas: []int32{},
 		},
@@ -256,7 +257,10 @@ func TestDecideTargetReplicasByScalingStrategy(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
-			result := scalebehavior.DecideTargetReplicasByScalingStrategy(test.decisionType, test.predictedReplicas)
+			result, err := scalebehavior.DecideTargetReplicasByScalingStrategy(test.decisionType, test.predictedReplicas)
+			if (err != nil) != test.expectedErr {
+				t.Fatalf("error mismatch, want error %v, got %v", test.expectedErr, err)
+			}
 			if !cmp.Equal(test.expected, result) {
 				t.Errorf("result mismatch (-want +got):\n%s", cmp.Diff(test.expected, result))
 			}

@@ -2,10 +2,24 @@ mode: cluster
 
 image:
   repository: dimitrisde/hpa-plus-operator
-  tag: cpu-history-all-models-20260323-113811
-  pullPolicy: Always
+  # Defaults to Chart.appVersion. Override when installing your own build.
+  tag: ""
+  pullPolicy: IfNotPresent
 
+replicaCount: 1
 leaderElection: true
+# Avoid overlap with older releases that ran without leader election.
+deploymentStrategy: Recreate
+terminationGracePeriodSeconds: 30
+
+# JSON decision summaries at info; debug adds correlated per-model detail.
+logging:
+  level: info
+
+# kubelet affects CPU training only and grants nodes/proxy access. The opt-in
+# cgroup source supplies the same counter-window measurements to CPU training
+# and reactive evaluation, and requires the collector below.
+cpuHistorySource: metrics-server
 
 cgroupCollector:
   enabled: false
@@ -25,6 +39,41 @@ cgroupCollector:
       cpu: 250m
       memory: 128Mi
 
+# The current Dockerfile builds an amd64 binary. Other architectures are unverified.
+nodeSelector:
+  kubernetes.io/arch: amd64
+  kubernetes.io/os: linux
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+    ephemeral-storage: 64Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+    ephemeral-storage: 512Mi
+
+tmpSizeLimit: 128Mi
+
+# Optional tree-feature snapshots in the executing container's ephemeral /tmp.
+# Scoped by resource/model identity; cleanup also runs when forecasts are idle.
+featureDiagnostics:
+  enabled: false
+  maxFiles: 64
+  maxBytes: 16777216
+  maxAgeSeconds: 3600
+
+# Per-process virtual address space, not aggregate pod RSS. Size the pod and
+# session count together; idle incremental sessions retain their fitted model.
+workers:
+  memoryMiB: 1024
+  concurrency: 4
+  sessions: 16
+modelRetry:
+  initial: 0s
+  maximum: 5m
+
 # Requires a NetworkPolicy-enforcing CNI. Enabling with empty lists isolates
 # operator pods in both directions; configure API/DNS and optional hook/scraper
 # rules first. See docs/reference/network-policy.md.
@@ -32,6 +81,23 @@ networkPolicy:
   enabled: false
   ingress: []
   egress: []
+
+# Opt-in: all Python execution moves to a separately limited sidecar. The
+# manager keeps its own resources above and never executes Python on fallback.
+workerIsolation:
+  enabled: false
+  # Use exec only when explicitly running an older worker image without HTTP health.
+  probeTransport: http
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+      ephemeral-storage: 64Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+      ephemeral-storage: 512Mi
+  tmpSizeLimit: 128Mi
 
 # Operator-owned exact HTTP(S) origins. Empty disables runtime tuning hooks.
 # Existing hook users must opt in when upgrading to this source-built version.

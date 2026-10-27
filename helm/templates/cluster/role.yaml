@@ -13,16 +13,15 @@ rules:
   - delete
   - get
   - list
-  - patch
   - update
   - watch
 - apiGroups:
   - ""
   resources:
-  - pods
+  - events
   verbs:
-  - get
-  - list
+  - create
+  - patch
 - apiGroups:
   - ""
   resources:
@@ -37,8 +36,15 @@ rules:
   - replicationcontrollers/scale
   verbs:
   - get
-  - patch
   - update
+- apiGroups:
+  - ""
+  - metrics.k8s.io
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
 - apiGroups:
   - apps
   resources:
@@ -57,12 +63,10 @@ rules:
   - statefulsets/scale
   verbs:
   - get
-  - patch
   - update
 - apiGroups:
   - custom.metrics.k8s.io
   - external.metrics.k8s.io
-  - metrics.k8s.io
   resources:
   - '*'
   verbs:
@@ -73,12 +77,8 @@ rules:
   resources:
   - hpapluses
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - hpa.plus
@@ -91,6 +91,4 @@ rules:
   resources:
   - hpapluses/status
   verbs:
-  - get
   - patch
-  - update
