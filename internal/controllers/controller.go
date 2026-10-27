@@ -18,18 +18,23 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
+	"golang.org/x/time/rate"
+
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/uuid"
 
+	gathered "github.com/jthomperoo/k8shorizmetrics/v2/metrics"
 	"github.com/jthomperoo/k8shorizmetrics/v2/metrics/podmetrics"
 	"github.com/jthomperoo/k8shorizmetrics/v2/metricsclient"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -37,434 +42,309 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/scale"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
+	"github.com/cslab-ntua/HPA-Plus/internal/decision"
+	"github.com/cslab-ntua/HPA-Plus/internal/forecastquality"
+	"github.com/cslab-ntua/HPA-Plus/internal/history"
+	"github.com/cslab-ntua/HPA-Plus/internal/hook"
+	metricadapter "github.com/cslab-ntua/HPA-Plus/internal/metrics"
+	"github.com/cslab-ntua/HPA-Plus/internal/observability"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
-	"github.com/cslab-ntua/HPA-Plus/internal/scalebehavior"
 	"github.com/cslab-ntua/HPA-Plus/internal/validation"
-	"github.com/jthomperoo/k8shorizmetrics/v2"
 )
 
 // HPA+ configuration constants
 const (
-	defaultSyncPeriod       = 15 * time.Second
+	defaultSyncPeriod       = time.Duration(hpaplusv1alpha1.DefaultSyncPeriodMillis) * time.Millisecond
 	defaultErrorRetryPeriod = 10 * time.Second
 )
 
 // HPA calculation configuration constants
 const (
-	defaultCPUInitializationPeriod = 300
-	defaultInitialReadinessDelay   = 30
-	defaultTolerance               = 0.1
-	defaultPerSyncPeriod           = 1
+	defaultCPUInitializationPeriod = hpaplusv1alpha1.DefaultCPUInitializationSeconds
+	defaultInitialReadinessDelay   = hpaplusv1alpha1.DefaultInitialReadinessSeconds
+	defaultTolerance               = hpaplusv1alpha1.DefaultTolerance
+	defaultPerSyncPeriod           = hpaplusv1alpha1.DefaultPerSyncPeriod
 )
 
 // HPA+ scale constraints
 const (
-	defaultDecisionType = hpaplusv1alpha1.DecisionMaximum
-	defaultMinReplicas  = 1
-)
-
-// Downscale constants
-const (
-	defaultDownscaleStabilization                 = int32(300)
-	defaultDownscalePercentagePolicyPeriodSeconds = int32(60)
-	defaultDownscalePercentagePolicyValue         = int32(100)
-)
-
-// Upscale constants
-const (
-	defaultUpscaleStabilization                 = int32(0)
-	defaultUpscalePercentagePolicyPeriodSeconds = int32(60)
-	defaultUpscalePercentagePolicyValue         = int32(100)
-	defaultUpscalePodsPolicyPeriodSeconds       = int32(60)
-	defaultUpscalePodsPolicyValue               = int32(4)
-)
-
-const (
 	configMapDataKey        = "data"
-	defaultArimaHistorySize = 50
+	defaultArimaHistorySize = hpaplusv1alpha1.DefaultARIMAHistorySize
 )
 
 // HPAPlusReconciler reconciles a HPAPlus object
 type HPAPlusReconciler struct {
+	RetryPolicy RetryPolicy
 	client.Client
-	RESTMapper  meta.RESTMapper
-	ScaleClient scale.ScalesGetter
-	Scheme      *runtime.Scheme
-	Gatherer    k8shorizmetrics.Gatherer
-	Evaluator   k8shorizmetrics.Evaluator
-	Predicter   prediction.Predicter
+	APIReader    client.Reader
+	Now          func() time.Time
+	RESTMapper   meta.RESTMapper
+	ScaleClient  scale.ScalesGetter
+	Scheme       *runtime.Scheme
+	Gatherer     metricadapter.Gatherer
+	Observations *metricadapter.Observations
+	Evaluator    metricadapter.Evaluator
+	Predicter    prediction.Predicter // Legacy injection; production uses Runtime.
+	Runtime      prediction.Runtime
+	HistoryStore history.Store
+	Telemetry    *observability.Metrics
+	Events       *observability.Events
 }
 
-type cpuMetricSnapshot struct {
-	Utilization                 *float64
-	TotalUsageMillicores        *int64
-	RequestPerPodMillicores     *int64
-	TargetUtilizationPercentage *int32
-}
+type cpuMetricSnapshot = metricadapter.CPUObservation
 
-//+kubebuilder:rbac:groups=hpa.plus,resources=hpapluses,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=hpa.plus,resources=hpapluses/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=hpa.plus,resources=hpapluses,verbs=get;list;watch
+//+kubebuilder:rbac:groups=hpa.plus,resources=hpapluses/status,verbs=patch
 //+kubebuilder:rbac:groups=hpa.plus,resources=hpapluses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list
 //+kubebuilder:rbac:groups=core,resources=replicationcontrollers,verbs=get;list;watch
-//+kubebuilder:rbac:groups=core,resources=replicationcontrollers/scale,verbs=get;update;patch
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=replicationcontrollers/scale,verbs=get;update
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=apps,resources=deployments;replicasets;statefulsets,verbs=get;list;watch
-//+kubebuilder:rbac:groups=apps,resources=deployments/scale;replicasets/scale;statefulsets/scale,verbs=get;update;patch
-//+kubebuilder:rbac:groups=metrics.k8s.io,resources=*,verbs=get;list
+//+kubebuilder:rbac:groups=apps,resources=deployments/scale;replicasets/scale;statefulsets/scale,verbs=get;update
+//+kubebuilder:rbac:groups=metrics.k8s.io,resources=pods,verbs=get;list
 //+kubebuilder:rbac:groups=custom.metrics.k8s.io,resources=*,verbs=get;list
 //+kubebuilder:rbac:groups=external.metrics.k8s.io,resources=*,verbs=get;list
 
-func (r *HPAPlusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
+func (r *HPAPlusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, reconcileErr error) {
+	logger := log.FromContext(ctx).WithValues("namespace", req.Namespace, "resourceName", req.Name, "reconciliationID", string(uuid.NewUUID()))
+	ctx = log.IntoContext(ctx, logger)
+	health := reconcileHealth{phase: "ResourceRead"}
+	// Last defer to run: controller-runtime must not log raw backend errors.
+	defer func() {
+		if reconcileErr != nil && !errors.Is(reconcileErr, context.Canceled) {
+			log.FromContext(ctx).Error(observability.PublicError(reconcileErr), "Reconciliation failed", "phase", health.phase)
+		}
+		reconcileErr = observability.PublicError(reconcileErr)
+	}()
 
 	instance := &hpaplusv1alpha1.HPAPlus{}
 	err := r.Client.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
+			r.Observations.Forget(req.Namespace + "/" + req.Name)
+			r.syncModelSessions(req.Namespace, req.Name, nil, nil, "")
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
 			return reconcile.Result{}, nil
 		}
 
-		logger.Error(err, "failed to get HPAPlus")
+		logger.Error(observability.PublicError(err), "failed to get HPAPlus")
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
+	if instance.DeletionTimestamp != nil {
+		r.syncModelSessions(instance.Namespace, instance.Name, nil, nil, "")
+		return reconcile.Result{}, nil
+	}
+	ctx = resourceLogContext(ctx, instance)
+	logger = log.FromContext(ctx)
+	health.phase = "ConfigurationValidation"
+	defer func() {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := r.publishHealth(ctx, instance, health, reconcileErr); err != nil {
+			if ctx.Err() == nil {
+				r.Events.StatusFailed(instance)
+			}
+			if reconcileErr != nil {
+				reconcileErr = fmt.Errorf("%w; publishing health failed: %v", reconcileErr, err)
+			} else {
+				reconcileErr = err
+			}
+			result = reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}
+		}
+	}()
 	err = validation.Validate(instance)
 	if err != nil {
-		logger.Error(err, "invalid HPAPlus, disabling HPA+ until changed to be valid")
+		logger.Error(observability.PublicError(err), "invalid HPAPlus, disabling HPA+ until changed to be valid")
+		r.syncModelSessions(instance.Namespace, instance.Name, nil, nil, "")
 		// We stop processing here without requeueing since the HPA+ object is invalid, if changes are made to the spec that
 		// make it valid it will be reconciled again and the validation checked
 		return reconcile.Result{}, nil
 	}
-
-	scaleTargetRef := instance.Spec.ScaleTargetRef
+	health.configurationValid = true
+	health.phase = "StatusInitialization"
 
 	err = r.preScaleStatusCheck(ctx, instance)
 	if err != nil {
-		logger.Error(err, "failed pre scale status check", "scaleTargetRef", scaleTargetRef)
+		logger.Error(observability.PublicError(err), "failed pre scale status check")
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
-	_, hpaPlusData, err := r.getOrCreateConfigMapData(ctx, instance)
+	health.phase = "HistoryRead"
+	historyConfigMap, hpaPlusData, err := r.loadHistory(ctx, instance)
 	if err != nil {
-		logger.Error(err, "failed to get HPA+ config map and data", "scaleTargetRef", scaleTargetRef)
+		logger.Error(observability.PublicError(err), "failed to get HPA+ config map and data")
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
+	}
+	health.historyCapacity, err = planSnapshotCapacity(instance, historyConfigMap)
+	if err != nil {
+		// Planning is advisory. It must not strand scale-journal recovery or
+		// change the safety checks around actual state and Scale writes.
+		logger.Error(observability.PublicError(err), "failed to assess history capacity")
+	}
+	if hpaPlusData.PendingScale != nil {
+		health.phase = "ScaleRecovery"
+		ctx, _ = decisionContext(ctx, hpaPlusData.PendingScale.ID)
+		if err := r.recoverScaleDecision(ctx, instance, hpaPlusData.PendingScale); err != nil {
+			return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
+		}
+		// Re-read history and status before computing a new decision.
+		return reconcile.Result{Requeue: true}, nil
 	}
 
 	syncPeriod := syncPeriodForInstance(instance)
+	// Resolve identity before cooldown: replacing or retargeting a workload must
+	// not reuse the previous workload's training data or scale-event history.
+	health.phase = "TargetRead"
+	scale, targetGR, err := r.getScaleTarget(ctx, instance)
+	if err != nil {
+		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
+	}
+	health.phase = "HistoryBinding"
+	hpaPlusData, err = r.ensureTargetHistory(ctx, instance, scale)
+	if err != nil {
+		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
+	}
+	if err := r.syncTargetStatus(ctx, instance, scale, hpaPlusData.TargetIdentity); err != nil {
+		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
+	}
+	r.syncModelSessions(instance.Namespace, instance.Name, instance, hpaPlusData.ModelHistories, hpaPlusData.TargetIdentity)
 
-	now := time.Now().UTC()
+	now := r.now()
 
-	// Check the last scale of the HPA+, make sure we're not scaling too early
+	// Scale writes respect the existing sync-period cooldown. Request-demand
+	// acquisition must continue independently, or a write at a forecast boundary
+	// would suppress the following closed-window publication.
 	lastScaleTime := instance.Status.LastScaleTime
-	if lastScaleTime != nil && now.Add(-syncPeriod).Before(lastScaleTime.Time) {
+	if instance.Spec.EffectiveMode() != hpaplusv1alpha1.ModeObserve && lastScaleTime != nil && now.Add(-syncPeriod).Before(lastScaleTime.Time) {
+		health.phase = "Cooldown"
 		timeUntilReconcile := instance.Status.LastScaleTime.Time.Add(syncPeriod).Sub(now)
 		logger.V(1).Info("Resource already scaled, queueing up reconcile for the next sync period",
-			"scaleTargetRef", scaleTargetRef,
 			"syncPeriod", syncPeriod,
 			"timeUntilReconcile", timeUntilReconcile.Seconds())
 		return reconcile.Result{RequeueAfter: timeUntilReconcile}, nil
 	}
 
-	// Get targeted scale subresource
-	scale, targetGR, err := r.getScaleTarget(ctx, instance)
-	if err != nil {
-		logger.Error(err, "failed to get scale subresource", "scaleTargetRef", scaleTargetRef)
-		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
-	}
-
 	currentReplicas := scale.Status.Replicas
 
-	calculatedReplicas, cpuSnapshot, err := r.calculateReplicas(instance, scale)
+	health.phase = "MetricEvaluation"
+	metricsReady := false
+	health.metricsAvailable = &metricsReady
+	calculatedReplicas, cpuSnapshot, err := r.calculateReplicas(ctx, instance, scale)
 	if err != nil {
-		logger.Error(err, "failed to calculate replicas based on metrics",
-			"scaleTargetRef", scaleTargetRef,
+		logger.Error(observability.PublicError(err), "failed to calculate replicas based on metrics",
 			"currentReplicas", currentReplicas)
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
+	metricsReady = !cpuSnapshot.MetricsIncomplete
+	health.metrics = cpuSnapshot.MetricStatus
+	health.phase = "PredictionEvaluation"
+	ctx, trace := decisionContext(ctx, "")
+	logger = log.FromContext(ctx)
 
 	// This function doesn't return any errors, since if it fails to process a model it will skip and continue
 	// processing without that model's results
-	predictedReplicas, modelPredictions := r.processModels(ctx, instance, hpaPlusData, now, currentReplicas,
-		calculatedReplicas, cpuSnapshot)
-
-	decisionType := defaultDecisionType
-	if instance.Spec.DecisionType != nil {
-		decisionType = *instance.Spec.DecisionType
+	predictedReplicas, modelPredictions, modelStatuses := r.processModels(ctx, instance, hpaPlusData, now, scale.Spec.Replicas,
+		calculatedReplicas, cpuSnapshot, scale)
+	health.models = modelStatuses
+	for i, status := range modelStatuses {
+		r.Telemetry.ObserveModelEvaluation(instance.Spec.Models[i].Type, status.State)
 	}
+	predictionsReady := len(predictedReplicas) > 0
+	health.predictionsAvailable = &predictionsReady
+	health.phase = "Decision"
 
+	plan, err := decision.Plan(decision.Input{Spec: instance.Spec, Status: instance.Status, Now: now,
+		Requested: scale.Spec.Replicas, Baseline: calculatedReplicas, Predictions: predictedReplicas,
+		MetricsIncomplete: cpuSnapshot.MetricsIncomplete})
+	if err != nil {
+		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
+	}
 	if modelPredictions == nil {
 		modelPredictions = map[string]int32{}
 	}
+	targetReplicas := plan.Desired
+	scaleUpReplicaHistory, scaleDownReplicaHistory := plan.ScaleUpRecommendations, plan.ScaleDownRecommendations
 
-	includeHPABaseline := instance.Spec.IncludeHPA != nil && *instance.Spec.IncludeHPA
-	modelInputsReady := len(predictedReplicas) > 0
-
-	if !modelInputsReady {
-		logger.Info("Model histories incomplete; falling back to HPA decision",
-			"scaleTargetRef", scaleTargetRef,
-			"calculatedReplicas", calculatedReplicas)
-	}
-
-	if includeHPABaseline {
-		logger.Info("includeHPA enabled; including baseline HPA calculation in decision",
-			"scaleTargetRef", scaleTargetRef,
-			"calculatedReplicas", calculatedReplicas)
-	}
-
-	if includeHPABaseline || len(predictedReplicas) == 0 {
-		predictedReplicas = append(predictedReplicas, calculatedReplicas)
-		modelPredictions["hpa"] = calculatedReplicas
-	}
-
-	logger.Info("Preparing to select target replicas",
-		"scaleTargetRef", scaleTargetRef,
-		"decisionType", decisionType,
-		"inputs", modelPredictions)
-
-	targetReplicas := scalebehavior.DecideTargetReplicasByScalingStrategy(decisionType, predictedReplicas)
-	logger.Info("Decision complete",
-		"scaleTargetRef", scaleTargetRef,
-		"decisionType", decisionType,
-		"inputs", modelPredictions,
-		"targetReplicas", targetReplicas)
-
-	timestampedReplicaValue := hpaplusv1alpha1.TimestampedReplicas{
-		Time:     &metav1.Time{Time: now},
-		Replicas: targetReplicas,
-	}
-
-	behavior := fillBehaviorDefaults(instance.Spec.Behavior)
-
-	minReplicas := int32(defaultMinReplicas)
-	if instance.Spec.MinReplicas != nil {
-		minReplicas = *instance.Spec.MinReplicas
-	}
-
-	// Get the longest possible period that a scaling policy would look back for
-	scaleUpLongestPolicyPeriod := scalebehavior.GetLongestPolicyPeriod(behavior.ScaleUp)
-	scaleDownLongestPolicyPeriod := scalebehavior.GetLongestPolicyPeriod(behavior.ScaleDown)
-
-	scaleUpEventHistory := scalebehavior.PruneTimestampedReplicasToWindow(
-		instance.Status.ScaleUpEventHistory, scaleUpLongestPolicyPeriod, now)
-
-	scaleDownEventHistory := scalebehavior.PruneTimestampedReplicasToWindow(
-		instance.Status.ScaleDownEventHistory, scaleDownLongestPolicyPeriod, now)
-
-	scaleUpReplicaHistory := scalebehavior.PruneTimestampedReplicasToWindow(
-		instance.Status.ScaleUpReplicaHistory, *behavior.ScaleUp.StabilizationWindowSeconds, now)
-	scaleUpReplicaHistory = append(scaleUpReplicaHistory, timestampedReplicaValue)
-
-	scaleDownReplicaHistory := scalebehavior.PruneTimestampedReplicasToWindow(
-		instance.Status.ScaleDownReplicaHistory, *behavior.ScaleDown.StabilizationWindowSeconds, now)
-	scaleDownReplicaHistory = append(scaleDownReplicaHistory, timestampedReplicaValue)
-
-	targetReplicas = scalebehavior.DecideTargetReplicasByBehavior(behavior, currentReplicas, targetReplicas, minReplicas,
-		instance.Spec.MaxReplicas, scaleUpReplicaHistory, scaleDownReplicaHistory, scaleUpEventHistory,
-		scaleDownEventHistory, now)
-
-	// Only scale if the current replicas is different than the target
-	if currentReplicas != targetReplicas {
-		scale.Spec.Replicas = targetReplicas
-		_, err := r.ScaleClient.Scales(instance.Namespace).Update(ctx, targetGR, scale, metav1.UpdateOptions{})
-		if err != nil {
-			logger.Error(err, "failed to update scale resource",
-				"scaleTargetRef", scaleTargetRef,
-				"currentReplicas", currentReplicas,
-				"targetReplicas", targetReplicas)
-			return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
+	health.phase = "ScaleWrite"
+	validity := decisionValidity{metricsUntil: cpuSnapshot.MetricsValidUntil, predictionsUntil: predictionInputsDeadline(modelStatuses)}
+	if plan.RolloutMode == hpaplusv1alpha1.ModeObserve {
+		health.phase = "ObservationPublication"
+		err = r.observeScaleDecision(ctx, instance, scale, validity)
+		if err == nil {
+			trace.write = "observed"
 		}
-
-		scaleTime := time.Now().UTC()
-
-		if targetReplicas > currentReplicas {
-			// Scale up
-			scaleEvent := hpaplusv1alpha1.TimestampedReplicas{
-				Time:     &metav1.Time{Time: scaleTime},
-				Replicas: targetReplicas - currentReplicas,
-			}
-			instance.Status.ScaleUpEventHistory = append(instance.Status.ScaleUpEventHistory, scaleEvent)
-			instance.Status.ScaleUpEventHistory = scalebehavior.PruneTimestampedReplicasToWindow(
-				instance.Status.ScaleUpEventHistory,
-				scaleUpLongestPolicyPeriod,
-				scaleTime)
-		} else {
-			// Scale down
-			scaleEvent := hpaplusv1alpha1.TimestampedReplicas{
-				Time:     &metav1.Time{Time: scaleTime},
-				Replicas: currentReplicas - targetReplicas,
-			}
-			instance.Status.ScaleDownEventHistory = append(instance.Status.ScaleDownEventHistory, scaleEvent)
-			instance.Status.ScaleDownEventHistory = scalebehavior.PruneTimestampedReplicasToWindow(
-				instance.Status.ScaleDownEventHistory,
-				scaleDownLongestPolicyPeriod,
-				scaleTime)
-		}
-
-		instance.Status.LastScaleTime = &metav1.Time{Time: scaleTime}
+	} else {
+		err = r.applyScaleDecision(ctx, instance, scale, targetGR, targetReplicas, scaleUpReplicaHistory, scaleDownReplicaHistory, validity)
 	}
-
-	instance.Status.DesiredReplicas = targetReplicas
-	instance.Status.CurrentReplicas = currentReplicas
-	instance.Status.ScaleDownReplicaHistory = scaleDownReplicaHistory
-	instance.Status.ScaleUpReplicaHistory = scaleUpReplicaHistory
-	err = r.Client.Status().Update(ctx, instance)
+	candidates, omitted := decisionCandidates(modelPredictions)
+	evidence := &hpaplusv1alpha1.DecisionEvidence{SelectedReplicas: plan.Selected, GuardedReplicas: plan.Guarded,
+		BaselineIncluded: plan.BaselineIncluded, Constraints: append([]string{}, plan.Constraints...),
+		Candidates: make([]hpaplusv1alpha1.DecisionCandidate, 0, len(candidates)), CandidatesOmitted: int32(omitted)}
+	for _, candidate := range candidates {
+		evidence.Candidates = append(evidence.Candidates, hpaplusv1alpha1.DecisionCandidate{Model: candidate.Model, Replicas: candidate.Replicas})
+	}
+	evidence.Models, evidence.ModelsOmitted = boundedModelStatuses(modelStatuses)
+	boundDecisionEvidence(evidence)
+	health.decision = &hpaplusv1alpha1.DecisionStatus{Evidence: evidence, ID: trace.id, Mode: plan.RolloutMode, CandidateMode: plan.Mode,
+		ScaleWrite: trace.write, EvaluatedAt: metav1.Time{Time: now}, ObservedGeneration: instance.Generation,
+		TargetUID: string(scale.UID), RequestedReplicas: scale.Spec.Replicas, ObservedReplicas: currentReplicas,
+		BaselineReplicas: calculatedReplicas, BaselineDesiredReplicas: plan.BaselineDesired,
+		ControlDesiredReplicas: plan.ControlDesired, DesiredReplicas: targetReplicas}
+	outcome := "completed"
 	if err != nil {
-		logger.Error(err, "failed to update status of resource",
-			"scaleTargetRef", scaleTargetRef,
+		outcome = "failed"
+	}
+	logger.Info("Scale decision", "outcome", outcome, "scaleWrite", trace.write, "errorReason", observability.ErrorReason(err),
+		"rolloutMode", plan.RolloutMode, "baselineDesiredReplicas", plan.BaselineDesired, "controlDesiredReplicas", plan.ControlDesired,
+		"mode", plan.Mode, "requestedReplicas", scale.Spec.Replicas, "observedReplicas", currentReplicas,
+		"baselineReplicas", calculatedReplicas, "selectedReplicas", plan.Selected, "guardedReplicas", plan.Guarded,
+		"targetReplicas", targetReplicas, "baselineIncluded", plan.BaselineIncluded, "constraints", plan.Constraints,
+		"candidates", candidates, "candidatesOmitted", omitted)
+	if err != nil {
+		if errors.Is(err, errMetricsExpired) {
+			metricsReady = false
+			health.phase = "MetricEvaluation"
+			health.metrics = nil
+		}
+		if errors.Is(err, errPredictionsExpired) {
+			predictionsReady = expirePredictionReports(modelStatuses, r.now())
+			health.phase = "PredictionEvaluation"
+		}
+		logger.Error(observability.PublicError(err), "failed to update status of resource",
 			"currentReplicas", currentReplicas,
 			"targetReplicas", targetReplicas,
 			"scaleTime", now)
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
 	}
 
-	logger.V(0).Info("Scaled resource",
-		"scaleTargetRef", scaleTargetRef,
-		"currentReplicas", currentReplicas,
-		"targetReplicas", targetReplicas)
-
-	return reconcile.Result{RequeueAfter: syncPeriod}, nil
-
-}
-
-// updateConfigMapData updates the HPA+'s configmap and the data it holds
-func (r *HPAPlusReconciler) updateConfigMapData(ctx context.Context, configMap *corev1.ConfigMap,
-	hpaPlusData *hpaplusv1alpha1.HPAPlusData) error {
-	data, err := json.Marshal(hpaPlusData)
-	if err != nil {
-		// Should not occur, panic
-		panic(err)
-	}
-
-	newData := string(data)
-	if configMap.Data != nil && configMap.Data[configMapDataKey] == newData {
-		return nil
-	}
-
-	configMap.Data = map[string]string{
-		configMapDataKey: newData,
-	}
-
-	err = r.Client.Update(ctx, configMap)
-	if err != nil {
-		return fmt.Errorf("failed to update config map data: %w", err)
-	}
-
-	return nil
-}
-
-func (r *HPAPlusReconciler) getOrCreateConfigMapData(ctx context.Context,
-	instance *hpaplusv1alpha1.HPAPlus,
-) (*corev1.ConfigMap, *hpaplusv1alpha1.HPAPlusData, error) {
-	configMapName := fmt.Sprintf("hpa-plus-%s-data", instance.Name)
-	configMap := &corev1.ConfigMap{}
-
-	err := r.Client.Get(ctx, types.NamespacedName{
-		Name:      configMapName,
-		Namespace: instance.Namespace,
-	}, configMap)
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return nil, nil, err
-		}
-
-		configMap = &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      configMapName,
-				Namespace: instance.Namespace,
-			},
-		}
-		configMap.SetOwnerReferences([]metav1.OwnerReference{{
-			APIVersion: instance.APIVersion,
-			Kind:       instance.Kind,
-			Name:       instance.Name,
-			UID:        instance.UID,
-		}})
-
-		hpaPlusData := &hpaplusv1alpha1.HPAPlusData{
-			ModelHistories: map[string]hpaplusv1alpha1.ModelHistory{},
-		}
-		data, err := json.Marshal(hpaPlusData)
-		if err != nil {
-			panic(err)
-		}
-		configMap.Data = map[string]string{
-			configMapDataKey: string(data),
-		}
-		if err := r.Client.Create(ctx, configMap); err != nil {
-			if !k8serrors.IsAlreadyExists(err) {
-				return nil, nil, err
-			}
-			if err := r.Client.Get(ctx, types.NamespacedName{
-				Name:      configMapName,
-				Namespace: instance.Namespace,
-			}, configMap); err != nil {
-				return nil, nil, err
-			}
-		} else {
-			return configMap, hpaPlusData, nil
+	health.phase = "Reconciled"
+	r.Telemetry.ObserveRollout(plan.RolloutMode)
+	if plan.RolloutMode != hpaplusv1alpha1.ModeObserve {
+		r.Telemetry.ObserveDecision(plan.Mode, scale.Spec.Replicas, targetReplicas)
+		for _, reason := range plan.Constraints {
+			r.Telemetry.ObserveConstraint(reason)
 		}
 	}
+	checkedAt := r.now()
+	delay := timedDecisionRequeue(instance, modelStatuses, checkedAt, syncPeriod)
+	return reconcile.Result{RequeueAfter: delay}, nil
 
-	hpaPlusData := &hpaplusv1alpha1.HPAPlusData{}
-	if configMap.Data == nil || configMap.Data[configMapDataKey] == "" {
-		hpaPlusData.ModelHistories = map[string]hpaplusv1alpha1.ModelHistory{}
-		return configMap, hpaPlusData, nil
-	}
-	if err := json.Unmarshal([]byte(configMap.Data[configMapDataKey]), hpaPlusData); err != nil {
-		return nil, nil, err
-	}
-	if hpaPlusData.ModelHistories == nil {
-		hpaPlusData.ModelHistories = map[string]hpaplusv1alpha1.ModelHistory{}
-	}
-
-	return configMap, hpaPlusData, nil
-}
-
-func (r *HPAPlusReconciler) mutateConfigMapData(ctx context.Context,
-	instance *hpaplusv1alpha1.HPAPlus,
-	mutate func(*hpaplusv1alpha1.HPAPlusData) (bool, error),
-) error {
-	var lastErr error
-	for attempt := 0; attempt < 5; attempt++ {
-		configMap, hpaPlusData, err := r.getOrCreateConfigMapData(ctx, instance)
-		if err != nil {
-			return err
-		}
-
-		changed, err := mutate(hpaPlusData)
-		if err != nil {
-			return err
-		}
-		if !changed {
-			return nil
-		}
-
-		err = r.updateConfigMapData(ctx, configMap, hpaPlusData)
-		if err == nil {
-			return nil
-		}
-		if !k8serrors.IsConflict(err) {
-			return err
-		}
-		lastErr = err
-	}
-
-	if lastErr != nil {
-		return lastErr
-	}
-	return nil
 }
 
 // processModels processes every model provided in the spec, it does not return any errors and will instead simply
@@ -472,49 +352,85 @@ func (r *HPAPlusReconciler) mutateConfigMapData(ctx context.Context,
 func (r *HPAPlusReconciler) processModels(ctx context.Context,
 	instance *hpaplusv1alpha1.HPAPlus,
 	hpaPlusData *hpaplusv1alpha1.HPAPlusData, now time.Time,
-	currentReplicas int32, calculatedReplicas int32, cpuSnapshot cpuMetricSnapshot) ([]int32, map[string]int32) {
+	currentReplicas int32, calculatedReplicas int32, cpuSnapshot cpuMetricSnapshot, scales ...*autoscalingv1.Scale) ([]int32, map[string]int32, []hpaplusv1alpha1.ModelStatus) {
 
 	logger := log.FromContext(ctx)
-
-	scaleTargetRef := instance.Spec.ScaleTargetRef
-
-	modelNames := make([]string, len(instance.Spec.Models))
-	for idx, model := range instance.Spec.Models {
-		modelNames[idx] = model.Name
-	}
-	if len(modelNames) > 0 {
-		logger.Info("Configured models for evaluation",
-			"scaleTargetRef", scaleTargetRef,
-			"models", modelNames)
-	}
 
 	// Set up a slice for predictions; the HPA result is added later depending on configuration/availability
 	predictedReplicas := []int32{}
 	modelPredictions := make(map[string]int32)
+	predictionDeadlines := make(map[string]time.Time)
+	historyEpochs := make(map[string]int64)
+	statuses := make([]hpaplusv1alpha1.ModelStatus, len(instance.Spec.Models))
+	fingerprints := make(map[string]string)
 
 	// Add the calculated replicas to a list of past replicas
-	for _, model := range instance.Spec.Models {
+	for modelIndex, model := range instance.Spec.Models {
+		ctx := log.IntoContext(ctx, logger.WithValues("modelName", observability.Field(model.Name), "modelType", observability.Field(model.Type)))
+		logger := log.FromContext(ctx)
+		status := &statuses[modelIndex]
+		*status = hpaplusv1alpha1.ModelStatus{Name: model.Name, State: "WarmingUp", RequiredSamples: int64(requiredHistorySize(&model))}
+		if instance.Status.ObservedGeneration == instance.Generation {
+			for _, previous := range instance.Status.ModelStatuses {
+				if previous.Name == model.Name {
+					copy := previous.DeepCopy()
+					status.LastAttemptTime, status.LastSuccessTime = copy.LastAttemptTime, copy.LastSuccessTime
+					status.LastRunDurationMilliseconds, status.LastRunOutcome = copy.LastRunDurationMilliseconds, copy.LastRunOutcome
+					break
+				}
+			}
+		}
 		logger.V(2).Info("Processing model to determine replica count",
-			"scaleTargetRef", scaleTargetRef,
-			"model", model.Name)
+			"model", observability.Field(model.Name))
 
 		modelHistory, exists := hpaPlusData.ModelHistories[model.Name]
+		if exists && modelHistory.Type == model.Type && model.HistoryMaxAge != nil {
+			retained, err := r.retainModelHistory(ctx, instance, &model, hpaPlusData.TargetIdentity)
+			if err != nil {
+				status.State = "Unavailable"
+				logger.Error(observability.PublicError(err), "failed to enforce model history retention", "model", observability.Field(model.Name))
+				continue
+			}
+			modelHistory = retained
+		}
+		historyEpochs[model.Name] = modelHistory.HistoryEpoch
 		if !exists || modelHistory.Type != model.Type {
 			modelHistory = hpaplusv1alpha1.ModelHistory{
 				Type:              model.Type,
 				SyncPeriodsPassed: 0,
-				ReplicaHistory:    []hpaplusv1alpha1.TimestampedReplicas{},
+				ReplicaHistory:    []hpaplusv1alpha1.TimestampedSample{},
 			}
 		}
+		status.HistorySamples = int64(countCPUHistory(modelHistory.ReplicaHistory))
 
 		if model.StartInterval != nil && modelHistory.StartTime != nil && now.Before(modelHistory.StartTime.Time) {
+			status.State = "Waiting"
 			logger.V(1).Info("Skipping model for this sync period, before the start time",
-				"scaleTargetRef", scaleTargetRef,
 				"startInterval", model.StartInterval.Duration,
 				"startTime", modelHistory.StartTime,
 				"timeUntilStart", modelHistory.StartTime.Sub(now),
-				"model", model.Name)
+				"model", observability.Field(model.Name))
 			continue
+		}
+
+		if err := validateStoredHistory(modelHistory, r.now()); err != nil {
+			status.State = "InvalidHistory"
+			logger.Error(observability.PublicError(err), "skipping model with invalid history; future timestamps wait for clock recovery", "model", observability.Field(model.Name))
+			continue
+		}
+		var oldest, newest *time.Time
+		for _, sample := range modelHistory.ReplicaHistory {
+			if sample.TotalCPUUsageMillicores == nil || sample.Time == nil {
+				continue
+			}
+			if oldest == nil {
+				oldest = &sample.Time.Time
+			}
+			newest = &sample.Time.Time
+		}
+		if oldest != nil {
+			r.Telemetry.ObserveHistoryAge(model.Type, "oldest", r.now().Sub(*oldest))
+			r.Telemetry.ObserveHistoryAge(model.Type, "newest", r.now().Sub(*newest))
 		}
 
 		historyReady := modelHasSufficientHistory(&model, modelHistory.ReplicaHistory)
@@ -524,68 +440,335 @@ func (r *HPAPlusReconciler) processModels(ctx context.Context,
 			perSyncPeriod = *model.PerSyncPeriod
 		}
 		shouldRunOnThisSyncPeriod := newSamplesSinceLastRun >= perSyncPeriod
+		scopedModel := model
+		scopedModel.SessionID = modelHistorySessionID(instance, model.Name, modelHistory.HistoryEpoch, cpuSnapshot.TargetIdentity)
+		if cpuSnapshot.RequestPerPodMillicores != nil {
+			scopedModel.CPURequestPerPodMillicores = *cpuSnapshot.RequestPerPodMillicores
+		}
+		if cpuSnapshot.TargetUtilizationPercentage != nil {
+			scopedModel.TargetCPUUtilizationPercentage = *cpuSnapshot.TargetUtilizationPercentage
+		}
+		fingerprint, err := predictionFingerprint(instance, &scopedModel)
+		if err != nil {
+			status.State = "Failed"
+			logger.Error(observability.PublicError(err), "failed to fingerprint model", "model", observability.Field(model.Name))
+			continue
+		}
+		fingerprints[model.Name] = fingerprint
+		if model.ForecastReliability != nil {
+			status.Reliability = forecastquality.Status(modelHistory.Reliability, *model.ForecastReliability)
+			if exists && hpaPlusData.ModelHistories[model.Name].Type == model.Type {
+				updated, qualityErr := r.evaluateForecastReliability(ctx, instance, &scopedModel, modelHistory.HistoryEpoch, cpuSnapshot, fingerprint)
+				if errors.Is(qualityErr, errReliabilityIdentityChanged) {
+					status.State = "Unavailable"
+					continue
+				}
+				if qualityErr != nil {
+					// A diagnostic write failure must not suppress an otherwise valid
+					// forecast. Existing completion/identity/expiry checks still apply.
+					status.Reliability.State = "Unavailable"
+					logger.Error(observability.PublicError(qualityErr), "failed to persist forecast reliability", "model", observability.Field(model.Name))
+				} else {
+					modelHistory = updated
+					status.Reliability = forecastquality.Status(modelHistory.Reliability, *model.ForecastReliability)
+				}
+			}
+			// Adapt only after a new real sample. Do not spin on the same window.
+			if modelHistory.Reliability != nil && modelHistory.Reliability.AdaptationPending && newSamplesSinceLastRun > 0 {
+				shouldRunOnThisSyncPeriod = true
+			}
+		}
+
+		useCached := func() {
+			if ctx.Err() != nil {
+				return
+			}
+			availability, expires := assessCachedPrediction(instance, &scopedModel, modelHistory, fingerprint, r.now())
+			cached := modelHistory.CachedPrediction
+			if availability != cacheUsable {
+				// Preserve an execution failure/backoff/warmup as the primary
+				// reason, but explain a cadence skip or late fit with an expired cache.
+				if availability == cacheExpired && (status.State == "Scheduled" || status.State == "Unavailable") {
+					status.State = "Expired"
+					status.ConsumedUntil = cached.ConsumedUntil.DeepCopy()
+					status.ExpiresAt = &metav1.Time{Time: expires}
+				}
+				return
+			}
+			replicas := cached.Replicas
+			if scopedModel.PredictivePolicy != nil {
+				var boundary time.Time
+				var err error
+				replicas, boundary, err = prediction.TimedReplicas(cached.Trajectory, *scopedModel.PredictivePolicy, prediction.CPUObservation(&scopedModel).Capacity, currentReplicas, r.now())
+				if err != nil {
+					status.State = "Unavailable"
+					return
+				}
+				if !boundary.IsZero() && boundary.Before(expires) {
+					expires = boundary
+				}
+			}
+			status.State = "Cached"
+			status.ConsumedUntil = cached.ConsumedUntil.DeepCopy()
+			status.ExpiresAt = &metav1.Time{Time: expires}
+			predictedReplicas = append(predictedReplicas, replicas)
+			modelPredictions[model.Name] = replicas
+			predictionDeadlines[model.Name] = expires
+			logger.V(1).Info("Using cached model prediction", "model", observability.Field(model.Name), "prediction", replicas, "sampleAge", r.now().Sub(cached.ConsumedUntil.Time).String(), "expiresAt", cached.ExpiresAt)
+		}
+		if model.PredictionMaxAge != nil && modelHistory.CachedPrediction != nil && modelHistory.CachedPrediction.Fingerprint != fingerprint {
+			// Changed model/capacity needs a new fit even if its previous cadence was consumed.
+			shouldRunOnThisSyncPeriod = true
+		}
 
 		if shouldRunOnThisSyncPeriod && historyReady {
+			if r.RetryPolicy.inBackoff(modelHistory, fingerprint, r.now()) {
+				status.State = "Backoff"
+				logger.V(1).Info("Delaying failed model retry", "model", observability.Field(model.Name), "retryAfter", modelHistory.FailureState.RetryAfter)
+				useCached()
+				continue
+			}
 			logger.V(1).Info("Using model to calculate predicted target replicas",
-				"scaleTargetRef", scaleTargetRef,
-				"model", model.Name)
-			scopedModel := model
-			scopedModel.SessionID = fmt.Sprintf("%s/%s/%s", instance.Namespace, instance.Name, model.Name)
-			if cpuSnapshot.RequestPerPodMillicores != nil {
-				scopedModel.CPURequestPerPodMillicores = *cpuSnapshot.RequestPerPodMillicores
+				"model", observability.Field(model.Name))
+			trainingDeadline := historyInputDeadline(&model, modelHistory.ReplicaHistory)
+			if trainingDeadline != nil && !r.now().Before(*trainingDeadline) {
+				status.State = "Expired"
+				status.ExpiresAt = &metav1.Time{Time: *trainingDeadline}
+				continue
 			}
-			if cpuSnapshot.TargetUtilizationPercentage != nil {
-				scopedModel.TargetCPUUtilizationPercentage = *cpuSnapshot.TargetUtilizationPercentage
+			completionFence := modelHistory.DeepCopy()
+			status.LastAttemptTime = &metav1.Time{Time: r.now()}
+			started := time.Now()
+			observation := prediction.CPUObservation(&scopedModel)
+			observation.Target, observation.SourceID, observation.At = cpuSnapshot.TargetIdentity, cpuSnapshot.SourceID, cpuSnapshot.SourceTime
+			if cpuSnapshot.TotalUsageMillicores != nil {
+				observation.Value = *cpuSnapshot.TotalUsageMillicores
 			}
-			predictionResult, err := r.Predicter.GetPredictionResult(&scopedModel, modelHistory.ReplicaHistory)
+			predictionResult, err := r.modelRuntime().Predict(hook.WithResource(ctx, instance.Namespace, instance.Name), prediction.Request{Model: scopedModel, History: modelHistory.ReplicaHistory, Observation: &observation, Adapt: model.ForecastReliability != nil && modelHistory.Reliability != nil && modelHistory.Reliability.AdaptationPending})
+			outcome := "success"
+			if ctx.Err() != nil {
+				outcome = "canceled"
+			} else if errors.Is(err, prediction.ErrInsufficientHistory) {
+				outcome = "insufficient_history"
+			} else if errors.Is(err, context.DeadlineExceeded) {
+				outcome = "timeout"
+			} else if err != nil {
+				outcome = "failed"
+			}
+			elapsed := time.Since(started)
+			duration := elapsed.Milliseconds()
+			status.LastRunDurationMilliseconds, status.LastRunOutcome = &duration, outcome
+			if outcome == "success" {
+				status.LastSuccessTime = &metav1.Time{Time: r.now()}
+			}
+			r.Telemetry.ObserveModelRun(model.Type, outcome, elapsed)
+			if trainingDeadline != nil && !r.now().Before(*trainingDeadline) {
+				status.State = "Expired"
+				status.ExpiresAt = &metav1.Time{Time: *trainingDeadline}
+				continue // Do not consume or back off an expired training window.
+			}
 			if err != nil {
-				// Skip this model, errored out
-				logger.Error(err, "failed to get predicted replica count",
-					"scaleTargetRef", scaleTargetRef,
-					"currentReplicas", currentReplicas,
-					"targetReplicas", calculatedReplicas)
+				status.State = "Failed"
+				if errors.Is(err, prediction.ErrInsufficientHistory) {
+					status.State = "WarmingUp"
+					logger.V(1).Info("Model is still warming up", "model", observability.Field(model.Name))
+				} else {
+					logger.Error(observability.PublicError(err), "failed to get predicted replica count",
+						"currentReplicas", currentReplicas,
+						"targetReplicas", calculatedReplicas)
+					if ctx.Err() == nil {
+						if persistErr := r.persistModelFailure(ctx, instance, model.Name, modelHistory.HistoryEpoch, hpaPlusData.TargetIdentity, fingerprint, trainingDeadline, completionFence); persistErr != nil {
+							logger.Error(observability.PublicError(persistErr), "failed to persist model retry state", "model", observability.Field(model.Name))
+						}
+					}
+				}
+				if trainingDeadline != nil && !r.now().Before(*trainingDeadline) {
+					status.State = "Expired"
+					status.ExpiresAt = &metav1.Time{Time: *trainingDeadline}
+					continue
+				}
+				useCached()
+				continue
+			}
+			forecastDeadline, deadlineErr := freshForecastDeadline(instance, &scopedModel, predictionResult)
+			if deadlineErr != nil {
+				status.State = "Unavailable"
+				continue
+			}
+			if forecastDeadline != nil {
+				if trainingDeadline == nil || forecastDeadline.Before(*trainingDeadline) {
+					trainingDeadline = forecastDeadline
+				}
+				status.ExpiresAt = &metav1.Time{Time: *trainingDeadline}
+				if !r.now().Before(*trainingDeadline) {
+					status.State = "Expired"
+					continue
+				}
+			}
+			if model.ForecastReliability != nil && modelHistory.Reliability != nil && modelHistory.Reliability.AdaptationPending && predictionResult.Adaptation == "" {
+				predictionResult.Adaptation = "Unsupported"
+			}
+			cached := makeCachedPrediction(instance, &scopedModel, predictionResult, fingerprint, r.now(), modelHistory.ReplicaHistory)
+			if cached != nil && scopedModel.PredictivePolicy != nil {
+				cached.Trajectory = prediction.MergeCurrentInterval(predictionResult.Trajectory, modelHistory.CachedPrediction, fingerprint, r.now())
+			}
+			persisted, persistErr := r.persistModelResultWithReliability(ctx, instance, model.Name, modelHistory.HistoryEpoch, hpaPlusData.TargetIdentity, predictionResult.ConsumedUntil, cached, trainingDeadline, predictionResult.Verification, predictionResult.Adaptation, completionFence)
+			if persistErr != nil {
+				logger.Error(observability.PublicError(persistErr), "failed to persist model result", "model", observability.Field(model.Name))
+			}
+			if trainingDeadline != nil && !r.now().Before(*trainingDeadline) {
+				status.State = "Expired"
+				status.ExpiresAt = &metav1.Time{Time: *trainingDeadline}
+				continue
+			}
+			if !persisted && persistErr == nil && predictionResult.ConsumedUntil != nil {
+				status.State = "Unavailable"
+				// History was reset/replaced while this forecast was running.
+				continue
+			}
+			if trainingDeadline != nil {
+				if !persisted {
+					status.State = "Unavailable"
+					continue
+				}
+				predictionDeadlines[model.Name] = *trainingDeadline
+				status.ExpiresAt = &metav1.Time{Time: *trainingDeadline}
+			}
+			if model.PredictionMaxAge != nil {
+				status.State = "Unavailable"
+				if !persisted {
+					continue
+				}
+				modelHistory.CachedPrediction = cached
+				useCached()
+				if status.State == "Cached" {
+					status.State = "Ready"
+				}
 				continue
 			}
 			replicas := predictionResult.Replicas
+			status.State = "Ready"
+			if predictionResult.ConsumedUntil != nil {
+				status.ConsumedUntil = &metav1.Time{Time: *predictionResult.ConsumedUntil}
+			}
 			predictedReplicas = append(predictedReplicas, replicas)
 			modelPredictions[model.Name] = replicas
-			logger.Info("Model prediction ready",
-				"scaleTargetRef", scaleTargetRef,
-				"model", model.Name,
+			logger.V(1).Info("Model prediction ready",
+				"model", observability.Field(model.Name),
 				"prediction", replicas)
-			if err := r.persistModelRunTime(ctx, instance, model.Name, predictionResult.ConsumedUntil); err != nil {
-				logger.Error(err, "failed to persist model run time",
-					"scaleTargetRef", scaleTargetRef,
-					"model", model.Name)
-			}
 		} else {
+			if historyReady {
+				status.State = "Scheduled"
+			}
+			useCached()
 			if !historyReady {
 				currentHistorySize := len(modelHistory.ReplicaHistory)
 				if prediction.UsesCPUHistory(model.Type) {
 					currentHistorySize = countCPUHistory(modelHistory.ReplicaHistory)
 				}
 				logger.V(1).Info("Skipping model for this sync period, not enough history recorded to satisfy history size",
-					"scaleTargetRef", scaleTargetRef,
-					"model", model.Name,
+					"model", observability.Field(model.Name),
 					"currentHistorySize", currentHistorySize,
 					"requiredHistorySize", requiredHistorySize(&model))
 			} else {
 				logger.V(1).Info("Skipping model for this sync period, should not run on this sync period",
-					"scaleTargetRef", scaleTargetRef,
 					"newSamplesSinceLastRun", newSamplesSinceLastRun,
 					"perSyncPeriod", perSyncPeriod,
-					"model", model.Name)
+					"model", observability.Field(model.Name))
 			}
 		}
 	}
 
-	return predictedReplicas, modelPredictions
+	// A later model may consume the remaining lifetime of an earlier candidate.
+	// Recheck at the decision boundary, not only when each forecast completes.
+	if len(statuses) > 0 {
+		_, latest, err := r.loadHistory(ctx, instance)
+		if err != nil {
+			logger.Error(observability.PublicError(err), "failed to recheck prediction history")
+			for i := range statuses {
+				statuses[i].State = "Unavailable"
+				statuses[i].ConsumedUntil = nil
+				statuses[i].ExpiresAt = nil
+			}
+			return nil, map[string]int32{}, statuses
+		}
+		if latest.TargetIdentity != hpaPlusData.TargetIdentity {
+			for i := range statuses {
+				statuses[i].State = "Unavailable"
+				statuses[i].ConsumedUntil = nil
+				statuses[i].ExpiresAt = nil
+			}
+			return nil, map[string]int32{}, statuses
+		}
+		for i := range statuses {
+			status := &statuses[i]
+			history, ok := latest.ModelHistories[status.Name]
+			if policy := instance.Spec.Models[i].ForecastReliability; policy != nil && ok && (status.Reliability == nil || status.Reliability.State != "Unavailable") {
+				status.Reliability = forecastquality.Status(history.Reliability, *policy)
+			}
+
+			if ok && r.RetryPolicy.validFailureState(history.FailureState, fingerprints[status.Name], r.now()) {
+				status.ConsecutiveFailures = history.FailureState.ConsecutiveFailures
+				status.RetryAfter = history.FailureState.RetryAfter.DeepCopy()
+			}
+		}
+		for name := range modelPredictions {
+			if history, ok := latest.ModelHistories[name]; !ok || history.HistoryEpoch != historyEpochs[name] || validateStoredHistory(history, r.now()) != nil {
+				delete(modelPredictions, name)
+				delete(predictionDeadlines, name)
+			}
+		}
+		for i := range statuses {
+			if statuses[i].State != "Expired" {
+				continue
+			}
+			history, ok := latest.ModelHistories[statuses[i].Name]
+			if !ok || history.HistoryEpoch != historyEpochs[statuses[i].Name] || validateStoredHistory(history, r.now()) != nil {
+				statuses[i].State = "Unavailable"
+			}
+		}
+	}
+	predictedReplicas = predictedReplicas[:0]
+	for i, model := range instance.Spec.Models {
+		if expires, ok := predictionDeadlines[model.Name]; ok && !r.now().Before(expires) {
+			statuses[i].State = "Expired"
+			delete(modelPredictions, model.Name)
+		}
+		if replicas, ok := modelPredictions[model.Name]; ok {
+			statuses[i].ForecastReplicas = int32Ptr(replicas)
+			predictedReplicas = append(predictedReplicas, replicas)
+		} else {
+			if statuses[i].State == "Ready" || statuses[i].State == "Cached" {
+				statuses[i].State = "Unavailable"
+			}
+			if statuses[i].State != "Expired" {
+				statuses[i].ConsumedUntil = nil
+				statuses[i].ExpiresAt = nil
+			}
+		}
+	}
+	return predictedReplicas, modelPredictions, statuses
 }
 
 // calculateReplicas does the HPA processing part of the autoscaling based on the metrics provided in the spec,
 // returns the calculated value (the value the HPA would calculate based on these metrics) and the latest metric value if available.
 func (r *HPAPlusReconciler) calculateReplicas(
-	instance *hpaplusv1alpha1.HPAPlus, scale *autoscalingv1.Scale) (int32, cpuMetricSnapshot, error) {
+	ctx context.Context,
+	instance *hpaplusv1alpha1.HPAPlus, scale *autoscalingv1.Scale) (resultReplicas int32, resultSnapshot cpuMetricSnapshot, resultErr error) {
+	if r.Telemetry != nil {
+		started := time.Now()
+		defer func() {
+			outcome := "complete"
+			if ctx.Err() != nil {
+				outcome = "canceled"
+			} else if resultErr != nil {
+				outcome = "unavailable"
+			} else if resultSnapshot.MetricsIncomplete {
+				outcome = "partial"
+			}
+			r.Telemetry.ObserveMetricEvaluation(outcome, time.Since(started))
+		}()
+	}
 	cpuInitializationPeriod := defaultCPUInitializationPeriod
 	if instance.Spec.CPUInitializationPeriod != nil {
 		cpuInitializationPeriod = *instance.Spec.CPUInitializationPeriod
@@ -607,13 +790,25 @@ func (r *HPAPlusReconciler) calculateReplicas(
 	}
 
 	// Gather K8s metrics using the spec
-	metrics, err := r.Gatherer.GatherWithOptions(instance.Spec.Metrics, scale.Namespace, selector,
-		time.Duration(cpuInitializationPeriod)*time.Second, time.Duration(initialReadinessDelay)*time.Second)
+	var metricMaxAge time.Duration
+	if instance.Spec.MetricMaxAge != nil {
+		metricMaxAge = time.Duration(*instance.Spec.MetricMaxAge) * time.Millisecond
+		ctx = metricadapter.WithFreshness(ctx, metricMaxAge, r.now)
+	}
+	metrics, err := r.gatherObservations(ctx, instance, scale, selector,
+		time.Duration(cpuInitializationPeriod)*time.Second, time.Duration(initialReadinessDelay)*time.Second, metricMaxAge)
 	if err != nil {
 		return 0, cpuMetricSnapshot{}, fmt.Errorf("failed to gather metrics using provided metric specs: %w", err)
 	}
+	metrics, validUntil := metricadapter.FreshObservations(metrics, r.now(), metricMaxAge)
+	for _, metric := range metrics {
+		if err := metricadapter.ValidateMetric(metric, scale.Status.Replicas); err != nil {
+			return 0, cpuMetricSnapshot{}, fmt.Errorf("unsafe metric: %w", err)
+		}
+	}
 
-	snapshot := cpuMetricSnapshot{}
+	metricStatus := metricadapter.Summarize(metrics, scale.Status.Replicas)
+	snapshot := cpuMetricSnapshot{TargetIdentity: scaleTargetIdentity(instance, scale), MetricStatus: &metricStatus, MetricsValidUntil: validUntil}
 	for _, metric := range metrics {
 		if metric.Resource != nil && metric.Spec.Type == autoscalingv2.ResourceMetricSourceType &&
 			metric.Spec.Resource != nil && metric.Spec.Resource.Name == corev1.ResourceCPU &&
@@ -629,128 +824,142 @@ func (r *HPAPlusReconciler) calculateReplicas(
 				_ = usageRatio
 			}
 			totalUsage, observedRequestPerPod := aggregateCPUMillicores(metric.Resource.PodMetricsInfo, metric.Resource.Requests)
-			snapshot.TotalUsageMillicores = totalUsage
-			requestPerPod, err := r.getTargetCPURequestPerPod(context.Background(), instance)
-			if err == nil && requestPerPod != nil {
-				snapshot.RequestPerPodMillicores = requestPerPod
-			} else {
-				snapshot.RequestPerPodMillicores = observedRequestPerPod
+			trainingMetric := metric
+			// Partial pod populations are not total workload demand. Keep the
+			// HPA missing-pod upscale logic, but never train or downscale on it.
+			if totalUsage == nil || len(metric.Resource.MissingPods) > 0 || len(metric.Resource.IgnoredPods) > 0 ||
+				metric.Resource.TotalPods != len(metric.Resource.PodMetricsInfo) {
+				totalUsage = nil
+				snapshot.MetricsIncomplete = true
+				// Native HPA omits startup-window CPU by design. Prediction learns
+				// measured consumption instead, but only if a separate read proves
+				// every pod/container is present. Reactive inputs and guards stay intact.
+				if historyGatherer, ok := r.Gatherer.(metricadapter.CPUHistoryGatherer); ok && hasCPUHistoryModel(instance) {
+					raw, err := historyGatherer.GatherCPUHistory(ctx, metric.Spec, scale.Namespace, selector)
+					if err == nil {
+						fresh, until := metricadapter.FreshObservations([]*gathered.Metric{raw}, r.now(), metricMaxAge)
+						if len(fresh) == 1 && completeCPUHistory(raw, scale.Status.Replicas) {
+							totalUsage, observedRequestPerPod = aggregateCPUMillicores(raw.Resource.PodMetricsInfo, raw.Resource.Requests)
+							trainingMetric = raw
+							if until != nil && (snapshot.MetricsValidUntil == nil || until.Before(*snapshot.MetricsValidUntil)) {
+								snapshot.MetricsValidUntil = until
+							}
+							_, utilization, _, usageErr := metricsclient.GetResourceUtilizationRatio(raw.Resource.PodMetricsInfo, raw.Resource.Requests, targetUtilization)
+							if usageErr == nil {
+								value := float64(utilization)
+								snapshot.Utilization = &value
+							}
+						}
+					}
+				}
 			}
+			snapshot.TotalUsageMillicores = totalUsage
+			snapshot.SourceID, snapshot.SourceTime = metricadapter.CPUSource(trainingMetric, r.now())
+			requestPerPod, err := r.getTargetCPURequestPerPod(ctx, instance)
+			capacitySource := "observed-minimum"
+			snapshot.RequestPerPodMillicores = observedRequestPerPod
+			if err == nil && requestPerPod != nil && observedRequestPerPod != nil && *requestPerPod < *observedRequestPerPod {
+				snapshot.RequestPerPodMillicores = requestPerPod
+				capacitySource = "workload-template-minimum"
+			}
+			if snapshot.RequestPerPodMillicores == nil {
+				capacitySource = "unavailable"
+			}
+			log.FromContext(ctx).V(1).Info("Resolved predictive CPU capacity", "capacitySource", capacitySource,
+				"requestPerPodMillicores", snapshot.RequestPerPodMillicores, "targetUtilizationPercentage", targetUtilization)
 			break
 		}
 	}
 
 	// Calculate the targetReplicas using these metrics
 	currentReplicas := scale.Status.Replicas
-	calculatedReplicas, err := r.Evaluator.EvaluateWithOptions(metrics, currentReplicas, tolerance)
+	calculatedReplicas, incomplete, err := metricadapter.EvaluateAvailable(r.Evaluator, metrics, currentReplicas, tolerance)
 	if err != nil {
 		return 0, cpuMetricSnapshot{}, fmt.Errorf("failed to evaluate metrics and calculate target replica count: %w", err)
+	}
+	snapshot.MetricsIncomplete = snapshot.MetricsIncomplete || incomplete || len(metrics) != len(instance.Spec.Metrics)
+	if snapshot.MetricsIncomplete && calculatedReplicas < scale.Spec.Replicas {
+		calculatedReplicas = scale.Spec.Replicas
 	}
 
 	return calculatedReplicas, snapshot, nil
 }
 
+// Aggregate only complete, matched populations for training. The minimum of
+// all listed requests bounds heterogeneous/VPA populations conservatively;
+// an arithmetic mean can overstate capacity of replicas left after a downscale.
 func aggregateCPUMillicores(metrics podmetrics.MetricsInfo, requests map[string]int64) (*int64, *int64) {
-	metricsTotal := int64(0)
-	requestsTotal := int64(0)
-	numEntries := 0
-
-	for podName, metric := range metrics {
-		request, hasRequest := requests[podName]
-		if !hasRequest {
-			continue
-		}
-
-		metricsTotal += metric.Value
-		requestsTotal += request
-		numEntries++
-	}
-
-	if numEntries == 0 {
+	if len(requests) == 0 {
 		return nil, nil
 	}
-
-	totalUsage := metricsTotal
-	requestPerPod := requestsTotal / int64(numEntries)
-
-	return &totalUsage, &requestPerPod
-}
-
-func (r *HPAPlusReconciler) getTargetCPURequestPerPod(
-	ctx context.Context,
-	instance *hpaplusv1alpha1.HPAPlus,
-) (*int64, error) {
-	scaleTargetRef := instance.Spec.ScaleTargetRef
-	key := types.NamespacedName{
-		Name:      scaleTargetRef.Name,
-		Namespace: instance.Namespace,
-	}
-
-	switch scaleTargetRef.Kind {
-	case "Deployment":
-		target := &appsv1.Deployment{}
-		if err := r.Client.Get(ctx, key, target); err != nil {
-			return nil, err
-		}
-		return podTemplateCPURequestMillicores(&target.Spec.Template), nil
-	case "ReplicaSet":
-		target := &appsv1.ReplicaSet{}
-		if err := r.Client.Get(ctx, key, target); err != nil {
-			return nil, err
-		}
-		return podTemplateCPURequestMillicores(&target.Spec.Template), nil
-	case "StatefulSet":
-		target := &appsv1.StatefulSet{}
-		if err := r.Client.Get(ctx, key, target); err != nil {
-			return nil, err
-		}
-		return podTemplateCPURequestMillicores(&target.Spec.Template), nil
-	case "ReplicationController":
-		target := &corev1.ReplicationController{}
-		if err := r.Client.Get(ctx, key, target); err != nil {
-			return nil, err
-		}
-		if target.Spec.Template == nil {
+	minimum, requestSum := int64(math.MaxInt64), int64(0)
+	for _, request := range requests {
+		if request <= 0 || request > math.MaxInt64-requestSum {
 			return nil, nil
 		}
-		return podTemplateCPURequestMillicores(target.Spec.Template), nil
-	default:
-		return nil, fmt.Errorf("unsupported scale target kind for CPU request lookup: %s", scaleTargetRef.Kind)
+		requestSum += request
+		if request < minimum {
+			minimum = request
+		}
 	}
+	total := int64(0)
+	for name, metric := range metrics {
+		if _, ok := requests[name]; !ok {
+			return nil, nil
+		}
+		if metric.Value < 0 || metric.Value > math.MaxInt64-total {
+			return nil, nil
+		}
+		total += metric.Value
+	}
+	if len(metrics) != len(requests) {
+		return nil, &minimum
+	}
+	return &total, &minimum
 }
 
-func podTemplateCPURequestMillicores(template *corev1.PodTemplateSpec) *int64 {
-	if template == nil {
-		return nil
+func (r *HPAPlusReconciler) getTargetCPURequestPerPod(ctx context.Context, instance *hpaplusv1alpha1.HPAPlus) (*int64, error) {
+	ref := instance.Spec.ScaleTargetRef
+	if (ref.Kind == "ReplicationController" && ref.APIVersion != "v1") ||
+		(ref.Kind != "ReplicationController" && ref.APIVersion != "apps/v1") {
+		return nil, fmt.Errorf("unsupported scale target API version for CPU request lookup")
 	}
-
-	total := int64(0)
-	for _, container := range template.Spec.Containers {
-		request, exists := container.Resources.Requests[corev1.ResourceCPU]
-		if !exists {
-			continue
-		}
-		total += request.MilliValue()
+	switch ref.Kind {
+	case "Deployment", "ReplicaSet", "StatefulSet", "ReplicationController":
+	default:
+		return nil, fmt.Errorf("unsupported scale target kind for CPU request lookup: %s", ref.Kind)
 	}
-
-	if total <= 0 {
-		return nil
+	// Read unstructured through the API reader: typed clients silently discard
+	// newer native-sidecar and Pod-level resource fields in workload templates.
+	target := &unstructured.Unstructured{}
+	target.SetAPIVersion(ref.APIVersion)
+	target.SetKind(ref.Kind)
+	if err := r.reader().Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: instance.Namespace}, target); err != nil {
+		return nil, err
 	}
-
-	return &total
+	spec, found, err := unstructured.NestedMap(target.Object, "spec", "template", "spec")
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil
+	}
+	value, err := metricadapter.PodResourceRequest(spec, corev1.ResourceCPU)
+	if err != nil {
+		return nil, err
+	}
+	return &value, nil
 }
 
 // preScaleStatusCheck makes sure that the HPA+ status fields are correct before scaling, e.g. the reference field
 // is set
 func (r *HPAPlusReconciler) preScaleStatusCheck(ctx context.Context,
 	instance *hpaplusv1alpha1.HPAPlus) error {
-
 	scaleTargetRef := instance.Spec.ScaleTargetRef
 
 	reference := fmt.Sprintf("%s/%s", scaleTargetRef.Kind, scaleTargetRef.Name)
 	if instance.Status.Reference != reference {
-		instance.Status.Reference = reference
-		err := r.Client.Status().Update(ctx, instance)
+		err := r.mutateStatus(ctx, instance, func(status *hpaplusv1alpha1.HPAPlusStatus) { status.Reference = reference })
 		if err != nil {
 			return fmt.Errorf("failed to update status of resource: %w", err)
 		}
@@ -760,74 +969,7 @@ func (r *HPAPlusReconciler) preScaleStatusCheck(ctx context.Context,
 }
 
 func fillBehaviorDefaults(behavior *autoscalingv2.HorizontalPodAutoscalerBehavior) *autoscalingv2.HorizontalPodAutoscalerBehavior {
-	// Defaults sourced from these sources:
-	// https://github.com/kubernetes/enhancements/blob/7f681415a0011a0f6f98d9f112eeb7731f9eacd7/keps/sig-autoscaling/853-configurable-hpa-scale-velocity/README.md
-	// https://github.com/kubernetes/kubernetes/blob/3e26e104bdf9d0dc3c4046d6350b93557c67f3f4/pkg/apis/autoscaling/v2/defaults.go
-
-	if behavior == nil {
-		return &autoscalingv2.HorizontalPodAutoscalerBehavior{
-			ScaleDown: defaultDownscale(),
-			ScaleUp:   defaultUpscale(),
-		}
-	}
-
-	// We need to take a deep copy here, since we don't want any defaults we fill in to be persisted on the
-	// actual object
-	behavior = behavior.DeepCopy()
-
-	behavior.ScaleUp = copyHPAScalingRules(behavior.ScaleUp, defaultUpscale())
-	behavior.ScaleDown = copyHPAScalingRules(behavior.ScaleDown, defaultDownscale())
-
-	return behavior
-}
-
-func copyHPAScalingRules(from, to *autoscalingv2.HPAScalingRules) *autoscalingv2.HPAScalingRules {
-	if from == nil {
-		return to
-	}
-	if from.SelectPolicy != nil {
-		to.SelectPolicy = from.SelectPolicy
-	}
-	if from.StabilizationWindowSeconds != nil {
-		to.StabilizationWindowSeconds = from.StabilizationWindowSeconds
-	}
-	if from.Policies != nil {
-		to.Policies = from.Policies
-	}
-	return to
-}
-
-func defaultDownscale() *autoscalingv2.HPAScalingRules {
-	return &autoscalingv2.HPAScalingRules{
-		StabilizationWindowSeconds: int32Ptr(defaultDownscaleStabilization),
-		SelectPolicy:               selectPolicyPtr(autoscalingv2.MaxChangePolicySelect),
-		Policies: []autoscalingv2.HPAScalingPolicy{
-			{
-				Type:          autoscalingv2.PercentScalingPolicy,
-				PeriodSeconds: defaultDownscalePercentagePolicyPeriodSeconds,
-				Value:         defaultDownscalePercentagePolicyValue,
-			},
-		},
-	}
-}
-
-func defaultUpscale() *autoscalingv2.HPAScalingRules {
-	return &autoscalingv2.HPAScalingRules{
-		StabilizationWindowSeconds: int32Ptr(0),
-		SelectPolicy:               selectPolicyPtr(autoscalingv2.MaxChangePolicySelect),
-		Policies: []autoscalingv2.HPAScalingPolicy{
-			{
-				Type:          autoscalingv2.PercentScalingPolicy,
-				PeriodSeconds: defaultUpscalePercentagePolicyPeriodSeconds,
-				Value:         defaultUpscalePercentagePolicyValue,
-			},
-			{
-				Type:          autoscalingv2.PodsScalingPolicy,
-				PeriodSeconds: defaultUpscalePodsPolicyPeriodSeconds,
-				Value:         defaultUpscalePodsPolicyValue,
-			},
-		},
-	}
+	return decision.BehaviorDefaults(behavior)
 }
 
 func nextInterval(t time.Time, d time.Duration) time.Time {
@@ -849,42 +991,10 @@ func selectPolicyPtr(policy autoscalingv2.ScalingPolicySelect) *autoscalingv2.Sc
 }
 
 func requiredHistorySize(model *hpaplusv1alpha1.Model) int {
-	switch model.Type {
-	case hpaplusv1alpha1.TypeLinear:
-		if model.Linear != nil {
-			return model.Linear.HistorySize
-		}
-	case hpaplusv1alpha1.TypeXGBoost:
-		if model.XGBoost != nil {
-			return model.XGBoost.HistorySize
-		}
-	case hpaplusv1alpha1.TypeLightGBM:
-		if model.LightGBM != nil {
-			return model.LightGBM.HistorySize
-		}
-	case hpaplusv1alpha1.TypeArima:
-		if model.Arima != nil && model.Arima.HistorySize != nil {
-			return *model.Arima.HistorySize
-		}
-		return defaultArimaHistorySize
-	case hpaplusv1alpha1.TypeHoltWinters:
-		if model.HoltWinters != nil {
-			required := model.HoltWinters.SeasonalPeriods * model.HoltWinters.StoredSeasons
-			statsmodelsMin := 2 * model.HoltWinters.SeasonalPeriods
-			statsmodelsHeuristic := 10 + 2*(model.HoltWinters.SeasonalPeriods/2)
-			if statsmodelsMin > required {
-				required = statsmodelsMin
-			}
-			if statsmodelsHeuristic > required {
-				required = statsmodelsHeuristic
-			}
-			return required
-		}
-	}
-	return 0
+	return prediction.RequiredHistorySize(model)
 }
 
-func modelHasSufficientHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedReplicas) bool {
+func modelHasSufficientHistory(model *hpaplusv1alpha1.Model, replicaHistory []hpaplusv1alpha1.TimestampedSample) bool {
 	required := requiredHistorySize(model)
 	if required <= 0 {
 		return true
@@ -895,14 +1005,8 @@ func modelHasSufficientHistory(model *hpaplusv1alpha1.Model, replicaHistory []hp
 	return len(replicaHistory) >= required
 }
 
-func countCPUHistory(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) int {
-	count := 0
-	for _, entry := range replicaHistory {
-		if entry.TotalCPUUsageMillicores != nil {
-			count++
-		}
-	}
-	return count
+func countCPUHistory(replicaHistory []hpaplusv1alpha1.TimestampedSample) int {
+	return prediction.CountCPUHistory(replicaHistory)
 }
 
 func syncPeriodForInstance(instance *hpaplusv1alpha1.HPAPlus) time.Duration {
@@ -937,7 +1041,7 @@ func (r *HPAPlusReconciler) getScaleTarget(ctx context.Context,
 	return scale, targetGR, nil
 }
 
-func latestTimestamp(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) *time.Time {
+func latestTimestamp(replicaHistory []hpaplusv1alpha1.TimestampedSample) *time.Time {
 	var latest *time.Time
 	for _, entry := range replicaHistory {
 		if entry.Time == nil {
@@ -953,10 +1057,19 @@ func latestTimestamp(replicaHistory []hpaplusv1alpha1.TimestampedReplicas) *time
 }
 
 func countNewSamplesSinceLastRun(modelHistory hpaplusv1alpha1.ModelHistory) int {
+	if prediction.UsesCPUHistory(modelHistory.Type) {
+		usable := make([]hpaplusv1alpha1.TimestampedSample, 0, len(modelHistory.ReplicaHistory))
+		for _, sample := range modelHistory.ReplicaHistory {
+			if sample.TotalCPUUsageMillicores != nil {
+				usable = append(usable, sample)
+			}
+		}
+		return countNewSamplesAfter(usable, modelHistory.LastModelRunTime)
+	}
 	return countNewSamplesAfter(modelHistory.ReplicaHistory, modelHistory.LastModelRunTime)
 }
 
-func countNewSamplesAfter(replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
+func countNewSamplesAfter(replicaHistory []hpaplusv1alpha1.TimestampedSample,
 	lastProcessed *metav1.Time,
 ) int {
 	latest := latestTimestamp(replicaHistory)
@@ -982,27 +1095,87 @@ func countNewSamplesAfter(replicaHistory []hpaplusv1alpha1.TimestampedReplicas,
 	return count
 }
 
-func (r *HPAPlusReconciler) persistModelRunTime(
+func (r *HPAPlusReconciler) persistModelResult(
 	ctx context.Context,
 	instance *hpaplusv1alpha1.HPAPlus,
 	modelName string,
+	historyEpoch int64,
+	targetIdentity string,
 	latestSample *time.Time,
-) error {
+	cached *hpaplusv1alpha1.CachedPrediction,
+) (bool, error) {
+	return r.persistModelResultChecked(ctx, instance, modelName, historyEpoch, targetIdentity, latestSample, cached, nil)
+}
+
+func (r *HPAPlusReconciler) persistModelResultChecked(ctx context.Context, instance *hpaplusv1alpha1.HPAPlus,
+	modelName string, historyEpoch int64, targetIdentity string, latestSample *time.Time,
+	cached *hpaplusv1alpha1.CachedPrediction, trainingDeadline *time.Time, expected ...*hpaplusv1alpha1.ModelHistory,
+) (bool, error) {
+	return r.persistModelResultWithReliability(ctx, instance, modelName, historyEpoch, targetIdentity, latestSample, cached, trainingDeadline, nil, "", expected...)
+}
+
+func (r *HPAPlusReconciler) persistModelResultWithReliability(ctx context.Context, instance *hpaplusv1alpha1.HPAPlus,
+	modelName string, historyEpoch int64, targetIdentity string, latestSample *time.Time,
+	cached *hpaplusv1alpha1.CachedPrediction, trainingDeadline *time.Time, verification *hpaplusv1alpha1.ForecastVerification, adaptation string, expected ...*hpaplusv1alpha1.ModelHistory,
+) (bool, error) {
 	if latestSample == nil {
-		return nil
+		return false, nil
 	}
-	return r.mutateConfigMapData(ctx, instance, func(data *hpaplusv1alpha1.HPAPlusData) (bool, error) {
-		modelHistory, exists := data.ModelHistories[modelName]
-		if !exists {
+	persisted := false
+	err := r.mutateConfigMapData(ctx, instance, func(data *hpaplusv1alpha1.HPAPlusData) (bool, error) {
+		persisted = false
+		if trainingDeadline != nil && !r.now().Before(*trainingDeadline) {
+			return false, errPredictionsExpired
+		}
+		if data.TargetIdentity != targetIdentity {
 			return false, nil
 		}
-		if modelHistory.LastModelRunTime != nil && modelHistory.LastModelRunTime.Time.Equal(*latestSample) {
+		modelHistory, exists := data.ModelHistories[modelName]
+		if !exists || modelHistory.HistoryEpoch != historyEpoch || validateStoredHistory(modelHistory, r.now()) != nil {
 			return false, nil
+		}
+		if !sameCompletionState(modelHistory, expected) {
+			return false, nil
+		}
+		// An uncached success at an already consumed timestamp cannot publish a
+		// distinct completion: it would leave the compared state unchanged.
+		if cached == nil && modelHistory.FailureState == nil && modelHistory.LastModelRunTime != nil && modelHistory.LastModelRunTime.Time.Equal(*latestSample) {
+			return false, nil
+		}
+		if modelHistory.LastModelRunTime != nil && modelHistory.LastModelRunTime.Time.After(*latestSample) {
+			return false, nil
+		}
+		latest := latestTimestamp(modelHistory.ReplicaHistory)
+		if latest == nil || latest.Before(*latestSample) {
+			// The sampler reset/replaced the training history while this model was running.
+			return false, nil
+		}
+		for _, m := range instance.Spec.Models {
+			if m.Name == modelName && m.ForecastReliability == nil {
+				modelHistory.Reliability = nil
+			}
+		}
+		if modelHistory.Reliability != nil {
+			if adaptation != "" {
+				forecastquality.Adapted(modelHistory.Reliability, adaptation)
+			}
+			if verification != nil {
+				copy := *verification
+				copy.IssuedAt = r.now().UTC().Format(time.RFC3339Nano)
+				forecastquality.Record(modelHistory.Reliability, &copy)
+			} else {
+				modelHistory.Reliability.Adaptation = "Unsupported"
+				modelHistory.Reliability.AdaptationPending = false
+			}
 		}
 		modelHistory.LastModelRunTime = &metav1.Time{Time: *latestSample}
+		modelHistory.CachedPrediction = cached
+		modelHistory.FailureState = nil
 		data.ModelHistories[modelName] = modelHistory
+		persisted = true
 		return true, nil
 	})
+	return persisted && err == nil, err
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -1012,5 +1185,17 @@ func (r *HPAPlusReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&hpaplusv1alpha1.HPAPlus{},
 			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
 		).
+		WithOptions(controller.Options{RateLimiter: scalingRateLimiter()}).
 		Complete(r)
+}
+
+func scalingRateLimiter() workqueue.RateLimiter {
+	// controller-runtime ignores RequeueAfter when Reconcile also returns an
+	// error. Bound the per-resource error backoff so a temporary metrics outage
+	// cannot strand scaling for the default limiter's sixteen-minute maximum.
+	// Keep the default aggregate queue limit to avoid retry storms.
+	return workqueue.NewMaxOfRateLimiter(
+		workqueue.NewItemExponentialFailureRateLimiter(time.Second, defaultErrorRetryPeriod),
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+	)
 }

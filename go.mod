@@ -5,8 +5,10 @@ go 1.27.1
 require (
 	github.com/cosmtrek/air v1.42.0
 	github.com/google/go-cmp v0.5.9
+	github.com/google/uuid v1.3.0
 	github.com/jthomperoo/k8shorizmetrics/v2 v2.0.1
 	github.com/prometheus/client_golang v1.14.0
+	golang.org/x/net v0.17.0
 	golang.org/x/time v0.3.0
 	honnef.co/go/tools v0.4.2
 	k8s.io/api v0.26.15
@@ -37,7 +39,6 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gnostic v0.6.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -59,7 +60,6 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20221208152030-732eee02a75a // indirect
 	golang.org/x/mod v0.12.0 // indirect
-	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/term v0.13.0 // indirect

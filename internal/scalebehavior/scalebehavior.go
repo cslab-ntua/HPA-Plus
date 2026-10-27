@@ -32,7 +32,16 @@ import (
 	hpaplusv1alpha1 "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 )
 
-func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplicas []int32) int32 {
+func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplicas []int32) (int32, error) {
+	if len(predictedReplicas) == 0 {
+		return 0, fmt.Errorf("no replica candidates")
+	}
+	for _, value := range predictedReplicas {
+		if value < 0 {
+			return 0, fmt.Errorf("negative replica candidate")
+		}
+	}
+	predictedReplicas = append([]int32(nil), predictedReplicas...)
 
 	// Sort in ascending order
 	sort.Slice(predictedReplicas, func(i, j int) bool { return predictedReplicas[i] < predictedReplicas[j] })
@@ -57,42 +66,56 @@ func DecideTargetReplicasByScalingStrategy(decisionType string, predictedReplica
 		}
 		targetReplicas = min
 	case hpaplusv1alpha1.DecisionMean:
-		total := int32(0)
+		total := int64(0)
 		for _, predictedReplica := range predictedReplicas {
-			total += predictedReplica
+			total += int64(predictedReplica)
 		}
 		if total <= 0 {
-			return targetReplicas
+			return targetReplicas, nil
 		}
 		targetReplicas = int32(math.Round(float64(total) / float64(len(predictedReplicas))))
 	case hpaplusv1alpha1.DecisionMedian:
 		if len(predictedReplicas) <= 0 {
-			return targetReplicas
+			return targetReplicas, nil
 		}
 		halfIndex := len(predictedReplicas) / 2
 		if len(predictedReplicas)%2 == 0 {
 			// Even
-			targetReplicas = (predictedReplicas[halfIndex-1] + predictedReplicas[halfIndex]) / 2
+			targetReplicas = int32((int64(predictedReplicas[halfIndex-1]) + int64(predictedReplicas[halfIndex])) / 2)
 		} else {
 			// Odd
 			targetReplicas = predictedReplicas[halfIndex]
 		}
 	default:
-		// Should not occur, panic
-		panic(fmt.Errorf("unknown decision type '%s'", decisionType))
+		return 0, fmt.Errorf("unknown decision type '%s'", decisionType)
 	}
 
-	return targetReplicas
+	return targetReplicas, nil
 }
 
 func DecideTargetReplicasByBehavior(
 	behavior *autoscalingv2.HorizontalPodAutoscalerBehavior, currentReplicas int32, targetReplicas int32,
 	minReplicas int32, maxReplicas int32,
-	scaleUpReplicaHistory []hpaplusv1alpha1.TimestampedReplicas,
-	scaleDownReplicaHistory []hpaplusv1alpha1.TimestampedReplicas,
-	scaleUpEventHistory []hpaplusv1alpha1.TimestampedReplicas,
-	scaleDownEventHistory []hpaplusv1alpha1.TimestampedReplicas,
+	scaleUpReplicaHistory []hpaplusv1alpha1.TimestampedSample,
+	scaleDownReplicaHistory []hpaplusv1alpha1.TimestampedSample,
+	scaleUpEventHistory []hpaplusv1alpha1.TimestampedSample,
+	scaleDownEventHistory []hpaplusv1alpha1.TimestampedSample,
 	now time.Time) int32 {
+
+	return DecideTargetReplicasByBehaviorDetails(behavior, currentReplicas, targetReplicas, minReplicas, maxReplicas, scaleUpReplicaHistory, scaleDownReplicaHistory, scaleUpEventHistory, scaleDownEventHistory, now).Desired
+}
+
+// BehaviorResult exposes successive decisions without changing policy semantics.
+type BehaviorResult struct{ Stabilized, RateLimited, Desired int32 }
+
+func DecideTargetReplicasByBehaviorDetails(
+	behavior *autoscalingv2.HorizontalPodAutoscalerBehavior, currentReplicas int32, targetReplicas int32,
+	minReplicas int32, maxReplicas int32,
+	scaleUpReplicaHistory []hpaplusv1alpha1.TimestampedSample,
+	scaleDownReplicaHistory []hpaplusv1alpha1.TimestampedSample,
+	scaleUpEventHistory []hpaplusv1alpha1.TimestampedSample,
+	scaleDownEventHistory []hpaplusv1alpha1.TimestampedSample,
+	now time.Time) BehaviorResult {
 
 	// Upscale stabilization
 	upscaleMinValue := targetReplicas
@@ -123,6 +146,7 @@ func DecideTargetReplicasByBehavior(
 	targetReplicas = decideTargetReplicasByBehaviorRate(behavior, currentReplicas, stabilizedReplicas, scaleUpEventHistory,
 		scaleDownEventHistory, now)
 
+	rateLimited := targetReplicas
 	if targetReplicas < minReplicas {
 		targetReplicas = minReplicas
 	}
@@ -131,7 +155,7 @@ func DecideTargetReplicasByBehavior(
 		targetReplicas = maxReplicas
 	}
 
-	return targetReplicas
+	return BehaviorResult{Stabilized: stabilizedReplicas, RateLimited: rateLimited, Desired: targetReplicas}
 }
 
 // returns the longest policy period in seconds from the policies in a set of scaling rules provided
@@ -150,9 +174,9 @@ func GetLongestPolicyPeriod(scalingRules *autoscalingv2.HPAScalingRules) int32 {
 }
 
 func PruneTimestampedReplicasToWindow(
-	timestampedReplicas []hpaplusv1alpha1.TimestampedReplicas, window int32, now time.Time) []hpaplusv1alpha1.TimestampedReplicas {
+	timestampedReplicas []hpaplusv1alpha1.TimestampedSample, window int32, now time.Time) []hpaplusv1alpha1.TimestampedSample {
 
-	prunedTimestampedReplicas := []hpaplusv1alpha1.TimestampedReplicas{}
+	prunedTimestampedReplicas := []hpaplusv1alpha1.TimestampedSample{}
 
 	// Prune old evaluations
 	// Cutoff is current time - stabilization window
@@ -160,7 +184,7 @@ func PruneTimestampedReplicasToWindow(
 
 	// Add any timestamped replicas after the cut off (inside the window) to the pruned list
 	for _, timestampedReplica := range timestampedReplicas {
-		if timestampedReplica.Time.After(cutoff) {
+		if timestampedReplica.Time != nil && timestampedReplica.Time.After(cutoff) {
 			prunedTimestampedReplicas = append(prunedTimestampedReplicas, timestampedReplica)
 		}
 	}
@@ -170,8 +194,8 @@ func PruneTimestampedReplicasToWindow(
 
 func decideTargetReplicasByBehaviorRate(behavior *autoscalingv2.HorizontalPodAutoscalerBehavior,
 	currentReplicas int32, targetReplicas int32,
-	scaleUpEvents []hpaplusv1alpha1.TimestampedReplicas,
-	scaleDownEvents []hpaplusv1alpha1.TimestampedReplicas, now time.Time) int32 {
+	scaleUpEvents []hpaplusv1alpha1.TimestampedSample,
+	scaleDownEvents []hpaplusv1alpha1.TimestampedSample, now time.Time) int32 {
 
 	if targetReplicas > currentReplicas {
 		// Scale up
@@ -206,8 +230,8 @@ func decideTargetReplicasByBehaviorRate(behavior *autoscalingv2.HorizontalPodAut
 }
 
 func calculateScaleUpLimitWithinScalingRules(currentReplicas int32,
-	scaleUpEvents []hpaplusv1alpha1.TimestampedReplicas,
-	scaleDownEvents []hpaplusv1alpha1.TimestampedReplicas,
+	scaleUpEvents []hpaplusv1alpha1.TimestampedSample,
+	scaleDownEvents []hpaplusv1alpha1.TimestampedSample,
 	scalingRules *autoscalingv2.HPAScalingRules, now time.Time) int32 {
 	var result int32
 	var proposed int32
@@ -224,12 +248,12 @@ func calculateScaleUpLimitWithinScalingRules(currentReplicas int32,
 	for _, policy := range scalingRules.Policies {
 		replicasAddedInCurrentPeriod := getReplicaChanges(scaleUpEvents, policy.PeriodSeconds, now)
 		replicasDeletedInCurrentPeriod := getReplicaChanges(scaleDownEvents, policy.PeriodSeconds, now)
-		periodStartReplicas := currentReplicas - replicasAddedInCurrentPeriod + replicasDeletedInCurrentPeriod
+		periodStartReplicas := max64(0, int64(currentReplicas)-replicasAddedInCurrentPeriod+replicasDeletedInCurrentPeriod)
 		if policy.Type == autoscalingv2.PodsScalingPolicy {
-			proposed = periodStartReplicas + policy.Value
+			proposed = boundedReplicas(periodStartReplicas + int64(policy.Value))
 		} else if policy.Type == autoscalingv2.PercentScalingPolicy {
 			// the proposal has to be rounded up because the proposed change might not increase the replica count causing the target to never scale up
-			proposed = int32(math.Ceil(float64(periodStartReplicas) * (1 + float64(policy.Value)/100)))
+			proposed = boundedReplicas(int64(math.Ceil(math.Min(float64(math.MaxInt32), float64(periodStartReplicas)*(1+float64(policy.Value)/100)))))
 		}
 		result = selectPolicyFn(result, proposed)
 	}
@@ -237,8 +261,8 @@ func calculateScaleUpLimitWithinScalingRules(currentReplicas int32,
 }
 
 func calculateScaleDownLimitWithinScalingRules(currentReplicas int32,
-	scaleUpEvents []hpaplusv1alpha1.TimestampedReplicas,
-	scaleDownEvents []hpaplusv1alpha1.TimestampedReplicas,
+	scaleUpEvents []hpaplusv1alpha1.TimestampedSample,
+	scaleDownEvents []hpaplusv1alpha1.TimestampedSample,
 	scalingRules *autoscalingv2.HPAScalingRules, now time.Time) int32 {
 	var result int32
 	var proposed int32
@@ -255,27 +279,44 @@ func calculateScaleDownLimitWithinScalingRules(currentReplicas int32,
 	for _, policy := range scalingRules.Policies {
 		replicasAddedInCurrentPeriod := getReplicaChanges(scaleUpEvents, policy.PeriodSeconds, now)
 		replicasDeletedInCurrentPeriod := getReplicaChanges(scaleDownEvents, policy.PeriodSeconds, now)
-		periodStartReplicas := currentReplicas - replicasAddedInCurrentPeriod + replicasDeletedInCurrentPeriod
+		periodStartReplicas := max64(0, int64(currentReplicas)-replicasAddedInCurrentPeriod+replicasDeletedInCurrentPeriod)
 		if policy.Type == autoscalingv2.PodsScalingPolicy {
-			proposed = periodStartReplicas - policy.Value
+			proposed = boundedReplicas(periodStartReplicas - int64(policy.Value))
 		} else if policy.Type == autoscalingv2.PercentScalingPolicy {
-			proposed = int32(float64(periodStartReplicas) * (1 - float64(policy.Value)/100))
+			proposed = boundedReplicas(int64(math.Max(0, math.Min(float64(math.MaxInt32), float64(periodStartReplicas)*(1-float64(policy.Value)/100)))))
 		}
 		result = selectPolicyFn(result, proposed)
 	}
 	return result
 }
 
-func getReplicaChanges(scaleEvents []hpaplusv1alpha1.TimestampedReplicas, periodSeconds int32, now time.Time) int32 {
+func getReplicaChanges(scaleEvents []hpaplusv1alpha1.TimestampedSample, periodSeconds int32, now time.Time) int64 {
 	period := time.Second * time.Duration(periodSeconds)
 	cutoff := now.Add(-period)
-	var replicas int32
+	var replicas int64
 	for _, scaleEvent := range scaleEvents {
-		if scaleEvent.Time.After(cutoff) {
-			replicas += scaleEvent.Replicas
+		if scaleEvent.Time != nil && scaleEvent.Time.After(cutoff) {
+			replicas += int64(scaleEvent.Replicas)
 		}
 	}
 	return replicas
+}
+
+func boundedReplicas(value int64) int32 {
+	if value <= 0 {
+		return 0
+	}
+	if value >= math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(value)
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func max(a, b int32) int32 {

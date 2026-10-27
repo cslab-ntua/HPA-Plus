@@ -1,0 +1,23 @@
+{{- if eq .Values.cpuHistorySource "kubelet" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Chart.Name }}-cpu-history
+rules:
+- apiGroups: [""]
+  resources: ["nodes/proxy"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Chart.Name }}-cpu-history
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Chart.Name }}-cpu-history
+subjects:
+- kind: ServiceAccount
+  name: {{ .Chart.Name }}-cluster
+  namespace: {{ .Release.Namespace }}
+{{- end }}
