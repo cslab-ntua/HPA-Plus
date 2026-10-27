@@ -178,14 +178,14 @@ model configuration blocks.
 
 Developing this project requires these dependencies:
 
-* [Go](https://golang.org/doc/install) >= `1.20`
-* [Python](https://www.python.org/downloads/) == `3.8.x`
+* [Go](https://golang.org/doc/install) >= `1.27`
+* [Python](https://www.python.org/downloads/) == `3.14.x`
 * [Helm](https://helm.sh/) == `3.9.x`
 
 Any Python dependencies must be installed by running:
 
 ```bash
-pip install -r requirements-dev.txt
+make py_dependencies
 ```
 
 This extensively uses the the k8shorizmetrics library
