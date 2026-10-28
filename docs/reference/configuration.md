@@ -1,6 +1,54 @@
 # Configuration
 
-HPA+ resources have a number of configuration options available.
+An `HPAPlus` lives in the same namespace as the workload it scales. [Getting started](../user-guide/getting-started.md)
+has a complete example. These are its spec fields:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| [`scaleTargetRef`](#scaletargetref) | required | The workload to scale |
+| [`mode`](#mode) | `control` | `observe`, `assist` or `control` |
+| [`minReplicas`](#minreplicas) | `1` | Lowest replica count |
+| [`maxReplicas`](#maxreplicas) | required | Highest replica count |
+| [`metrics`](#metrics) | required | HPA metric specs for the reactive recommendation; models need a CPU utilization metric |
+| [`models`](#models) | required, can be empty | Forecasting models |
+| [`behavior`](#behavior) | see below | Stabilization windows and rate limits |
+| [`syncPeriod`](#syncperiod) | `15000` ms | How often HPA+ samples and decides |
+| [`metricMaxAge`](#metric-source-freshness) | no limit | Maximum age of metric timestamps |
+| [`cpuInitializationPeriod`](#cpuinitializationperiod) | `300` s | Pod start period when CPU samples may be skipped |
+| [`initialReadinessDelay`](#initialreadinessdelay) | `30` s | Pod start period for readiness changes |
+| [`tolerance`](#tolerance) | `0.1` | Smallest metric ratio change that scales |
+| [`decisionType`](#decisiontype) | `maximum` | How candidates are combined |
+| [`includeHPA`](#includehpa) | `false` | Whether the reactive recommendation joins the forecasts |
+| [`predictionFailurePolicy`](#predictionfailurepolicy) | `Reactive` | What happens when no forecast is usable |
+
+## scaleTargetRef
+
+```yaml
+scaleTargetRef:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: application
+```
+
+The workload that HPA+ scales, in the same namespace as the HPAPlus. HPA+ reads and updates its Scale subresource
+and measures the pods it selects. The operator's permissions cover Deployments, ReplicaSets, StatefulSets and
+ReplicationControllers. `kind` and `name` are required. Without `apiVersion`, HPA+ uses the API server's preferred
+version for that kind.
+
+Pointing the HPAPlus at another workload, or recreating the workload, starts a new training history.
+
+Required; there is no default.
+
+## mode
+
+```yaml
+mode: observe
+```
+
+`observe` gathers metrics and runs the models but never changes the replica count. `assist` scales but never below
+the reactive HPA recommendation. `control` applies the configured decision. See [rollout modes](../user-guide/rollout.md).
+
+Default value: `control`. Set `observe` explicitly for a new trial.
 
 ## minReplicas
 
@@ -115,14 +163,30 @@ Fresh production forecasts also expire at their data-relative target when cachin
 longer than sample age plus fitting time; stale forecasts leave the baseline available. See
 [forecast validity and uncertainty](forecast-policy.md).
 
+## predictionFailurePolicy
+
+```yaml
+predictionFailurePolicy: HoldCurrent
+```
+
+What HPA+ does when no model has a usable forecast, for example during warm-up, after a failed fit or when a forecast
+has expired:
+
+- **Reactive** - use the reactive HPA recommendation from `metrics`.
+- **HoldCurrent** - keep the currently requested replica count.
+
+The rest of the decision still applies: stabilization, rate limits, `minReplicas`, `maxReplicas` and the scale-down
+hold for incomplete metrics. [Request-demand](../user-guide/request-demand.md) models require `HoldCurrent`.
+
+Default value: `Reactive`.
+
 ## behavior
 
-Scaling behavior to apply.
+Scaling behavior to apply, with the same fields and rules as the Kubernetes HPA `behavior`. See the
+[Horizontal Pod Autoscaler docs](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior).
 
-Intended to be feature equivalent to Kubernetes HPA behavior.
-
-See the [Horizontal Pod Autoscaler docs
-here](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior).
+Default value: both stabilization windows `0` seconds. Scale-up allows 100% or four pods, whichever is more, every
+15 seconds. Scale-down allows 100% every 60 seconds.
 
 ## models
 
@@ -131,9 +195,9 @@ See [the models section for details](../user-guide/models.md).
 
 ## metrics
 
-List of metrics to target for evaluating replica counts.
-Configure them explicitly; the operator does not inject a default CPU metric. Every current prediction model requires
-a CPU resource metric with target type `Utilization` and a positive `averageUtilization`.
+List of metrics to target for evaluating replica counts. At least one is required; the operator does not add a
+default CPU metric. Every prediction model requires a CPU resource metric with target type `Utilization` and a
+positive `averageUtilization`.
 See [the metrics section for details](../user-guide/metrics.md).
 
 ## Validation and upgrades
