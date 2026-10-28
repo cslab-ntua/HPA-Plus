@@ -54,6 +54,8 @@ Use the Go version declared in `go.mod` and the Python runtime/dependencies pinn
 - `make docker` / `make push`: build or publish an operator image.
 - `make ui`: serve the read-only local UI on http://hpaplus.localtest.me:8080.
 
+`pre-commit install` adds hooks that run whitespace checks, gofmt, go vet and go test before each commit.
+
 The [architecture guide](docs/architecture.md) describes the controller, forecasting interface, history and worker boundaries. [Operations](docs/user-guide/operations.md) covers status, resources, logs and recovery.
 
 ## Attribution and license
