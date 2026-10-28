@@ -1,65 +1,95 @@
 # Hooks
 
-Hooks specify how user logic should be called by the HPA+.
+A hook lets HPA+ ask your own service for values while it runs. HPA+ has one hook: Holt-Winters
+`runtimeTuningFetchHook`, which fetches the `alpha`, `beta` and `gamma` smoothing factors from an HTTP service before
+each fit.
 
-## http
+## Allow the service first
 
-The http hook allows defining an HTTP request for the autoscaler to make. Any relevant information will be provided to
-the target of the request by HTTP parameters - either `query` or `body` parameters. An error is signified by a status
-code that is not defined to be successful in the configuration; if this kind of error occurs the autoscaler will
-capture the response body and log it.
-
-### Example
-
-This is an example configuration of the http hook for runtime tuning fetching with Holt Winters:
+Hooks are disabled until the operator administrator allows the service's origin in the Helm values:
 
 ```yaml
-holtWinters:
-  runtimeTuningFetchHook:
-    type: "http"
-    timeout: 2500
-    http:
-      method: "GET"
-      url: "https://www.hpa.plus"
-      successCodes:
-        - 200
-      headers:
-        exampleHeader: exampleHeaderValue
-      parameterMode: query
+hooks:
+  allowedOrigins:
+    - https://tuning.example.com
 ```
 
-Breaking this example down:
+The manager flag is `--hook-allowed-origins`. Without an allowed origin every hook request fails with
+`hook destination is not allowed`, and the model reports a failed fit. [Hook security](../reference/hook-security.md)
+explains the origin rules, the blocked addresses and bearer tokens from Secrets.
 
-- `type` = the type of the hook, for this example it is an `http` hook.
-- `timeout` = the maximum time the hook can take in milliseconds, for this
-  example it is `2500` (2.5 seconds), if it takes longer than this it will count
-  the hook as failing.
-- `http` = configuration of the HTTP request.
-  - `method` = the HTTP method of the HTTP request.
-  - `url` = the URL to target with the HTTP request.
-  - `successCodes` = a list of success codes defining how to determine if the
-    request is successful - if the request responds with a code not on this list
-    it will be assumed to be a failure.
-  - `headers` = a dictionary of headers that can be provided with the request,
-    in this example the key is `exampleHeader` and the value is
-    `exampleHeaderValue`. This is an optional parameter.
-  - `parameterMode` = the mode for passing parameters to the target; either
-    `query` - as a query parameter, or `body` - as a body parameter. In this
-    example it is by query parameter.
+## Example
 
-### POST Example
+```yaml
+models:
+  - type: HoltWinters
+    name: seasonal
+    holtWinters:
+      seasonalPeriods: 6
+      storedSeasons: 4
+      trend: additive
+      seasonal: additive
+      runtimeTuningFetchHook:
+        type: http
+        timeout: 2500
+        http:
+          method: GET
+          url: https://tuning.example.com/holt-winters
+          successCodes:
+            - 200
+          parameterMode: query
+```
 
-This is an example using HTTP `POST` and information passed as a body parameter.
+- `type`: always `http`.
+- `timeout`: the longest the request may take, in milliseconds. A slower request counts as a failure.
+- `http.method`: the HTTP method, for example `GET` or `POST`.
+- `http.url`: the service URL. Its origin must be in `hooks.allowedOrigins`. URLs with credentials are rejected, and
+  redirects are not followed.
+- `http.successCodes`: the status codes that count as success. Any other status is a failure.
+- `http.headers`: optional extra headers. They are stored in the HPAPlus object, so don't put secrets in them; use
+  [hook credentials](../reference/hook-security.md#secret-based-bearer-authentication) instead.
+- `http.parameterMode`: `query` sends the request data in the `value` query parameter, `body` sends it as a JSON
+  request body.
+
+The same hook with `POST` and a body:
 
 ```yaml
 runtimeTuningFetchHook:
-  type: "http"
+  type: http
   timeout: 2500
   http:
-    method: "POST"
-    url: "https://www.hpa.plus"
+    method: POST
+    url: https://tuning.example.com/holt-winters
     successCodes:
       - 200
       - 202
     parameterMode: body
 ```
+
+## Request and response
+
+HPA+ sends the model configuration, without its hook settings, and the training history. Shortened:
+
+```json
+{
+  "model": {
+    "type": "HoltWinters",
+    "name": "seasonal",
+    "holtWinters": {"seasonalPeriods": 6, "storedSeasons": 4, "trend": "additive", "seasonal": "additive"}
+  },
+  "replicaHistory": [
+    {"time": "2026-10-20T10:00:00Z", "replicas": 3, "totalCpuUsageMillicores": 420},
+    {"time": "2026-10-20T10:00:15Z", "replicas": 3, "totalCpuUsageMillicores": 465}
+  ]
+}
+```
+
+The service answers with the factors to use:
+
+```json
+{"alpha": 0.9, "beta": 0.3, "gamma": 0.5}
+```
+
+A factor left out of the response falls back to the value in `holtWinters`. If a factor is missing from both, or the
+request fails, the fit fails and the model follows the normal retry and fallback rules. Responses are limited to
+64 KiB.
