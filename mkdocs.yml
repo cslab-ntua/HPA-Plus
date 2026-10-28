@@ -1,11 +1,80 @@
 site_name: HPA+
-theme: material
+site_description: Predictive horizontal autoscaling for Kubernetes
+site_url: https://cslab-ntua.github.io/HPA-Plus/
+repo_url: https://github.com/cslab-ntua/HPA-Plus
+repo_name: cslab-ntua/HPA-Plus
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - content.code.copy
+
 markdown_extensions:
+  - toc:
+      permalink: true
   - mdx_truly_sane_lists
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
 plugins:
   - search
+
+exclude_docs: |
+  requirements.*
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - User guide:
+      - Installation: user-guide/installation.md
+      - Getting started: user-guide/getting-started.md
+      - Rollout modes: user-guide/rollout.md
+      - Models: user-guide/models.md
+      - Request demand: user-guide/request-demand.md
+      - Metrics: user-guide/metrics.md
+      - Hooks: user-guide/hooks.md
+      - Observability: user-guide/observability.md
+      - Operations: user-guide/operations.md
+      - Local UI: user-guide/ui.md
+  - Benchmark results: results/README.md
+  - Architecture: architecture.md
+  - Reference:
+      - Configuration: reference/configuration.md
+      - API version and defaults: reference/api-compatibility.md
+      - Forecast policy: reference/forecast-policy.md
+      - Typed forecasting: reference/typed-forecasting.md
+      - CPU capacity: reference/cpu-capacity.md
+      - History storage: reference/history-storage.md
+      - History recovery: reference/history-recovery.md
+      - Model runtime: reference/model-runtime.md
+      - Worker protocol: reference/worker-protocol.md
+      - Worker isolation: reference/worker-isolation.md
+      - Feature diagnostics: reference/feature-diagnostics.md
+      - Decision reporting: reference/decision-reporting.md
+      - Hook security: reference/hook-security.md
+      - Network policy: reference/network-policy.md
+      - RBAC: reference/rbac.md
