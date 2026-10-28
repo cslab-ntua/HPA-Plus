@@ -2,7 +2,7 @@
 
 This page documents the model families that are implemented in the current repository.
 
-It is intentionally short. For exact field names and validation details, check [`api/v1alpha1/hpaplus_types.go`](../../api/v1alpha1/hpaplus_types.go).
+It is intentionally short. For exact field names and validation details, check [`api/v1alpha1/hpaplus_types.go`](https://github.com/cslab-ntua/HPA-Plus/blob/master/api/v1alpha1/hpaplus_types.go).
 
 ## How Models Fit Into HPA+
 
@@ -73,7 +73,7 @@ zero-demand forecast remains valid, subject to `minReplicas` and scaling behavio
 Structurally malformed training windows (for example missing/duplicate timestamps or negative CPU usage) are excluded
 and reset for that model. Sampling then rebuilds the window. Otherwise valid future timestamps report
 `HistoryClockSkew` and preserve the window while sampling/forecasts pause until clock recovery. Other models and
-pending scale accounting are retained. See [history freshness operations](operations.md#history-freshness).
+pending scale accounting are retained. See [history corruption and recovery](../reference/history-recovery.md).
 
 Repeated failed fits use exponential retry delays: start at `syncPeriod`, with a minimum of one second and a maximum
 of five minutes, then double up to that maximum. Operator `modelRetry.initial` and `modelRetry.maximum` Helm values override these defaults (see [runtime controls](../reference/model-runtime.md)). Retry timestamps round up to whole seconds. Sampling continues, and

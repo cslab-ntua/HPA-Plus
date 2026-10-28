@@ -100,10 +100,9 @@ This initial mode requires an explicit `spec.syncPeriod: 30000`; omission retain
 
 For qualified accounting windows, HPA+ fits:
 
-\[
-\text{CPU-seconds}=c\times\text{completed requests}
-+b\times\text{running-pod-seconds}.
-\]
+```text
+CPU-seconds = c × completed requests + b × running-pod-seconds
+```
 
 Here `c` estimates CPU-seconds per request and `b` estimates background CPU cores per pod. Nonnegative weighted least squares retains fifteen minutes of evidence, uses a two-minute weighting half-life and requires at least twenty qualified windows with sufficient independent variation. Constant completion rate per pod can make the two terms unidentifiable; HPA+ reports that state rather than supplying a benchmark-specific coefficient.
 
@@ -111,11 +110,11 @@ Qualification requires aligned and sufficiently complete counters and homogeneou
 
 With a qualified request forecast, the replica ratio is:
 
-\[
-N=\left\lceil\frac{\widehat{\lambda}\,c}{q\,u-b}\right\rceil,
-\]
+```text
+N = ceil(λ × c / (q × u − b))
+```
 
-where `lambda` is incoming requests per second, `q` is CPU request per pod and `u` is the CPU target fraction. A nonpositive denominator makes this conversion unavailable. The controller then applies its existing rounding tolerance, timing, replica bounds and scaling policies. Forecasts are timestamped: higher future demand can scale up within `scaleUpLeadSeconds`; a future low forecast does not replace an already issued interval before that interval ends. Downscale stabilization defaults to zero; explicit user behavior remains effective.
+where `λ` is the forecast of incoming requests per second, `q` is CPU request per pod and `u` is the CPU target fraction. A nonpositive denominator makes this conversion unavailable. The controller then applies its existing rounding tolerance, timing, replica bounds and scaling policies. Forecasts are timestamped: higher future demand can scale up within `scaleUpLeadSeconds`; a future low forecast does not replace an already issued interval before that interval ends. Downscale stabilization defaults to zero; explicit user behavior remains effective.
 
 The decision path is:
 

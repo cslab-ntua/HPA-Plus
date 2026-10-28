@@ -4,6 +4,8 @@ HPA+ is a Kubernetes predictive autoscaling operator. It keeps the familiar Hori
 
 Supported models are Linear, Holt-Winters, ARIMA/SARIMA, XGBoost and LightGBM. Models share history collection, workload identity checks, forecast validity checks, worker limits and the scaling decision path. Predictive performance depends on the workload, measurements and configuration.
 
+Documentation: https://cslab-ntua.github.io/HPA-Plus/
+
 ## Results
 
 In a 4-hour test on a live cluster, HPA+ with [request-demand forecasting](docs/user-guide/request-demand.md) answered 99.9% of requests within 500 ms during repeated traffic peaks. HPA+ forecasting from CPU alone answered 93.6%, and the reactive HPA formula with the same scaling limits answered 28.5%. The [benchmark results](docs/results/README.md) describe the setup, every number and the limits.
@@ -46,7 +48,8 @@ To watch what HPA+ decides and why, run `make ui` and open the address it prints
 Use the Go version declared in `go.mod` and the Python runtime/dependencies pinned by `Dockerfile` and `algorithms/requirements.txt`.
 
 - `make build`: build the manager and worker service.
-- `make py_dependencies`: install the pinned model dependencies.
+- `make py_dependencies`: install the pinned model, docs and dev dependencies.
+- `make docs`: build the docs site with the same checks as CI.
 - `make generate`: regenerate deepcopy code, the CRD and operator RBAC.
 - `make docker` / `make push`: build or publish an operator image.
 - `make ui`: serve the read-only local UI on http://hpaplus.localtest.me:8080.
