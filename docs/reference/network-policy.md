@@ -1,9 +1,8 @@
 # Operator network isolation
 
 The Helm chart can install a namespace-scoped `networking.k8s.io/v1` NetworkPolicy for its operator pods.
-Set `networkPolicy.enabled: true` and supply explicit `ingress` and `egress` rules. The default is disabled,
-so upgrading with the default values does not change connectivity. Enabling it with empty lists creates
-a policy with no allowed ingress or egress rules. Configure API access before enabling it on an operator.
+Set `networkPolicy.enabled: true` and supply explicit `ingress` and `egress` rules. It is disabled by default.
+Enabling it with empty lists creates a policy with no allowed ingress or egress rules. Configure API access before enabling it on an operator.
 
 ## Configure destinations
 

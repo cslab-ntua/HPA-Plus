@@ -1,12 +1,12 @@
 # Live request-demand forecasting
 
-Request-demand mode is an opt-in XGBoost path. It forecasts incoming requests per second and learns the CPU cost of completed work from normal runtime observations. It does not require a manually supplied requests-per-pod capacity. The existing CPU predictor remains the fallback when request forecasting or learned capacity is unavailable.
+Request-demand mode is an opt-in XGBoost path. It forecasts incoming requests per second and learns the CPU cost of completed work from normal runtime observations. It does not require a manually supplied requests-per-pod capacity. The model's CPU forecast is the fallback when request forecasting or the learned cost is unavailable.
 
-This first implementation supports homogeneous application pods on Linux nodes using cgroup v2. It reads existing Prometheus telemetry; it does not install an ingress, service mesh, application proxy or application instrumentation. A completed-request counter alone cannot identify arrivals that are still waiting.
+Request demand supports homogeneous application pods on Linux nodes with cgroup v2. It reads Prometheus telemetry you already have; it does not install an ingress, service mesh, application proxy or application instrumentation. A completed-request counter alone cannot identify arrivals that are still waiting.
 
 ## Installation and measurements
 
-Build the current operator image, which contains `/app/cgroup-collector`, and configure Helm:
+The operator image contains the collector, `/app/cgroup-collector`. Configure Helm:
 
 ```yaml
 image:
@@ -26,15 +26,15 @@ The corresponding operator flags are `--cpu-history-source=cgroup`, `--cgroup-co
 
 CPU consumption is the difference between cumulative `usage_usec` counters divided by actual elapsed time. Measurements retain container IDs, pod UIDs and interval boundaries. The collector also reads memory, throttling and CPU pressure where the kernel exposes them. Missing optional counters stay unavailable. Counter resets, absent containers, missed reads and unsupported cgroup layouts leave gaps.
 
-Both reactive CPU evaluation and CPU forecasting use the selected cgroup source with a fixed thirty-second averaging window in this initial implementation. Helm does not expose a separate averaging-window setting. Two-second collection reduces measurement delay; it does not make thirty seconds of a new container's history immediately available. A new container needs two reads for its first rate and a complete averaging window for the CPU history path. Small portions of known counter windows intersecting accounting boundaries use those windows' measured average rates; gaps are never interpolated. Changing the CPU collection contract resets incompatible stored CPU training histories.
+Both reactive CPU evaluation and CPU forecasting use the selected cgroup source with a fixed thirty-second averaging window. Helm does not expose a separate averaging-window setting. Two-second collection reduces measurement delay; it does not make thirty seconds of a new container's history immediately available. A new container needs two reads for its first rate and a complete averaging window for the CPU history path. Small portions of known counter windows intersecting accounting boundaries use those windows' measured average rates; gaps are never interpolated. Changing the CPU collection contract resets incompatible stored CPU training histories.
 
-The existing `metrics-server` default and optional `kubelet` history source remain available. Request-demand accounting requires the cgroup collector. A failed cgroup read does not silently switch to Metrics API measurements.
+The `metrics-server` default and the optional `kubelet` source still work for models without request demand. Request-demand accounting requires the cgroup collector. A failed cgroup read does not silently switch to Metrics API measurements.
 
 ## Required traffic telemetry and HPAPlus configuration
 
 Prometheus must preserve namespace, pod name and pod UID labels on the application series. The defaults are `namespace`, `pod` and `pod_uid`; `namespaceLabel`, `podLabel` and `podUIDLabel` can override their names. For example, Prometheus Kubernetes pod discovery can attach `__meta_kubernetes_pod_uid` as `pod_uid`.
 
-Provide distinct cumulative counters for request starts and completed processing work. A cheap rejection before processing, such as an admission-control 503, must not be counted as an equally costly completed request. Use a dedicated processed-work counter, or an appropriately filtered recording rule, when the HTTP completion counter also includes rejected requests. Counters must be initialized, including zero-valued error counters, and belong to a single observation point. Document whether retries count as attempts or original requests. Do not combine both ingress and application counters for the same work. The current adapter expects counters attributed to the resolved application pods; a gateway-wide counter or an Istio completion counter cannot automatically stand in for per-pod request starts.
+Provide distinct cumulative counters for request starts and completed processing work. A cheap rejection before processing, such as an admission-control 503, must not be counted as an equally costly completed request. Use a dedicated processed-work counter, or an appropriately filtered recording rule, when the HTTP completion counter also includes rejected requests. Counters must be initialized, including zero-valued error counters, and belong to a single observation point. Document whether retries count as attempts or original requests. Do not combine both ingress and application counters for the same work. The adapter expects counters per application pod; a gateway-wide counter or an Istio completion counter cannot automatically stand in for per-pod request starts.
 
 Use a short scrape interval, for example two seconds. The default allowed endpoint distance is three seconds (`maxAgeSeconds` can explicitly increase it up to thirty). The adapter uses native Prometheus counter timestamps, rejects counter resets and excessive gaps, and aligns CPU accounting to the corresponding completion-counter intervals. Namespace, pod names and UIDs are resolved by HPA+ and enforced on queries and returned series.
 
@@ -52,7 +52,7 @@ spec:
   mode: observe              # Inspect recommendations before enabling control.
   minReplicas: 1
   maxReplicas: 8
-  syncPeriod: 30000          # Milliseconds; matches the initial forecasting cadence.
+  syncPeriod: 30000          # Milliseconds; request demand needs 30000.
   includeHPA: false
   predictionFailurePolicy: HoldCurrent
   metrics:
@@ -94,7 +94,7 @@ spec:
 
 These metric names are illustrative: configure the actual counters exported by your telemetry source. `errorsMetric` counts failed attempts, including admission rejections, at the same observation point. Optional `outcomesMetric` counts every finished HTTP/gRPC outcome, errors included, at that same point. It supplies the denominator of the error fraction; `completionsMetric` stays the processed-work counter. Without it, errors per second are available but the error fraction is not. The controller excludes CPU-cost accounting windows when observed errors exceed 1% of processed completions, because those windows may contain work that the successful-completion counter cannot explain. It can combine HTTP/gRPC outcomes through a correctly scoped recording rule. Latency buckets must contain seconds and an initialized `+Inf` bucket. Optional `additionalLabels` restricts a particular reporter or observation point; it cannot override the workload identity labels or histogram `le` label.
 
-This initial mode requires an explicit `spec.syncPeriod: 30000`; omission retains the legacy fifteen-second default and is rejected for request-demand models. The request predictor uses thirty-second intervals. `lookAhead: 90000` produces three forecast intervals; other supported horizons round up to thirty-second intervals. Sixty genuine arrival samples need at least thirty minutes; missing samples extend warm-up. The configured quantile, tree count, depth, lag count and inferred seasonality are recorded in worker diagnostics. Predictors see observed telemetry and availability timestamps only. Future schedules, manually calibrated request costs and future optional-feature values are not inputs.
+Request demand requires an explicit `spec.syncPeriod: 30000`; leaving it out means the fifteen-second default, which is rejected for request-demand models. The request predictor uses thirty-second intervals. `lookAhead: 90000` produces three forecast intervals; other supported horizons round up to thirty-second intervals. Sixty genuine arrival samples need at least thirty minutes; missing samples extend warm-up. The configured quantile, tree count, depth, lag count and inferred seasonality are recorded in worker diagnostics. Predictors see observed telemetry and availability timestamps only. Future schedules, manually calibrated request costs and future optional-feature values are not inputs.
 
 ## Online cost estimation and decisions
 
@@ -106,7 +106,7 @@ CPU-seconds = c × completed requests + b × running-pod-seconds
 
 Here `c` estimates CPU-seconds per request and `b` estimates background CPU cores per pod. Nonnegative weighted least squares retains fifteen minutes of evidence, uses a two-minute weighting half-life and requires at least twenty qualified windows with sufficient independent variation. Constant completion rate per pod can make the two terms unidentifiable; HPA+ reports that state rather than supplying a benchmark-specific coefficient.
 
-Qualification requires aligned and sufficiently complete counters and homogeneous pod capacity/revision. Failed-request contamination and incomplete CPU accounting exclude unsuitable windows. High utilization alone is not a reason to reject completed-work evidence. Each new observation is checked against the previous estimate before refitting: three consecutive same-direction errors above 25% mark drift, and three eligible sequential checks within that tolerance permit recovery. An estimate expires two minutes after its latest suitable observation. These are initial experimental thresholds, not accuracy guarantees.
+Qualification requires aligned and sufficiently complete counters and homogeneous pod capacity/revision. Failed-request contamination and incomplete CPU accounting exclude unsuitable windows. High utilization alone is not a reason to reject completed-work evidence. Each new observation is checked against the previous estimate before refitting: three consecutive same-direction errors above 25% mark drift, and three eligible sequential checks within that tolerance permit recovery. An estimate expires two minutes after its latest suitable observation. These are experimental thresholds, not accuracy guarantees.
 
 With a qualified request forecast, the replica ratio is:
 
@@ -114,7 +114,7 @@ With a qualified request forecast, the replica ratio is:
 N = ceil(λ × c / (q × u − b))
 ```
 
-where `λ` is the forecast of incoming requests per second, `q` is CPU request per pod and `u` is the CPU target fraction. A nonpositive denominator makes this conversion unavailable. The controller then applies its existing rounding tolerance, timing, replica bounds and scaling policies. Forecasts are timestamped: higher future demand can scale up within `scaleUpLeadSeconds`; a future low forecast does not replace an already issued interval before that interval ends. Downscale stabilization defaults to zero; explicit user behavior remains effective.
+where `λ` is the forecast of incoming requests per second, `q` is CPU request per pod and `u` is the CPU target fraction. A nonpositive denominator makes this conversion unavailable. The controller then applies the usual rounding tolerance, timing, replica bounds and scaling policies. Forecasts are timestamped: higher future demand can scale up within `scaleUpLeadSeconds`; a future low forecast does not replace an already issued interval before that interval ends. Downscale stabilization defaults to zero; an explicit `behavior` still applies.
 
 The decision path is:
 
@@ -122,7 +122,7 @@ The decision path is:
 2. Otherwise, an eligible CPU forecast: CPU recommendation.
 3. Otherwise: hold the current requested replica count.
 
-This mode requires explicit `includeHPA: false`, `predictionFailurePolicy: HoldCurrent`, and `control` or `observe` mode. It does not use a reactive recommendation as a fallback. Reactive recommendations remain available for comparison. Existing configurations outside this mode retain their legacy failure policy. If all configured resource measurements are unavailable, the existing metric guard also prevents a scale write; inspect `MetricsAvailable` for that case.
+This mode requires explicit `includeHPA: false`, `predictionFailurePolicy: HoldCurrent`, and `control` or `observe` mode. It does not use a reactive recommendation as a fallback. Reactive recommendations remain available for comparison. Models without request demand follow the resource's `predictionFailurePolicy`. If all configured resource measurements are unavailable, the metric guard also prevents a scale write; inspect `MetricsAvailable` for that case.
 
 Learning state and issued request forecasts are persisted in an owned ConfigMap, separately from CPU fallback history. Workload identity, relevant configuration and telemetry semantics fence reuse; controller restart does not make an expired estimate fresh. `status.modelStatuses[].requestDemand` reports learning state, CPU cost, background CPU, qualified sample count, last observation, expiry, selected source (`request-demand`, `cpu-forecast` or `hold`) and fallback reason.
 

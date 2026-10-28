@@ -1,8 +1,9 @@
 # Installation
 
-You can install HPA+ on your cluster after you have installed the HPA+ operator onto your cluster.
+Install the operator with Helm, then create `HPAPlus` resources for your workloads. No prebuilt image is published,
+so build your own first.
 
-1. Build and push the controller image with the registry you plan to use:
+1. Build and push the operator image to a registry your cluster can pull from:
 
    ```bash
    export REGISTRY=<your-registry-or-dockerhub-user>
@@ -12,110 +13,82 @@ You can install HPA+ on your cluster after you have installed the HPA+ operator 
    make push REGISTRY=${REGISTRY} VERSION=${VERSION}
    ```
 
-2. Install the Helm chart from this repository while overriding the image fields:
+2. Install the Helm chart from this repository with your image:
 
    ```bash
    helm upgrade --install hpa-plus-operator ./helm \
      --namespace hpa-plus-system \
      --create-namespace \
      --set image.repository=${REGISTRY}/hpa-plus-operator \
-     --set image.tag=${VERSION} \
-     --set mode=cluster
+     --set image.tag=${VERSION}
    ```
 
-After you have done that you can install `HPAPlus` objects onto your cluster. Follow the [getting started
-guide](./getting-started.md) to configure an existing workload.
+The chart installs the CRD, the operator and its permissions. Then follow [getting started](getting-started.md) to
+configure an existing workload.
 
 ## Operator deployment settings
 
-The chart defaults to one replica with leader election enabled. A namespaced Role grants lease and leader-election
-event permissions. More than one replica requires `leaderElection: true`; full cluster failover qualification remains
-outstanding. In-memory Python fits are recreated after leadership changes, while histories, optional cached predictions,
-and pending scale accounting live in ConfigMaps.
+The chart runs one replica with leader election enabled, and a namespaced Role grants the Lease permissions. More
+than one replica requires `leaderElection: true`. In-memory Python fits are rebuilt after a leadership change, while
+histories, cached forecasts and pending scale accounting live in ConfigMaps.
 
-The default deployment strategy is `Recreate`, so the first upgrade cannot overlap a legacy operator that ignored
-leader election with a new leader. This introduces an operator pause during rollout; workload replicas remain running.
-`deploymentStrategy: RollingUpdate` is available after every participating operator version uses the same leader lock.
+The default deployment strategy is `Recreate`, so two managers never run at the same time during an upgrade. The
+operator pauses while the new pod starts; workload replicas keep running. `deploymentStrategy: RollingUpdate` is safe
+when every manager uses the same leader-election lock.
 
-The current image build is amd64, and the default node selector enforces that architecture. The chart and Makefile
-share `0.14.0-hpaplus` release metadata; an empty `image.tag` uses the chart app version. Build and override the image
-as shown above to run the current working tree. These changes do not publish a new registry image.
+The image is built for linux/amd64, and the default node selector enforces that architecture. An empty `image.tag`
+falls back to the chart's app version.
 
-Containers run as UID/GID 65532 with a read-only root filesystem, dropped capabilities, no privilege escalation, and
+Containers run as UID/GID 65532 with a read-only root filesystem, dropped capabilities, no privilege escalation and
 the runtime's default seccomp profile. A writable `/tmp` emptyDir is capped at 128 MiB (`tmpSizeLimit`). Startup and
-liveness probes use `/healthz`; readiness uses `/readyz`. These manager checks do not certify forecast quality or metric
-availability. CPU/memory/storage requests and limits are configurable through `resources`; defaults are initial budgets,
-not benchmark-derived sizing guarantees. Numerical library thread counts are capped at one per Python process.
+liveness probes use `/healthz`, and readiness uses `/readyz`; these checks don't certify forecast quality or metric
+availability. CPU, memory and storage requests and limits are set with `resources`; the defaults are starting
+budgets, not measured sizing. Numerical libraries use one thread per Python process.
 
-Tree feature diagnostics are disabled by default. Enable `featureDiagnostics.enabled` to retain separate XGBoost and
-LightGBM CSV snapshots for each resource/model identity in ephemeral scratch storage. Defaults cap snapshots at 256 rows
-and 1 MiB each, with 64 files/16 MiB total and one-hour retention. Idle cleanup runs every minute; diagnostic failures
-never fail a forecast. The old `XGB_FEATURE_DUMP`/`LGBM_FEATURE_DUMP` shared paths are no longer honored. See
-[feature diagnostics](../reference/feature-diagnostics.md) for configuration, retrieval, limits and migration.
+Tree feature diagnostics are off by default. `featureDiagnostics.enabled` keeps XGBoost and LightGBM CSV snapshots
+for each resource and model in ephemeral scratch storage: by default at most 256 rows and 1 MiB each, 64 files and
+16 MiB in total, for one hour. Cleanup runs every minute, and diagnostic failures never fail a forecast. See
+[feature diagnostics](../reference/feature-diagnostics.md).
 
-## Admission and upgrades
+## Admission and history
 
-The chart uses the CRD schema for API-server admission and does not install admission webhooks. Additional cross-field
-checks run in the controller; resources that fail those checks can be admitted but are logged and left inactive.
+The chart uses the CRD schema for admission and installs no admission webhooks. The controller runs the cross-field
+checks: a resource that fails them is stored but stays inactive, and the reason is logged and reported in its
+`ConfigurationValid` condition. See [validation](../reference/configuration.md#validation).
 
-Earlier charts included nonfunctional `mutating-webhook-configuration` and `validating-webhook-configuration` objects
-pointing to `webhook-service` in namespace `system`. Upgrade the existing Helm release with the command above (using its
-original release name and namespace). Helm removes those objects when they were managed by that release. Do not roll
-back to an affected chart, since it reinstalls the broken webhooks.
-
-If admission still reports a missing `webhook-service`, inspect the two webhook objects and their Helm ownership
-annotations. Objects installed manually or owned by another release are not removed by upgrading this release; resolve
-their ownership before removing obsolete HPA+ webhook registrations.
-
-The LightGBM schema permits `maxDepth: -1` for unbounded depth; positive integers also work. Zero is rejected by the
-controller. XGBoost requires positive depth when provided. Omitted depth uses the algorithm's default.
-
-History is now bound to the resolved workload UID. Existing ConfigMaps without that identity start a fresh training
-window once; the HPA baseline is used while models warm up. Retargeting HPAPlus or recreating its workload also resets
-training/cached predictions and isolates incremental workers. Once status is identity-bound, old scale-policy windows
-are cleared on replacement; initial adoption preserves legacy rate accounting conservatively.
-
-### Persisted history compatibility
-
-History ConfigMaps now carry `schemaVersion: 1`. Unversioned data migrates on its next successful write, preserving any
-pending scale journal. The ConfigMap must have a matching HPAPlus owner reference; an unrelated object with the expected
-name is not adopted. Unsupported versions and unreadable JSON leave the payload untouched and prevent scaling until
-corrected. Preserve a copy and investigate the pending journal before repairing such data; deleting it can lose rate
-accounting for a partially completed scale operation.
-
-Training-window corruption is handled separately: the affected model warms up again while healthy models and the HPA
-baseline remain available. Oversized ConfigMap writes are rejected before the API call. Reduce retained histories or
-model count to recover space; automatic storage eviction is not implemented.
+History is bound to the workload's UID. Retargeting an HPAPlus or recreating its workload starts a new training
+window and isolates incremental workers, and `predictionFailurePolicy` applies while the models warm up again. The
+history ConfigMap must have a matching HPAPlus owner reference; an unrelated object with the expected name is not
+adopted. Unreadable or unsupported history stops scaling until it is repaired. Keep a copy and read
+[history recovery](../reference/history-recovery.md) before changing it: deleting it can lose the accounting for a
+partly completed scale.
 
 ## Optional worker container
 
-A locally built release image can run Python models in a separate container by setting `workerIsolation.enabled=true`.
-The worker has independent CPU/memory limits and receives no Kubernetes service-account token. Select an image built
-from this source before enabling it; older published images do not include the worker service. See
-[worker isolation](../reference/worker-isolation.md) for values, recovery behavior and metrics endpoints.
+Set `workerIsolation.enabled=true` to run the Python models in a separate container with its own CPU and memory
+limits and no Kubernetes service-account token. See [worker isolation](../reference/worker-isolation.md) for values,
+recovery behavior and metrics endpoints.
 
 ## Optional network isolation
 
-The chart supports `networkPolicy.enabled=true` with explicit ingress/egress rules. It is disabled by default.
-Configure your API and DNS destinations before enabling it; empty rule lists create default-deny isolation.
-See [network policy](../reference/network-policy.md) for configuration, preview commands, rollout checks and
+The chart supports `networkPolicy.enabled=true` with explicit ingress and egress rules. It is disabled by default.
+Configure your API and DNS destinations before enabling it; empty rule lists create default-deny isolation. See
+[network policy](../reference/network-policy.md) for configuration, preview commands, rollout checks and
 network-plugin requirements. The policy applies to the whole operator pod, including an optional worker sidecar.
 
-## Tuning-hook upgrade requirement
+## Tuning hooks
 
-New source-built versions deny HTTP tuning hooks unless `hooks.allowedOrigins` lists their exact HTTP(S) origins.
-Existing hook users must configure this value when upgrading. Redirects and URL-embedded credentials are rejected;
-models without hooks are unaffected. See [hook security](../reference/hook-security.md) for flags, configuration and authentication.
+HTTP tuning hooks are denied unless `hooks.allowedOrigins` lists their exact HTTP(S) origins. Redirects and URLs with
+credentials are rejected, and models without hooks are unaffected. See [hooks](hooks.md) and
+[hook security](../reference/hook-security.md).
 
 For authenticated hooks, `hooks.credentials` binds existing Secrets in the operator namespace to explicit HPAPlus
-namespaces/names and HTTPS origins. Only the manager mounts those tokens; no Secret API permissions are added.
-See the [authentication guide](../reference/hook-security.md#secret-based-bearer-authentication) for rotation and migration.
+namespaces, names and HTTPS origins. Only the manager mounts those tokens, and no Secret API permissions are added.
+See [bearer authentication](../reference/hook-security.md#secret-based-bearer-authentication) for setup and rotation.
 
 ## Production operations
 
-See [operating HPA+](operations.md) for capacity planning, warm-up/deadlines, failover, backups, upgrade compatibility
-and troubleshooting. The [observability guide](observability.md) documents operator status and aggregate metrics.
-
-For new predictive trials, use explicit [observe mode](rollout.md). Install the matching mode-aware image and CRD
-first; omitted/null mode preserves legacy control. The [API compatibility guide](../reference/api-compatibility.md)
-explains defaults and why old binaries must not be used while relying on rollout-mode safety.
+See [operating HPA+](operations.md) for capacity planning, warm-up, failover, backups and troubleshooting, and
+[observability](observability.md) for operator status and metrics. Start new configurations in
+[observe mode](rollout.md) with `spec.mode: observe`; an omitted mode means `control`. Install the image and the CRD
+from the same checkout.

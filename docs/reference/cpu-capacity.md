@@ -1,8 +1,8 @@
 # CPU capacity and pod resource policy
 
 HPA+ forecasts aggregate serving-container CPU demand. Its capacity denominator is a declared CPU request, not a
-measurement of throughput or a guarantee of available node CPU. This policy applies to both baseline resource
-utilization and predictive conversion; no new public configuration fields are required.
+measurement of throughput or a guarantee of available node CPU. This policy applies to both the reactive
+utilization calculation and predictive conversion.
 
 ## Resolving one pod or template
 
@@ -27,10 +27,10 @@ policy. See the [versioned upstream HPA implementation](https://github.com/kuber
 and [sidecar resource behavior](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/#resource-sharing-within-containers).
 Do not interpret HPA+ results as exact parity with every Kubernetes HPA feature-gate combination.
 
-The pinned Go Kubernetes types predate the new fields. The collector therefore reads raw Pod JSON using the dynamic
-client, and template lookup uses an unstructured API read. Both call the shared request resolver. The legacy evaluator
-receives a private typed projection containing one request carrier; metadata and readiness remain intact. That
-projection is never written to Kubernetes. One raw Pod list is shared by metric specs within a gather, with the same
+The pinned Go Kubernetes types (v0.26) lack the native sidecar and Pod-level resource fields, so the collector reads
+raw Pod JSON with the dynamic client, and template lookup uses an unstructured API read. Both call the shared request
+resolver. The HPA metrics library receives a private typed projection with one request carrier, keeping metadata and
+readiness. That projection is never written to Kubernetes. One raw Pod list is shared by metric specs within a gather, with the same
 namespace, selector, cancellation, rate budget and 30-second collection deadline. Validation is scoped to each
 metric, so unavailable memory requests do not discard valid CPU observations or independent external metrics.
 
@@ -38,7 +38,7 @@ metric, so unavailable memory requests do not discard valid CPU observations or 
 
 Predictive request per pod is the **minimum positive request among listed active pods**, further reduced if a valid
 native workload template declares a smaller request. A larger template cannot inflate capacity while smaller old
-pods remain. The previous template-first / observed-mean fallback is intentionally replaced. For example, live pods
+pods remain. For example, live pods
 requesting 100m and 400m with a new 500m template use 100m; with a new 50m template they use 50m. Once all live pods and
 the template request 500m, conversion uses 500m.
 
@@ -53,10 +53,12 @@ will have average capacity. It can overprovision and is still an estimate: admis
 CPU throttling, node contention and application throughput are not predicted. Running horizontal and vertical
 controllers on the same CPU signal still requires coordinated operator policy. No automatic VPA tuning is provided.
 
-During a known in-place resize, utilization for that resource is unavailable. Both legacy nonempty `status.resize`
-and true `PodResizePending` / `PodResizeInProgress` conditions trigger this guard. If actual or allocated request
+During a known in-place resize, utilization for that resource is unavailable. Both a nonempty `status.resize`, as
+reported by older Kubernetes versions, and true `PodResizePending` / `PodResizeInProgress` conditions trigger this
+guard. If actual or allocated request
 status is present, it must equal the desired request for the selected denominator. Container status is checked when requests are summed;
-a Pod-level override checks Pod-level status instead, allowing containers to inherit its budget. Absent status fields remain compatible with older servers. Settled requests restore normal collection.
+a Pod-level override checks Pod-level status instead, allowing containers to inherit its budget. When the server
+doesn't report these status fields, the check is skipped. Settled requests restore normal collection.
 Resource `AverageValue` and independent metric families do not require a utilization denominator.
 
 ## Partial observations and decisions
@@ -70,10 +72,10 @@ A partial CPU population—missing/ignored pods, mismatched pod counts or unmatc
 training sample**. It also enables the planner's incomplete-metrics guard, preventing baseline or model candidates
 from downscaling below the currently requested replicas. Valid upscale candidates and explicit replica bounds still
 apply. Complete observations restore normal training/downscale behavior. No zeros or utilization-derived values are
-substituted into raw CPU history. Existing persisted windows are retained: older rows do not contain enough pod
-coverage metadata to retroactively prove completeness. If earlier telemetry was incomplete, use observe mode while
-fresh complete samples refill the training window.
+substituted into raw CPU history. Rows already in the history are kept, because they don't record pod coverage and
+cannot be rechecked. If earlier measurements were incomplete, use observe mode while new complete samples refill the
+training window.
 
-Collection and template/Scale reads are not an atomic Kubernetes transaction. The existing observation cache can
+Collection and template/Scale reads are not an atomic Kubernetes transaction. The observation cache can
 reuse a snapshot for at most one second (or the shorter sync period), and final Scale conflict checks still apply.
 These guards describe observed state; they cannot guarantee that no pod changes between collection and a Scale write.

@@ -1,13 +1,13 @@
 # HTTP tuning-hook destination controls
 
-Runtime tuning hooks now require an operator-owned allowlist. With the new binary, an empty list disables hook
-requests. Existing deployments using Holt-Winters `runtimeTuningFetchHook` must configure allowed origins before
-upgrading. Models without a hook are unaffected. A denied hook fails that model attempt through the existing
-model failure/backoff and fallback path; it does not silently continue with unapproved tuning values.
+Tuning hooks can only reach origins on an allowlist that the operator administrator sets. An empty list, the
+default, disables hook requests. A denied hook fails that model attempt through the normal failure, backoff and
+fallback path; it never continues with unapproved tuning values. Models without a hook are unaffected. The
+[hooks guide](../user-guide/hooks.md) shows how a hook is configured on a model.
 
 ## Configuration
 
-For a source-built image containing this feature, configure Helm values:
+Configure the Helm values:
 
 ```yaml
 hooks:
@@ -28,8 +28,7 @@ The allowlist is configured by the operator administrator, not by individual HPA
 resources managed by that operator. Every resource author can request any path on an allowed origin, so only approve
 dedicated, trusted tuning services. Plain HTTP is supported for cluster services but provides no TLS confidentiality
 or endpoint authentication. HTTPS uses normal CA and hostname verification; there is no skip-verification option.
-This flag belongs only to the manager; the worker sidecar does not make tuning requests. Older binaries do not
-support the flag or enforce this policy, even when deployed with a newer chart.
+This flag belongs only to the manager; the worker sidecar does not make tuning requests.
 
 ## Request boundary
 
@@ -54,8 +53,9 @@ the approved hostname and its DNS administration still matters. Combine the allo
 [NetworkPolicy destinations](network-policy.md), dedicated hook services and infrastructure metadata protections.
 
 Hook request failures expose fixed error text or an HTTP status number. They do not include the request URL/query,
-upstream response body or raw transport error. Cancellation/deadline errors remain identifiable by callers. Existing
-64-KiB response-body and parent/model/hook timeout limits still apply; response headers have a 32-KiB transport limit.
+upstream response body or raw transport error. Cancellation/deadline errors remain identifiable by callers. The
+64-KiB response-body limit and the parent, model and hook timeouts still apply; response headers have a 32-KiB
+transport limit.
 See the Go [HTTP transport documentation](https://pkg.go.dev/net/http#Transport) for the underlying connection model.
 
 ## Secret-based bearer authentication
@@ -93,7 +93,7 @@ its instance to the hook via context. A matching binding adds `Authorization: Be
 namespace or origin receives no managed token. Requests with missing identity fail when credentials are configured.
 Matching requests with missing, oversized, empty or malformed tokens fail before sending HTTP. Inline Authorization
 headers conflict with managed authentication and are rejected, including empty or differently cased headers.
-Other legacy inline headers remain supported but are still stored in the CR; migrate credentials out of them.
+Other inline headers are allowed, but they are stored in the HPAPlus object, so keep credentials out of them.
 
 The token file is bounded to 8 KiB. Leading/trailing whitespace is trimmed; the remainder must use the bearer-token
 character grammar from [RFC 6750](https://www.rfc-editor.org/rfc/rfc6750#section-2.1). Tokens are read anew for every
@@ -109,14 +109,13 @@ roll the manager; Secret token rotation alone does not. Bindings use namespace/n
 the same name inherits that grant. Every path on the approved origin is eligible: dedicate and trust that service,
 and restrict who can edit an authorized HPAPlus. This does not add OAuth token refresh, basic auth or mutual TLS.
 
-The tuning request now includes a copy of the model **without its entire hook configuration**. Hook URLs, inline
-headers and authentication details are absent from both body-mode and query-mode model payloads; the original model
-is unchanged. Filesystem/authentication errors have fixed text without token content or filesystem paths. Redirects
-remain disabled and response errors remain sanitized. URL-embedded credentials are rejected.
+The tuning request includes a copy of the model **without its hook configuration**. Hook URLs, inline headers and
+authentication details are absent from both body-mode and query-mode payloads; the configured model is unchanged.
+Filesystem and authentication errors have fixed text without token content or filesystem paths. Redirects are
+disabled, response errors are sanitized and URL-embedded credentials are rejected.
 
-## Upgrade behavior
+## Enabling a hook
 
-When upgrading a hook-enabled installation, use an image built from this source, configure exact final origins,
-remove redirecting URLs and embedded credentials, and align network-policy egress. Verify model health/forecast
-recovery after the change. The new HTTP executor defaults to deny even if no flag is supplied; the chart omits the
-flag for an empty list to retain compatibility with deployments that intentionally select an older image.
+Add the hook's exact final origin to `hooks.allowedOrigins`, use a URL without redirects or embedded credentials, and
+allow the egress in your network policy. Then check the model's status for successful fits. Without the flag the
+manager denies every hook, and the chart leaves the flag out when the list is empty.
