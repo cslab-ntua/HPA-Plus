@@ -1,8 +1,7 @@
 # Worker container isolation
 
-Set `workerIsolation.enabled: true` to move **all Python execution** into a `model-workers` sidecar. This is opt-in;
-existing single-container installations keep their behavior. Build and select an image containing `/app/worker-server`
-before enabling the option; previously published images do not contain this binary.
+Set `workerIsolation.enabled: true` to move **all Python execution** into a `model-workers` sidecar. It is off by
+default. The operator image contains the worker server, `/app/worker-server`.
 
 ```yaml
 image:
@@ -53,18 +52,18 @@ flowchart LR
 
 The manager uses `--worker-socket=/var/run/hpaplus/worker.sock`. A versioned HTTP/JSON protocol travels only over that
 socket, with an allowlist of bundled model scripts, strict fields, bounded payloads/replies and bounded request admission.
-Opaque session keys are SHA-256 digests, so the bounded wire identifier does not impose a new limit on public model names.
-It propagates model deadlines and cancellation. Cleanup RPCs have a separate three-second bound and can add that
-cleanup latency after execution is canceled. Reset/cleanup requests retry only explicit busy-admission rejections within their existing three-second deadline.
-Execution is never automatically retried over the transport: an
-interrupted incremental request may have advanced model state. Existing adapter reset/refit behavior owns recovery.
-Unavailable workers return errors through the existing backoff/reactive-fallback policy; no Python is started in the
-manager container. Valid cached predictions retain their normal expiry policy.
+Opaque session keys are SHA-256 digests, so the bounded wire identifier puts no limit on model names. The protocol
+carries model deadlines and cancellation. Cleanup calls have a separate three-second bound and can add that latency
+after execution is canceled. Reset and cleanup requests retry only explicit busy-admission rejections, within their
+three-second deadline. Execution is never retried automatically over the transport, because an interrupted
+incremental request may have advanced the model state; the model adapter's reset and refit handle recovery. An
+unavailable worker returns errors through the normal backoff and fallback rules, and Python is never started in the
+manager container instead. Valid cached forecasts keep their normal expiry.
 
 One shared worker container contains the model pool. A kernel OOM may kill a Python child or restart that container,
 while the manager has its own cgroup. This does not assign a separate cgroup to each model, guarantee a particular OOM
-victim, or isolate workers from each other. Both containers still share the pod network and host kernel. Network egress
-policy, per-model containers and stronger tenant isolation are separate capabilities.
+victim, or isolate workers from each other. Both containers share the pod network and the host kernel, so there are
+no separate network rules per container, no per-model containers and no stronger tenant isolation.
 
 The pod disables automatic service-account token mounting. Only the manager receives a projected token, CA and
 namespace volume. Workers have their own bounded scratch volume and no Kubernetes credentials. Both containers run as
@@ -84,11 +83,11 @@ exec process for every probe under load. A failed or unresponsive socket returns
 execution admission, so a full model queue does not make the worker unhealthy. The manager remains independently healthy while
 forecasts are unavailable; Kubernetes pod readiness also reflects sidecar readiness.
 
-Scrape manager metrics on port 8080 and worker metrics on port 8082. Worker process/exchange activity, lifecycle and
-queue metrics now live on the worker endpoint; forecast outcomes, decisions, history I/O and controller metrics remain
-on the manager endpoint. Keep endpoint/container labels when aggregating process metrics. Port 8082 is read-only
+Scrape manager metrics on port 8080 and worker metrics on port 8082. Worker process and exchange activity, lifecycle
+and queue metrics are on the worker endpoint; forecast outcomes, decisions, history I/O and controller metrics are on
+the manager endpoint. Keep endpoint/container labels when aggregating process metrics. Port 8082 is read-only
 metrics and socket health only; the execution API has no TCP listener. Unknown routes return 404.
 
-When explicitly selecting an older worker image without the HTTP endpoint, set `workerIsolation.probeTransport: exec`.
-The CLI `/app/worker-server --check` remains supported. Upgrading to the current image should use the default `http`;
-when reusing Helm values from an older release, set this value explicitly. Helm rollback restores the previous probe configuration.
+`workerIsolation.probeTransport: exec` runs `/app/worker-server --check` as an exec probe instead of the HTTP check.
+The default `http` avoids starting a process for every probe. A Helm rollback restores the previous probe
+configuration.

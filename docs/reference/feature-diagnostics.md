@@ -14,10 +14,9 @@ featureDiagnostics:
   maxAgeSeconds: 3600
 ```
 
-Set these Helm values during a normal configuration upgrade. The chart configures `/tmp/hpaplus-features` inside the
-existing bounded ephemeral scratch volume. With `workerIsolation.enabled=true`, only `model-workers` receives these
-settings; otherwise the manager receives them. No persistent volume, API permission, CRD field or network endpoint
-is added. Enabling diagnostics requires the updated source-built image; an older image does not implement this option.
+Set these Helm values and upgrade the release. The chart configures `/tmp/hpaplus-features` inside the bounded
+scratch volume. With `workerIsolation.enabled=true`, only `model-workers` receives these settings; otherwise the
+manager receives them. Diagnostics need no persistent volume, API permission, CRD field or network endpoint.
 
 List snapshots in the isolated worker, using your release namespace:
 
@@ -54,7 +53,7 @@ Missing identity skips the write. Linear, Holt-Winters and ARIMA do not have the
 Writes replace a scope's previous snapshot atomically. Oldest snapshots are evicted to admit a new snapshot within
 the aggregate file/byte limits. During replacement, at most one additional 1-MiB staging file can exist per directory,
 plus a small lock file; provision scratch storage above `maxBytes` for this overhead and normal model scratch usage.
-The existing emptyDir and container ephemeral-storage limits still apply. With several replicas, budgets apply per pod.
+The emptyDir and container ephemeral-storage limits still apply. With several replicas, budgets apply per pod.
 
 Age and count/byte limits are enforced on writes and by an independent idle janitor at startup and every minute.
 Deleted resources and removed models need no later forecast to expire. Normally, expiry is bounded by the configured
@@ -78,19 +77,17 @@ Malformed diagnostic settings, full or unavailable storage and write/cleanup fai
 use fixed messages without paths or values. Optional diagnostics can be missing after contention, eviction or I/O
 failure; never treat them as an audit log or as a complete record of model executions.
 
-## Direct and legacy use
+## Running Python directly
 
-For local execution set `HPAPLUS_FEATURE_DUMP_DIR` to a dedicated absolute directory with an existing parent.
-The runtime creates the final directory privately. Optional environment limits are
-`HPAPLUS_FEATURE_DUMP_MAX_FILES`, `HPAPLUS_FEATURE_DUMP_MAX_BYTES` and `HPAPLUS_FEATURE_DUMP_MAX_AGE_SECONDS`.
-The Go adapters provide `diagnosticScope` automatically when the controller has assigned a session identity.
-Direct Python callers must supply their own 64-character lowercase hex `diagnosticScope` in the tree input.
-The operator's one-shot envelope and private Unix transport remain version 1; the new input field is optional.
+For local runs, set `HPAPLUS_FEATURE_DUMP_DIR` to a dedicated absolute directory whose parent exists. The runtime
+creates the final directory privately. Optional environment limits are `HPAPLUS_FEATURE_DUMP_MAX_FILES`,
+`HPAPLUS_FEATURE_DUMP_MAX_BYTES` and `HPAPLUS_FEATURE_DUMP_MAX_AGE_SECONDS`. The Go adapters supply
+`diagnosticScope` automatically when the controller has assigned a session identity; direct Python callers must
+supply their own 64-character lowercase hex `diagnosticScope` in the tree input. It is an optional input field in
+protocol version 1, and without a directory and an identity nothing is written.
 
-**Migration:** `XGB_FEATURE_DUMP` and `LGBM_FEATURE_DUMP` are no longer honored. They used a single shared path per
-algorithm family. Replace them with the directory setting and an explicit identity; there is no silent unscoped
-fallback. Standalone Python invocations enforce retention on writes. For idle standalone directories, schedule the
-same cleanup command yourself (the manager and worker-server already schedule it):
+Standalone Python runs enforce retention when they write. For idle standalone directories, schedule the same cleanup
+command yourself; the manager and the worker server already schedule it:
 
 ```sh
 HPAPLUS_FEATURE_DUMP_DIR=/absolute/private/diagnostics python algorithms/feature_diagnostics.py

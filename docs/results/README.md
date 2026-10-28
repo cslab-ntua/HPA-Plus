@@ -126,7 +126,7 @@ Request demand answered at least 96.7% of requests in time in every scenario. On
 - **The reactive setup is not a default Kubernetes HPA.** It reacted every 30 seconds and removed pods without the default 5-minute scale-down stabilization window. A default HPA keeps more pods after each peak; that configuration was not tested.
 - **Request demand needs request metrics.** It reads per-pod request counters from Prometheus and CPU from the HPA+ cgroup collector; see the [request-demand guide](../user-guide/request-demand.md). Without them, HPA+ forecasts from CPU alone, like the second setup.
 - **It costs more than reacting late.** Request demand's pods requested 31% more CPU than the reactive formula's over the two measured hours, because its pods were ready before each rise rather than after it.
-- **Scale-up period.** All setups could add pods once per 60 seconds. HPA+ now defaults to 15 seconds, as Kubernetes does, which lets every setup grow faster. These runs do not measure that change.
+- **Scale-up period.** All setups could add pods once per 60 seconds. The HPA+ default is 15 seconds, as in Kubernetes, which lets every setup grow faster; these runs did not measure it.
 - **Fast pod start.** Pods in this test were ready 1 to 3 seconds after they were created. Applications that start slowly leave less time to react.
 
 ## How the test was run

@@ -1,14 +1,14 @@
 # History storage and ownership
 
-The production reconciler and sampler use `internal/history.Store`. `Load` returns a consistent, caller-owned logical
-snapshot and opaque revision; `Commit` conditionally publishes a replacement. Conflicts cause a fresh read and repeat
-of the mutation. Backends preserve unrelated data, enforce their limits, and never shorten training windows to fit.
-The snapshot's final validation callback rechecks resource identity and caller-supplied freshness after staging I/O.
+The reconciler and the sampler use `internal/history.Store`. `Load` returns a consistent, caller-owned logical
+snapshot and an opaque revision; `Commit` conditionally publishes a replacement. A conflict causes a fresh read and a
+repeat of the change. Backends keep unrelated data, enforce their limits and never shorten training windows to fit.
+The snapshot's final validation callback checks the resource identity and the caller's freshness again after staging.
 
-`prediction.Runtime` provides explicit prediction, pruning and session-lifecycle methods. Its adapter preserves the
-existing Python implementations, cancellation and typed warmup errors, and copies forecast inputs before invoking
-legacy predictors. `metrics.CPUObservation` carries raw demand/capacity, source identity, expiry and metric status
-before evaluator substitutions. The pure decision package consumes explicit inputs; Kubernetes writes stay outside it.
+`prediction.Runtime` provides the prediction, pruning and session-lifecycle methods. It keeps the Python models'
+cancellation and typed warm-up errors, and copies forecast inputs before calling a model. `metrics.CPUObservation`
+carries raw demand and capacity, source identity, expiry and metric status before any evaluator substitutions. The
+decision package works only on explicit inputs; Kubernetes writes stay outside it.
 
 ## Field ownership
 
@@ -32,32 +32,72 @@ Status ownership is explicit at the field boundary:
 | `targetIdentity`, `currentReplicas`, `desiredReplicas`, `reference`, `lastScaleTime`, `lastScaleDecisionID`, both recommendation histories and both scale-event histories | Reconciliation target binding, Scale publication and journal recovery. |
 | Required zero `desiredReplicas`/`reference` on a first status write | Shared patch serialization; either loop can initialize the wire fields without replacing existing values. |
 
-Every patch reloads the current object, checks UID/generation/deletion, and uses resourceVersion-based optimistic locking.
-Conflict retries repeat the mutation against fresh state; they do not replay a full stale status snapshot. Both loops use
-the same total status byte budget, preserving required safety histories rather than silently truncating them.
+Every patch reloads the current object, checks UID, generation and deletion, and uses resourceVersion-based
+optimistic locking. Conflict retries repeat the change against fresh state instead of replaying an old status
+snapshot. Both loops share the same total [status size budget](configuration.md#status-size) and keep the required
+safety histories instead of truncating them.
 
-These checks provide conditional updates, not a cross-object transaction between an HPAPlus specification, history and
-Scale. Identity is checked again after journal publication before attempting Scale. Existing Scale resourceVersion checks
-and conservative recovery still apply.
+These checks give conditional updates, not a transaction across the HPAPlus spec, its history and the Scale
+subresource. Identity is checked again after the journal is saved and before the Scale write, and the Scale
+resourceVersion checks and conservative recovery still apply.
 
-## Automatic allocation
+## Storage layout
 
-`AllocatingStore` is wired in `main.go`. Small histories retain the existing single ConfigMap format and 768 KiB state /
-256 KiB journal partitions. When a state write exceeds the small-state partition, the backend automatically creates
-immutable ConfigMaps containing ordered 512 KiB binary chunks. A single model can span chunks; all models retain their
-configured windows. Allocation follows actual encoded demand, not estimated row sizes or model priority.
+Each HPAPlus owns a `hpa-plus-<name>-data` root ConfigMap. Small histories live in it, with a 768 KiB state partition
+and a 256 KiB journal partition. When a state write outgrows that partition, the store creates immutable ConfigMaps
+holding ordered 512 KiB binary chunks. One model can span chunks, and every model keeps its configured window.
+Allocation follows the real encoded size, not estimated row sizes or model priority.
 
-The logical state budget is 16 MiB per HPAPlus, including unrelated root values; the journal retains its 256 KiB budget.
-Every physical ConfigMap also stays within Kubernetes' 1 MiB data limit. At most 32 chunks describe one committed state.
-Existing non-growing oversized journals retain the compatibility allowance. Oversized requests or Kubernetes quota
-failures preserve the last committed snapshot and return an explicit storage failure; no model is silently evicted.
-ResourceQuota must allow staging a replacement snapshot alongside the committed one, plus the root and any orphan
-chunks awaiting cleanup. These are per-resource storage limits, not a global operator memory or cluster-storage budget.
+The logical state budget is 16 MiB per HPAPlus, including unrelated root values, and the journal keeps its 256 KiB
+budget. Every physical ConfigMap stays within Kubernetes' 1 MiB limit, and at most 32 chunks describe one committed
+state. A journal that is already over budget may stay the same size or shrink, but cannot grow. An oversized write or
+a Kubernetes quota failure keeps the last committed snapshot and returns an explicit storage failure; no model is
+evicted silently. A ResourceQuota must allow a replacement snapshot to be staged next to the committed one, plus the
+root and any orphan chunks waiting for cleanup. These are per-resource limits, not a global operator memory or
+cluster storage budget.
 
-`status.historyCapacity.stateBudgetBytes` reports the selected backend's logical budget: 16777216 for production's
-allocating backend, 786432 for the retained single-ConfigMap implementation. Current/projected state bytes refer to
-logical serialized history and unrelated values; they exclude chunk API metadata, transport/base64 overhead and staged
-copies. `projectedJournalBytes` remains a nominal advisory estimate; actual serialized checks govern writes.
+When training fills the budget, reduce the number of models or their retained history. The sampler applies a reduced
+window before gathering, even during delayed starts or missing CPU, and removing all models clears their histories.
+Pending decisions and target metadata are kept. Retention settings must still meet each model's minimum history and
+cadence. The operator never shortens windows to fit the bytes, because that could stop models from warming up. For an
+oversized journal, reduce the stabilization history needed; an unreadable or invalid journal needs repair, see
+[history recovery](history-recovery.md). `historyMaxAge` adds age-based retention on top of the counts; see
+[training data age](forecast-policy.md#training-data-age).
+
+## Capacity planning status
+
+Reconciliation assesses capacity before evaluating metrics or models, including during scale cooldown and pending
+journal recovery. `status.historyCapacity` is a fixed-size advisory report:
+
+| Field | Meaning |
+| --- | --- |
+| `projectedStateBytes` | Conservative estimate for all configured full training windows, lifecycle metadata, envelope and current unrelated ConfigMap data. |
+| `projectedJournalBytes` | Nominal future journal size at configured stabilization windows and sync cadence, at least current retained recommendation counts plus one and current journal bytes. |
+| `currentStateBytes` | Normalized encoded stored state and unrelated data, excluding the pending journal. Includes histories awaiting removal. |
+| `currentJournalBytes` | Normalized current journal size, including its field framing. |
+| `stateBudgetBytes` | Logical state budget: 16777216 bytes. |
+| `journalBudgetBytes` | Journal partition budget: 262144 bytes. |
+
+`HistoryCapacityAvailable` reports `WithinBudget`, `ProjectedCapacityExceeded`, `ProjectedJournalCapacityExceeded`,
+`CurrentCapacityExceeded` or `NotEvaluated` (Unknown, with no numbers when the assessment is unavailable). A current
+overrun takes precedence over a projected one. Reducing the configuration can clear a projected warning on the next
+reconciliation. Current usage reflects the history read at the start of the reconciliation; later writes show up in
+the next report. Current and projected state bytes count logical serialized history and unrelated values, not chunk
+API metadata, transport or base64 overhead, or staged copies.
+
+The projection accounts for JSON escaping in model names, the full configured counts for all five model types, wide
+numeric values and cache, backoff and scheduling metadata. It doesn't allocate future sample arrays, and it stops at
+9007199254740991 bytes, the largest exactly representable JSON integer; a report at that ceiling means at least that
+many estimated bytes. Age limits, delayed starts and unfinished warm-up don't reduce the requested window, and
+metadata is reserved even when a model doesn't use every field. Real encoded samples can be smaller, so a projected
+warning doesn't prove that writes will fail.
+
+These estimates neither reserve space nor change sampling, fitting, fallback or scaling. Real byte checks still
+govern every write. The journal projection uses `ceil(stabilizationWindow/syncPeriod)+1` rows in each direction and
+at least the currently retained count plus one, with wide row values, escaped target references and room for IDs
+and resource versions. Faster watch-triggered reconciliations, unusually long identities and future unrelated data
+can exceed the estimate, so review stabilization windows and sync cadence when journal growth is projected. There is
+no eviction.
 
 ## Publication and recovery
 
@@ -74,49 +114,65 @@ sequenceDiagram
     W->>C: Reclaim superseded chunks
 ```
 
-The root stores a version-2 manifest containing chunk names, UIDs, SHA-256 digests, byte counts and the pending journal.
-Each chunk is immutable and owned by the HPAPlus; a root-UID label scopes cleanup. The logical state inside chunks uses
-the existing strict version-1 codec. Readers validate ownership, UIDs, hashes, sizes and journal fields before returning
-any state. If publication deletes chunks from an older read, the reader detects the changed root revision and retries.
+The root stores a version-2 manifest with chunk names, UIDs, SHA-256 digests, byte counts and the pending journal.
+Each chunk is immutable and owned by the HPAPlus, and a root-UID label scopes cleanup. The logical state inside the
+chunks uses the strict version-1 codec. Readers validate ownership, UIDs, hashes, sizes and journal fields before
+returning any state. If a publication deletes chunks from an older read, the reader sees the changed root revision
+and retries.
 
 A monotonically increasing root annotation fences competing writers before cleanup. Cleanup deletes only older,
-unreferenced chunks for that root and owner, using UID/resourceVersion preconditions. It does not infer ordering from
-opaque Kubernetes resource versions or wall clocks. Stale writers cannot publish after another writer advances the
-fence. Failed staging/publication leaves the previous complete snapshot readable; later writes reclaim orphan chunks.
-Journal-only updates reuse unchanged state chunks. Removing models reclaims their stored bytes on the next publication.
-Deleting the HPAPlus lets Kubernetes garbage collection remove the root and chunks.
+unreferenced chunks for that root and owner, with UID and resourceVersion preconditions. It never infers ordering
+from opaque Kubernetes resource versions or wall clocks. A stale writer cannot publish after another writer has
+advanced the fence. Failed staging or publication leaves the previous complete snapshot readable, and later writes
+reclaim orphan chunks. Journal-only updates reuse unchanged state chunks, removed models free their bytes on the next
+publication, and deleting the HPAPlus lets Kubernetes garbage collection remove the root and the chunks.
 
-Chunk reads and cleanup lists use the uncached API reader. This avoids starting a cluster-wide informer that would
-retain all history chunk contents in the operator's cache. Raw metric observation reuse stays process-local: the metrics
-API remains the source of measurements, while durable source watermarks prevent duplicate training across restarts or
-writers. A distributed raw-observation cache is not required for this policy and has not been added.
+Chunk reads and cleanup lists use the uncached API reader, so the operator doesn't start a cluster-wide informer
+that would keep every chunk in its cache. Raw metric reuse stays inside the process: the metrics API remains the
+source of measurements, and durable source watermarks prevent duplicate training across restarts and writers.
 
-## Compatibility and missing data
+## Format changes and missing data
 
-Migration happens automatically when a write first requires allocation. Once migrated, a resource keeps the manifest
-format even after shrinking. Older strict readers also reject the new optional source-marker fields in version-1 model histories.
-Older binaries may reject the version-2 root. Do not downgrade a migrated resource to an incompatible operator or use a
-single-root backup as a complete backup. Preserve the root **and all referenced chunks**.
+A history moves to the chunked format the first time a write needs it, and stays in that format after it shrinks.
+Builds without chunk support cannot read it, and they also reject the optional source-marker fields in version-1
+model histories, so don't go back to such a build with migrated data. The root alone is not a complete backup:
+keep the root **and all referenced chunks**.
 
-A missing or corrupt chunk blocks history mutation and scaling recovery rather than inventing training data or dropping
-unknown scale intent. Recreating a deleted chunk gives it a new Kubernetes UID; blindly applying a saved root is
-insufficient. Investigate ownership, chunk references and any pending journal before manual recovery. See
+A missing or corrupt chunk blocks history changes and scaling recovery instead of inventing training data or
+dropping unknown scale intent. Recreating a deleted chunk gives it a new Kubernetes UID, so applying a saved root
+again is not enough. Check ownership, chunk references and any pending journal before a manual recovery; see
 [history corruption and recovery](history-recovery.md).
 
 ## Competing forecast completions
 
-The native controller queue serializes a namespace/name within each controller. Sampling runs in a separate controller;
-there is no global lock across processes. Leader election supplies the deployment's ordinary single active manager,
-while optimistic storage/status checks remain necessary during shutdown, takeover and concurrent sampling.
+The controller queue serializes a namespace and name within each controller. Sampling runs in a separate controller,
+and there is no global lock across processes. Leader election gives the deployment a single active manager, and the
+optimistic storage and status checks still matter during shutdown, takeover and concurrent sampling.
 
 Before fitting, orchestration copies the forecast-owned consumed marker, cache and failure state. Success and failure
-publication compare those fields again on every fresh storage read and conflict retry, in addition to owner generation,
-target identity, history epoch and input deadline checks. The first completion wins. A late success cannot clear another
-completion's failure; a late failure cannot back off another completion's success or increment its failure count. A
-rejected success contributes no decision candidate. An uncached result for an already consumed timestamp is also
-rejected when no failure state needs clearing. This is a completion check, not a model execution lease.
+publication compare those fields again on every fresh read and conflict retry, along with the owner generation,
+target identity, history epoch and input deadline. The first completion wins. A late success cannot clear another
+completion's failure, and a late failure cannot back off another completion's success or increase its failure count.
+A rejected success adds no decision candidate. An uncached result for a timestamp that was already consumed is also
+rejected when there is no failure state to clear. This is a completion check, not a lease on model execution.
 
-Sampler appends, other models and journal writes are excluded from the completion comparison and remain preserved.
-Pruning/reset helpers invalidate forecast state through epochs; status writes still patch only owned fields against
-current resource versions. Multi-replica leader/node failover and cross-object recovery campaigns remain separate from
-these deterministic ownership guarantees.
+Sampler appends, other models and journal writes are left out of the completion comparison and are kept.
+Pruning and reset helpers invalidate forecast state through epochs, and status writes still patch only owned fields
+against current resource versions.
+
+## Sampling and duplicate measurements
+
+Periodic sampling wakes at a stable per-resource offset, smaller than `min(syncPeriod/10, 1 second)`, after the next
+slot. Recorded slot timestamps, earlier lifecycle deadlines and prompt checks after slow I/O are not affected by the
+offset.
+
+For timestamped CPU measurements, training stores a hash of the contributing pod names and timestamps and their
+oldest source time. A repeated identity, or a source watermark that hasn't advanced, uses up the sampling slot but
+adds no training row and doesn't advance the model cadence; `SamplingActive=AwaitingNewObservation` reports this
+normal waiting state. Watermarks are stored with the model history and cleared on resets, so a restart cannot add the
+same measurement twice.
+
+Sources without usable timestamps use plain slot sampling until a timestamped source has been accepted. Once a model
+has a source watermark, untimestamped observations cannot bypass it. `metricMaxAge` also rejects old and future
+source times for evaluation. Sparse or stalled sources can delay warm-up or expire an age-bounded window; HPA+ never
+makes up measurements to fill the gap.

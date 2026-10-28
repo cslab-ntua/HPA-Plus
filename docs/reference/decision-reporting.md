@@ -1,14 +1,14 @@
 # Decision logs and Kubernetes Events
 
-HPA+ provides structured decision evidence and bounded operational Events. It changes reporting, not replica
-selection, scale safety checks, retry policy or journal recovery. Logs and Events are best-effort observations;
-persisted HPAPlus status and the scale journal remain the accounting records.
+HPA+ writes structured decision logs and bounded Kubernetes Events. They only report: they never change replica
+selection, scale safety checks, retry policy or journal recovery. Logs and Events are best-effort observations; the
+HPAPlus status and the scale journal are the accounting records.
 
 ## Logs and correlation
 
 The manager defaults to production JSON logging at `info`. Set Helm `logging.level=debug` for per-model execution,
-raw CPU forecasts, cache use and cadence details. Only `info` and `debug` are supported by the chart. Direct CLI users
-can use the existing `--zap-log-level` flags. Debug output retains the same error sanitization.
+raw CPU forecasts, cache use and cadence details. The chart supports only `info` and `debug`; when running the binary
+directly, use the `--zap-log-level` flags. Debug output uses the same error sanitization.
 
 Resource-scoped logs include `namespace`, `resourceName` and a fresh `reconciliationID`. After the resource is read,
 they also carry its `resourceUID`, `generation`, `targetAPIVersion`, `targetKind` and `targetName`. Model execution logs
@@ -26,7 +26,7 @@ Sampling uses its own reconciliation ID and reports errors through the same safe
 | --- | --- |
 | `outcome` | `completed` or `failed` for the scale/accounting apply attempt |
 | `scaleWrite` | API-write outcome, detailed below |
-| `mode` | Existing selection mode: `baseline`, `predictive` or `mixed`; separate from observe/assist/control rollout mode |
+| `mode` | Candidate composition: `baseline`, `predictive`, `mixed`, or `hold` when `HoldCurrent` kept the current count; separate from the observe/assist/control rollout mode |
 | `requestedReplicas`, `observedReplicas` | Workload Scale spec and observed pod counts before the attempt |
 | `baselineReplicas` | Reactive metric result, even when it is not selected as a candidate |
 | `baselineIncluded` | Whether the baseline participated in selection |
@@ -47,8 +47,8 @@ Sampling uses its own reconciliation ID and reports errors through the same safe
 
 The baseline has its own field and is not inserted into the model-candidate map, so a user model named `hpa` cannot
 hide a baseline or model entry. Logged user-supplied identity fields are capped at 256 UTF-8 bytes and stripped of
-control characters. Namespace/resource names remain Kubernetes identifiers. The bounded log summary is not a new
-status field, CRD version, retained decision-history service or model-quality claim.
+control characters. Namespace and resource names are Kubernetes identifiers. The log summary is not stored anywhere
+else and says nothing about model quality.
 
 ## Error boundary
 
@@ -100,9 +100,9 @@ does not reset an existing key's suppression interval. Client-go also applies it
 Suppressed/dropped notifications are not queued for replay; Events are not an exhaustive audit log. Local suppression
 resets on process replacement, while persisted condition comparison still suppresses unchanged states.
 
-The operator ClusterRole grants only **create/patch on core Events**, across workload namespaces, in addition to its
-existing permissions. Election-disabled deployments still report Events. The separate namespaced election Role now
-contains only Lease grants. No Event read/update/delete or Secret permissions are added. See [RBAC](rbac.md).
+For Events the operator ClusterRole grants only **create/patch on core Events**, across workload namespaces. Events
+are reported with leader election disabled too. The namespaced election Role contains only Lease grants, and there is
+no Event read, update or delete permission and no Secret permission. See [RBAC](rbac.md).
 
 ```sh
 kubectl get events -n workloads --field-selector involvedObject.kind=HPAPlus,involvedObject.name=checkout
@@ -111,7 +111,7 @@ kubectl logs -n hpa-plus deployment/hpa-plus-operator -c hpa-plus-operator
 
 ## Rollout evidence
 
-Decision JSON now includes `rolloutMode`, `baselineDesiredReplicas` and `controlDesiredReplicas`.
+Decision JSON includes `rolloutMode`, `baselineDesiredReplicas` and `controlDesiredReplicas`.
 `scaleWrite=observed` means an observe cycle completed without issuing Scale or hypothetical accounting.
-`status.lastDecision` holds the bounded latest snapshot. The existing `mode` log/metric label describes candidate
-composition, not rollout policy. See [rollout semantics](../user-guide/rollout.md).
+`status.lastDecision` holds the bounded latest snapshot. The `mode` log and metric label describes candidate
+composition, not the rollout policy. See [rollout modes](../user-guide/rollout.md).

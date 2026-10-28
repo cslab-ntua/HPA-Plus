@@ -12,7 +12,7 @@ The worker queue and execution share the model deadline. Increasing fit complexi
 
 Inspect `status.modelStatuses`, conditions and current metrics. Models need enough complete CPU observations; missing measurements do not count as zero demand. Pod starts, termination and incomplete container coverage can delay usable deployment measurements.
 
-Baseline-only decisions can be expected during warm-up, failed fits, expired predictions or unavailable history. Determine which condition applies before changing model parameters. Check prediction horizon and age separately from fitting duration and collection age. Existing valid cached forecasts keep their configured eligibility; retries do not extend their source timestamps.
+Baseline-only decisions, or holds with `predictionFailurePolicy: HoldCurrent`, are expected during warm-up, failed fits, expired forecasts or unavailable history. Find out which one applies before changing model parameters. Check the forecast horizon and age separately from fitting duration and collection age. Valid cached forecasts stay usable until they expire, and retries don't extend them.
 
 The optional `cpuHistorySource: kubelet` path changes the CPU training source and requires node-proxy access. It does not guarantee complete or earlier readings. Reactive evaluation continues through the normal metric path.
 
@@ -26,9 +26,9 @@ For corrupt data, preserve the HPAPlus, target state, root and referenced chunks
 
 ## Leadership and upgrades
 
-Keep leader election enabled when running multiple managers, and use the same lock configuration and runtime limits. Worker sessions are transient and rebuilt from stored history after leadership or container changes. The default Recreate rollout avoids overlap with older managers that did not honor the same election policy; it introduces a pause in operator processing while application pods remain running.
+Keep leader election enabled when running multiple managers, and use the same lock configuration and runtime limits. Worker sessions are transient and rebuilt from stored history after leadership or container changes. The default Recreate rollout never runs two managers at once; operator processing pauses while the new pod starts, and application pods keep running.
 
-Install matching binaries, algorithm files and CRD definitions. Review explicit defaults and history compatibility before downgrading. In particular, older versions may not understand observe mode or allocated history. Do not rely on mode safety with a binary that ignores that mode. See [API compatibility](../reference/api-compatibility.md).
+Install the image, its Python files and the CRD from the same checkout. Before going back to an older build, check that it understands the `mode` field and the chunked history format; see [history storage](../reference/history-storage.md#format-changes-and-missing-data) and [API version and defaults](../reference/api-compatibility.md).
 
 ## Inspection commands
 
