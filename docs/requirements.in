@@ -1,0 +1,5 @@
+# Docs site. Regenerate the complete hash lock with hack/lock-python.sh
+# on Python 3.14 / Linux amd64.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+mdx-truly-sane-lists==1.3

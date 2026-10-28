@@ -12,6 +12,7 @@ __pycache__
 *.dylib
 bin
 dist
+/site/
 tmp
 testbin/*
 
