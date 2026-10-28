@@ -1,8 +1,8 @@
 # Operator observability
 
-Use [resource status](../reference/configuration.md#health-and-model-status) to explain one autoscaler's current
-configuration, metric availability, model eligibility and retry state. The operator also exposes aggregate Prometheus
-metrics on its existing `/metrics` endpoint, using port 8080 by default (`--metrics-bind-address`).
+Use [resource status](../reference/configuration.md#status) to explain one autoscaler's current configuration,
+metric availability, model eligibility and retry state. The operator also exposes aggregate Prometheus metrics on its
+`/metrics` endpoint, port 8080 by default (`--metrics-bind-address`).
 
 The Helm chart does not create a metrics Service or ServiceMonitor. Configure your scraper's pod discovery for port
 8080 (and port 8082 for isolated worker telemetry). The [operations guide](operations.md) explains setup and response. For a local inspection, replace `hpa-plus` below with the operator's installation namespace:
@@ -51,13 +51,15 @@ Histogram metrics expose the usual `_bucket`, `_sum` and `_count` series. Labels
 - Rollout modes: `observe`, `assist`, `control`. Decision modes below describe candidate composition, a separate concept.
 - Decision modes: `baseline`, `predictive`, `mixed`; directions: `up`, `down`, `hold`.
 
-Unexpected categories collapse to `other`. Resource names, namespaces, model names, hook addresses and error strings
+Unexpected categories collapse to `other`. A decision that kept the current count because no forecast was usable
+(`predictionFailurePolicy: HoldCurrent`) is counted with mode `other`, and its constraint as `other` too. Resource names, namespaces, model names, hook addresses and error strings
 are never metric labels. New series appear on their first observation; counters reset when the operator process restarts.
 
 A successful model execution may later be excluded because its result could not be persisted or expired before use.
 Cache/backoff checks increment eligibility counts without incrementing execution counts. `completed` sampling includes
 concurrent no-ops; it is not an exact count of appended training rows. A completed scale decision remains counted when
 only the subsequent health-status publication fails. Direction compares requested replicas, not observed running pods.
+Status writes refused for size are explained in [status size](../reference/configuration.md#status-size).
 
 Storage counters count individual attempts, so a conflict followed by success increments both outcomes. A `read`
 includes get-or-create and decoding; creation also records its own attempt. Byte observations include unrelated data
@@ -66,7 +68,7 @@ of current per-resource usage. Inspect `SamplingActive` and operator logs to ide
 For advance sizing, inspect `HistoryCapacityAvailable` and `status.historyCapacity` on that resource. The report compares
 estimated full-window state and current state/journal sizes with their budgets. `ProjectedCapacityExceeded` is an
 advisory warning; actual storage rejection is still reported separately by the sampler. See
-[capacity planning status](../reference/configuration.md#capacity-planning-status) for assumptions and limitations.
+[capacity planning status](../reference/history-storage.md#capacity-planning-status) for assumptions and limitations.
 
 ## Example queries
 
@@ -91,8 +93,8 @@ sum(rate(hpaplus_decisions_total{mode="baseline"}[5m]))
 
 Baseline decisions are expected when no model is configured, during warmup or when no forecast is usable. Inspect
 model eligibility and resource status to distinguish those cases. Eligibility counters record assessment events rather
-than the current number of resources in each state. Controller-runtime's existing reconciliation/work-queue metrics
-remain available alongside these metrics. The independent sampler uses the `history-sampler` controller name, so its
+than the current number of resources in each state. Controller-runtime's reconciliation and work-queue metrics are
+exported alongside these. The independent sampler uses the `history-sampler` controller name, so its
 queue and reconciliation metrics can be inspected separately from the main HPAPlus controller.
 
 Rejected storage writes per second:
@@ -121,28 +123,8 @@ update attempt/outcome/duration while preserving the previous success time. New 
 Timings are best-effort status: interrupted/unpublished attempts and reports omitted by the 16 KiB budget may be absent.
 There is no additional durable attempt journal or per-model Prometheus label.
 
-## Complete status budget
-
-Every controller status mutation checks the encoded JSON size against **256 KiB**. This includes all typed status
-fields, conditions and recommendation/event histories; it is separate from the object specification and metadata.
-Existing oversized status may shrink or stay the same size, permitting repair and recovery, but may not grow.
-Neither safety history nor foreign conditions are silently removed.
-
-Before a new Scale write, projected accounting must fit **192 KiB**, reserving 64 KiB for diagnostic reports and health
-metadata. The controller checks before journal publication and again afterwards against freshly read status. Holds
-also validate accounting before recording recommendations. Projection uses the same accounting function as commit.
-A rejected decision does not send Scale; `ScalingActive=False/StatusCapacityExceeded` explains the hold when health
-can be published, and the budget-rejection metric remains available if status itself is too full to report health.
-
-Reduce configured stabilization/policy retention or allow old entries to expire; preserve accounting during repair.
-A journal from an already applied Scale remains until accounting succeeds. An independent actor can still fill status
-between the final preflight and Scale—different Kubernetes resources cannot commit atomically—so the durable journal
-and recovery path remain necessary. This budget does not impose a CRD-wide admission limit on other status writers.
-
 ## Decision logs and Events
 
-HPA+ provides production JSON decision summaries, correlated model/sampler logs and rate-limited Kubernetes Events.
-Set Helm `logging.level=debug` for per-model details; `info` is the default. Each summary distinguishes an accepted
-Scale request from a rejected, unchanged or unknown write, and its decision ID matches journal accounting. Condition
-failure/recovery Events refer to the HPAPlus in its workload namespace and never copy backend error text.
-See [decision reporting](../reference/decision-reporting.md) for fields, interpretation, Event reasons and limits.
+The manager writes a JSON summary for every decision and rate-limited Kubernetes Events for condition changes. Set
+Helm `logging.level=debug` for per-model detail; `info` is the default. See
+[decision reporting](../reference/decision-reporting.md) for the fields, Event reasons and limits.

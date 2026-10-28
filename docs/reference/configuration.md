@@ -13,13 +13,16 @@ has a complete example. These are its spec fields:
 | [`models`](#models) | required, can be empty | Forecasting models |
 | [`behavior`](#behavior) | see below | Stabilization windows and rate limits |
 | [`syncPeriod`](#syncperiod) | `15000` ms | How often HPA+ samples and decides |
-| [`metricMaxAge`](#metric-source-freshness) | no limit | Maximum age of metric timestamps |
+| [`metricMaxAge`](#metricmaxage) | no limit | Maximum age of metric timestamps |
 | [`cpuInitializationPeriod`](#cpuinitializationperiod) | `300` s | Pod start period when CPU samples may be skipped |
 | [`initialReadinessDelay`](#initialreadinessdelay) | `30` s | Pod start period for readiness changes |
 | [`tolerance`](#tolerance) | `0.1` | Smallest metric ratio change that scales |
 | [`decisionType`](#decisiontype) | `maximum` | How candidates are combined |
 | [`includeHPA`](#includehpa) | `false` | Whether the reactive recommendation joins the forecasts |
 | [`predictionFailurePolicy`](#predictionfailurepolicy) | `Reactive` | What happens when no forecast is usable |
+
+Omitted fields are filled in when the controller reads the resource, not stored in it; see
+[API version and defaults](api-compatibility.md).
 
 ## scaleTargetRef
 
@@ -56,9 +59,8 @@ Default value: `control`. Set `observe` explicitly for a new trial.
 minReplicas: 2
 ```
 
-The lower limit for the number of replicas to which the autoscaler can scale down to. `minReplicas` is allowed to be 0
-if at least one Object or External metric is configured. Scaling is active as long as at least one metric value is
-available.
+The lowest replica count HPA+ scales down to. It can be 0 if at least one Object or External metric is configured.
+Scaling stays active as long as at least one metric value is available.
 
 Default value: `1`.
 
@@ -68,10 +70,29 @@ Default value: `1`.
 maxReplicas: 15
 ```
 
-The upper limit for the number of replicas to which the autoscaler can scale up.
-It cannot be less than minReplicas.
+The highest replica count HPA+ scales up to. It cannot be less than `minReplicas`.
 
 Required; there is no default. Must be at least `1`.
+
+## metrics
+
+The metrics used for the reactive recommendation, with the same specs as the Kubernetes HPA. At least one is
+required; the operator does not add a default CPU metric. Every prediction model requires a CPU resource metric with
+target type `Utilization` and a positive `averageUtilization`. See [metrics](../user-guide/metrics.md).
+
+## models
+
+The forecasting models; see [models](../user-guide/models.md). The field is required but can be an empty list, which
+leaves only the reactive recommendation.
+
+## behavior
+
+Scaling behavior to apply, with the same fields and rules as the Kubernetes HPA `behavior`. See the
+[Horizontal Pod Autoscaler docs](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior).
+
+Default value: both stabilization windows `0` seconds. Scale-up allows 100% or four pods, whichever is more, every
+15 seconds. Scale-down allows 100% every 60 seconds. The Kubernetes HPA uses a 300-second scale-down window by
+default; set `behavior.scaleDown.stabilizationWindowSeconds: 300` to match it.
 
 ## syncPeriod
 
@@ -79,19 +100,42 @@ Required; there is no default. Must be at least `1`.
 syncPeriod: 10000
 ```
 
-Equivalent to `--horizontal-pod-autoscaler-sync-period`; the frequency with which the HPA+ calculates replica counts and
-scales in milliseconds.
-
-Set in milliseconds.
+How often HPA+ samples history and calculates replica counts, in milliseconds, like
+`--horizontal-pod-autoscaler-sync-period`.
 
 Default value: `15000` (15 seconds).
 
-Set in milliseconds.
+The sampler schedules each resource's next slot and wakes earlier for model lifecycle deadlines. Slot timestamps
+have whole-second precision, so values below a second don't give sub-second training samples; fractional seconds are
+rounded down. Invalid resources and resources without models stop periodic checks after reporting and cleanup, and a
+spec change wakes them again.
 
-History sampling uses watches and schedules each resource's next slot, with earlier wake-ups for model lifecycle
-deadlines. Slot timestamps retain whole-second precision, so subsecond values do not produce subsecond training
-observations. Fractional-second slots are rounded down consistently before persistence. Invalid and model-free
-resources stop periodic checks after successful reporting/cleanup; spec changes wake them again.
+## metricMaxAge
+
+```yaml
+metricMaxAge: 60000
+```
+
+Limits the age of source metric timestamps, in milliseconds. Pick a limit that fits your metric provider's reporting
+interval and normal latency. The range is 1–9223372036854 ms. This is separate from a model's `predictionMaxAge`,
+which controls reuse of a forecast.
+
+Default: no limit.
+
+When set, a missing, future or expired source timestamp makes that metric source unavailable. Every raw value is
+checked before aggregation, so a fresh first value cannot hide stale later ones. A partly available set can still
+scale up, while scale-down is held. If no metric is usable, the controller retries without scaling or sampling.
+Freshness is checked again after forecasting, during scale-journal retries, after the journal is saved and before
+history writes, so a slow model or storage retry can need another read. Requests already sent to the API server are
+not an atomic transaction with source expiry. Turning `metricMaxAge` on doesn't remove history that is already
+stored.
+
+Sampling and reconciliation can reuse a completed raw metric read for at most `min(syncPeriod, 1000)` milliseconds
+from the start of the collection, with or without `metricMaxAge`. Reuse needs the same resource identity, spec and
+Scale state, and `metricMaxAge` is checked again on reuse. Failed or partial reads and observations with missing or
+future timestamps are not cached. Each caller evaluates its own copy, and simultaneous misses gather independently,
+so a canceled or blocked reconciliation cannot hold up sampling. The process-local cache holds at most 256 entries
+and 16 MiB of encoded data, with 256 KiB per entry. These limits are fixed.
 
 ## cpuInitializationPeriod
 
@@ -99,8 +143,8 @@ resources stop periodic checks after successful reporting/cleanup; spec changes 
 cpuInitializationPeriod: 150
 ```
 
-Equivalent to `--horizontal-pod-autoscaler-cpu-initialization-period`; the period after pod start when CPU samples
-might be skipped.
+Like `--horizontal-pod-autoscaler-cpu-initialization-period`: the period after a pod starts during which its CPU
+samples may be skipped.
 
 Set in seconds.
 
@@ -112,8 +156,8 @@ Default value: `300` (5 minutes).
 initialReadinessDelay: 45
 ```
 
-Equivalent to `--horizontal-pod-autoscaler-initial-readiness-delay`; the period after pod start during which readiness
-changes will be treated as initial readiness.
+Like `--horizontal-pod-autoscaler-initial-readiness-delay`: the period after a pod starts during which readiness
+changes count as initial readiness.
 
 Set in seconds.
 
@@ -125,8 +169,8 @@ Default value: `30` (30 seconds).
 tolerance: 0.25
 ```
 
-Equivalent to `--horizontal-pod-autoscaler-tolerance`; the minimum change (from 1.0) in the desired-to-actual metrics
-ratio for the horizontal pod autoscaler to consider scaling.
+Like `--horizontal-pod-autoscaler-tolerance`: the minimum change, from 1.0, in the desired-to-actual metric ratio
+before HPA+ scales.
 
 Default value: `0.1`.
 
@@ -136,14 +180,14 @@ Default value: `0.1`.
 decisionType: mean
 ```
 
-Decider on which evaluation to pick if there are multiple models provided.
+How HPA+ picks one count when there are several candidates.
 
 Possible values:
 
-- **maximum** - pick the highest evaluation of the models.
-- **minimum** - pick the lowest evaluation of the models.
-- **mean** - calculate the mean number of replicas (rounded to nearest integer) between the models.
-- **median** - calculate the median number of replicas between the models.
+- **maximum** - the highest candidate.
+- **minimum** - the lowest candidate.
+- **mean** - the mean of the candidates, rounded to the nearest integer.
+- **median** - the median of the candidates.
 
 Default value: `maximum`.
 
@@ -153,15 +197,14 @@ Default value: `maximum`.
 includeHPA: true
 ```
 
-Controls whether the baseline Horizontal Pod Autoscaler (HPA) calculation participates alongside available predictions.
-When `includeHPA` is `false` (the default), a cycle with model predictions uses those predictions alone. If no model
-provides a usable prediction in the current cycle, HPA+ uses the HPA baseline. By default this includes warmup,
-intentional cadence skips, and model failures. Set a model's optional `predictionMaxAge` (milliseconds) to allow
-reuse of a successful prediction within its sample-age and forecast-horizon bounds; see [models](../user-guide/models.md).
+Whether the reactive HPA recommendation from `metrics` joins the model forecasts as one more candidate. With `false`,
+a cycle with usable forecasts uses the forecasts alone. When no model has a usable forecast, for example during
+warm-up, in a skipped cycle or after a failure, `predictionFailurePolicy` decides what happens.
 
-Fresh production forecasts also expire at their data-relative target when caching is disabled. Choose a horizon
-longer than sample age plus fitting time; stale forecasts leave the baseline available. See
-[forecast validity and uncertainty](forecast-policy.md).
+Set a model's `predictionMaxAge` to reuse a successful forecast within its sample-age and horizon limits, and choose
+a horizon longer than the sample age plus the fitting time. See [expiry and reuse](forecast-policy.md#expiry-and-reuse).
+
+Default value: `false`.
 
 ## predictionFailurePolicy
 
@@ -180,233 +223,94 @@ hold for incomplete metrics. [Request-demand](../user-guide/request-demand.md) m
 
 Default value: `Reactive`.
 
-## behavior
+## Validation
 
-Scaling behavior to apply, with the same fields and rules as the Kubernetes HPA `behavior`. See the
-[Horizontal Pod Autoscaler docs](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior).
-
-Default value: both stabilization windows `0` seconds. Scale-up allows 100% or four pods, whichever is more, every
-15 seconds. Scale-down allows 100% every 60 seconds.
-
-## models
-
-List of statistical models to apply.
-See [the models section for details](../user-guide/models.md).
-
-## metrics
-
-List of metrics to target for evaluating replica counts. At least one is required; the operator does not add a
-default CPU metric. Every prediction model requires a CPU resource metric with target type `Utilization` and a
-positive `averageUtilization`.
-See [the metrics section for details](../user-guide/metrics.md).
-
-## Validation and upgrades
-
-The CRD rejects scalar bounds and enum violations during create/update. Cross-field constraints are checked by the
-controller, preserving support for Kubernetes 1.23 without CEL or an admission webhook. An object rejected by the
-controller remains stored, but the controller stops scaling and the sampler skips it until its configuration is fixed.
-The controller logs the validation error and reports it through the `ConfigurationValid` condition.
+The CRD schema rejects scalar bounds and enum violations when an object is created or updated. The controller checks
+the cross-field rules, so HPA+ works on Kubernetes 1.23 without CEL or an admission webhook. An object that fails
+these checks stays stored, but the controller doesn't scale it and the sampler skips it until it is fixed. The reason
+is logged and reported in the `ConfigurationValid` condition.
 
 `syncPeriod` and model `calculationTimeout` must be positive, representable millisecond durations. CPU initialization
-and readiness delays must be non-negative, representable second durations. `tolerance` must be finite and non-negative.
-Model names must be nonblank and unique, with exactly one configuration block matching the model type. Optional
-`startInterval` and `resetDuration` must be positive. Optional model `historyMaxAge` is a positive representable
-millisecond duration and must allow the configured training count at the nominal sampler cadence; see
-[age retention](../user-guide/models.md#training-history-age-retention).
-
-The [model constraints](../user-guide/models.md#configuration-constraints) now reject configurations that previously
-failed at prediction time or never accumulated enough retained history to run. Before upgrading, correct resources
-with duplicate/blank model names, invalid numeric bounds, incompatible ARIMA modes, or unreachable history/cadence
-settings. Schema-invalid existing resources may also need correction before a subsequent spec update can succeed.
+and readiness delays must be non-negative, representable second durations. `tolerance` must be finite and
+non-negative. At least one metric is required. Model names must be nonblank and unique, with exactly one
+configuration block matching the model type. Optional `startInterval` and `resetDuration` must be positive. Optional
+model `historyMaxAge` must be a positive representable millisecond duration that allows the configured training
+count at the sampler cadence; see [training data age](forecast-policy.md#training-data-age). The per-model rules are
+in [models](../user-guide/models.md#validation).
 
 ## Partial metric availability
 
 If at least one configured metric fails to gather or evaluate, usable metrics and forecasts may still scale up, but
-HPA+ holds the requested replica count against downscale recommendations. This applies to model-only decisions too.
-Configured minimum/maximum replica bounds remain enforced. When every metric fails, scaling waits for a successful
-retry. Invalid or overflowing gathered metric observations reject the current calculation. All supported metric families
-check quantities and arithmetic bounds; raw conversion failures count as unavailable metrics. `spec.tolerance` applies
-consistently to every supported metric type, including Pods and Resource AverageValue.
+HPA+ holds the requested replica count against scale-down. This applies to model-only decisions too. The configured
+minimum and maximum still apply. When every metric fails, scaling waits for a successful retry. Invalid or
+overflowing metric observations reject the current calculation. All supported metric types check quantities and
+arithmetic bounds, and raw conversion failures count as unavailable metrics. `spec.tolerance` applies to every
+supported metric type, including Pods and Resource AverageValue.
 
-## Health and model status
+## Status
 
-`status.observedGeneration` identifies the specification generation assessed by the controller. Conditions report:
+`status.observedGeneration` identifies the spec generation the controller assessed. Conditions report:
 
 | Type | Meaning |
 | --- | --- |
 | `ConfigurationValid` | Whether controller-side validation passed. |
-| `MetricsAvailable` | Whether all configured metrics were gathered and evaluated safely. Partial availability restricts downscale. |
+| `MetricsAvailable` | Whether all configured metrics were gathered and evaluated safely. Partial availability restricts scale-down. |
 | `PredictionsAvailable` | Whether at least one model supplied a usable forecast at the last evaluation. |
 | `ScalingActive` | Whether reconciliation completed; failure reasons identify the failed phase. |
 | `ModelStatusComplete` | Whether every model fits in the detailed status budget. |
-| `MetricStatusComplete` | Whether every gathered metric can be included in the detailed status budget. |
-| `SamplingActive` | The independent sampler’s last outcome for this generation. |
+| `MetricStatusComplete` | Whether every gathered metric fits in the detailed status budget. |
+| `SamplingActive` | The independent sampler's last outcome for this generation. |
+| `HistoryCapacityAvailable` | Whether stored history fits its storage budget; see [capacity planning](history-storage.md#capacity-planning-status). |
 
-`SamplingActive` is owned by the sampler; it does not advance the reconciliation-owned `status.observedGeneration`.
-A persisted CPU sampling attempt reports `True/SamplesPersisted`; missing CPU reports `False/CPUUnavailable`.
-Storage failures report `HistoryReadFailed`, `HistoryWriteFailed`, `HistoryCapacityExceeded`, `HistoryDataInvalid`
-or `HistoryOwnershipMismatch`. Other failures identify the phase, and an expired attempt reports `SamplingTimedOut`.
-Invalid configurations report `False/InvalidConfiguration`; no configured models report `Unknown/NoModelsConfigured`.
-Checks for slots that are not due retain the last outcome for the same generation, including failures; a new generation
-starts at `Unknown/AwaitingSample` until an attempt completes. This is a last-outcome condition, not a freshness heartbeat.
-Each attempt has 30 seconds, followed by a separate three-second status budget if the manager remains active.
-Manager shutdown cancels both; it does not publish a failure for deliberate shutdown. Unchanged status is not rewritten.
+`SamplingActive` is owned by the sampler and doesn't advance the reconciliation-owned `status.observedGeneration`. A
+saved CPU sample reports `True/SamplesPersisted`, and missing CPU reports `False/CPUUnavailable`. Storage failures
+report `HistoryReadFailed`, `HistoryWriteFailed`, `HistoryCapacityExceeded`, `HistoryDataInvalid` or
+`HistoryOwnershipMismatch`. Other failures name the phase, and an attempt that runs out of time reports
+`SamplingTimedOut`. Invalid configurations report `False/InvalidConfiguration`, and resources without models report
+`Unknown/NoModelsConfigured`. Checks for slots that are not due keep the last outcome for the same generation,
+failures included; a new generation starts at `Unknown/AwaitingSample` until an attempt completes. This is a
+last-outcome condition, not a freshness heartbeat. Each attempt has 30 seconds, then a separate three-second status
+budget if the manager is still active. Manager shutdown cancels both without publishing a failure, and unchanged
+status is not rewritten.
 
-`status.modelStatuses` reports each model's last assessed state, CPU history/required sample counts, usable
-`forecastReplicas` (including zero), `consumedUntil`, optional cache `expiresAt`, and failure count/`retryAfter`.
-States are `Waiting`, `WarmingUp`, `Scheduled`, `Ready`, `Cached`, `Backoff`, `Failed`, `InvalidHistory`, `Unavailable`
-and `Expired`. `Cached` can coexist with retry metadata when a failed model still has an eligible cached forecast.
-Detailed reports are limited to 64 entries and 16 KiB; `modelStatusesOmitted` counts excluded models. This reporting
-limit does not disable model execution. Backend and hook error text stays in operator logs.
+`status.modelStatuses` reports each model's last assessed state, CPU history and required sample counts, usable
+`forecastReplicas` (zero included), `consumedUntil`, the optional cache `expiresAt`, and the failure count and
+`retryAfter`. States are `Waiting`, `WarmingUp`, `Scheduled`, `Ready`, `Cached`, `Backoff`, `Failed`,
+`InvalidHistory`, `Unavailable` and `Expired`. `Cached` can come with retry metadata when a failed model still has an
+eligible cached forecast. Detailed reports are limited to 64 entries and 16 KiB, and `modelStatusesOmitted` counts
+the models left out. This limit doesn't stop models from running. Backend and hook error text stays in the operator
+logs. [Observability](../user-guide/observability.md#model-execution-timing) describes the timing fields.
 
-During cooldown, metric and model reports retain the last evaluation for the same generation. Check explicit expiry
-when interpreting cached results; conditions are not continuous freshness checks. A changed generation clears old
-reports until the controller evaluates the new configuration.
+During cooldown, metric and model reports keep the last evaluation for the same generation. Check the explicit
+expiry when reading cached results; conditions are not continuous freshness checks. A new generation clears old
+reports until the controller evaluates the new spec.
 
-`status.currentMetrics` contains measured values before conservative missing-pod estimates. Resource metrics report
-average quantity and, for utilization targets, utilization percentage. Pods report average quantity; Object/External
-Value targets report total value. Object/External AverageValue targets report total divided by observed replicas,
-rounded up to milli-units; at zero replicas the report contains only total `value` because no per-pod average exists.
-The independent reporting budget is 64 entries and 16 KiB, with `currentMetricsOmitted` counting gathered values
-that could not be included. This budget does not restrict scaling evaluation. Unavailable metrics have no fabricated
-status values; use `MetricsAvailable` to distinguish a partial gather from reporting-budget omissions.
+`status.currentMetrics` holds measured values before conservative estimates for missing pods. Resource metrics report
+the average quantity and, for utilization targets, the utilization percentage. Pods report the average quantity, and
+Object or External Value targets report the total. Object or External AverageValue targets report the total divided
+by the observed replicas, rounded up to milli-units; at zero replicas only the total `value` is reported, because no
+per-pod average exists. The report is limited to 64 entries and 16 KiB, and `currentMetricsOmitted` counts gathered
+values that didn't fit. This limit doesn't restrict scaling. Unavailable metrics get no made-up values; use
+`MetricsAvailable` to tell a partial gather from values left out of the report.
 
-## Metric source freshness
+`status.lastDecision` records the latest plan and its write outcome; see
+[latest decision report](../user-guide/rollout.md#latest-decision-report).
 
-Optional `spec.metricMaxAge` limits the age of source metric timestamps, in milliseconds. For example:
+### Status size
 
-```yaml
-spec:
-  metricMaxAge: 60000
-```
+Every status write checks the encoded JSON against **256 KiB**. That covers the typed status fields, conditions and
+the recommendation and event histories, but not the spec or metadata. A status that is already too large may shrink
+or stay the same size, so it can be repaired, but it cannot grow. Safety history and conditions owned by other
+writers are never removed silently.
 
-Choose a limit that accommodates your metric provider's reporting interval and normal latency. The supported range is
-1–9223372036854 ms. When unset, HPA+ preserves its existing behavior without a source-age limit. This setting is separate
-from a model's `predictionMaxAge`, which controls reuse of an already generated forecast.
+Before a new Scale write, the projected accounting must fit in **192 KiB**, which leaves 64 KiB for reports and health.
+The controller checks before saving the journal and again afterwards against freshly read status. Holds also check
+the accounting before recording recommendations, using the same accounting function as the real commit. A rejected
+decision sends no Scale write: `ScalingActive=False/StatusCapacityExceeded` explains the hold when health can be
+published, and `hpaplus_status_budget_rejections_total` counts it even when the status is too full to report it.
 
-With the policy enabled, a missing, future or expired source timestamp makes that metric source unavailable. Each raw
-value is checked before aggregation, so a fresh first value cannot hide stale later values. A partially available set
-can still scale up; downscaling is held. If no metric remains usable, the controller retries without scaling or sampling.
-Freshness is also checked after prediction, during scale-journal retries and after journal persistence, and before history
-writes. A slow model or storage retry can therefore require another read. Requests already sent to the API server are
-not an atomic transaction with source expiry.
-
-Training history already stored before enabling this policy is retained. Sampling still uses wall-clock slots; repeated
-provider observations that remain within the age limit can currently appear in multiple slots. Source-sample
-deduplication remains separate work.
-
-Sampling and reconciliation can reuse a completed raw metric read for at most `min(syncPeriod, 1000)` milliseconds,
-measured from collection start. This local reuse limit does not replace `metricMaxAge` or change its opt-in default.
-Reuse requires matching resource identity/specification and Scale state; configured source expiry is checked again
-on reuse. Failed/partial reads and observations with missing/future timestamps are not cached. Each caller evaluates
-its own copy. Simultaneous misses gather independently, so a canceled or blocked reconciliation cannot hold up sampling.
-The process-local cache is bounded to 256 entries and 16 MiB encoded data, with a 256 KiB per-entry limit. There are no
-new public configuration fields for these fixed conservative limits.
-
-## History storage capacity
-
-Each resource owns a `hpa-plus-<name>-data` root ConfigMap. Small histories use the original 768 KiB state /
-256 KiB journal partitions. Production automatically allocates immutable 512 KiB chunk ConfigMaps when state outgrows
-that partition, up to 16 MiB logical state per HPAPlus. Every model retains its configured training window; the journal
-keeps its 256 KiB budget and each physical ConfigMap stays within Kubernetes' 1 MiB limit.
-
-These are fixed operator limits. Oversized proposals and quota failures preserve committed data; a journal that cannot
-fit is rejected before scaling. Additional quota is needed to stage a replacement alongside the committed snapshot.
-See [storage architecture, ownership and migration](history-storage.md) before backing up or downgrading a migrated
-resource. Aggregate storage metrics are described in [observability](../user-guide/observability.md).
-
-Reduce model count or configured retained history when training fills its budget. The sampler applies reduced windows
-before gathering, even during delayed starts or missing CPU; removing all models clears their histories. It preserves
-pending decisions and target metadata. Retention settings must still satisfy each model’s minimum history and cadence.
-The operator does not silently shorten windows to fit bytes, because doing so could prevent models from warming up.
-For an oversized journal, reduce stabilization history requirements; unreadable or invalid journals require repair.
-See [history corruption and recovery](history-recovery.md) before repairing persisted state, especially a pending scale journal.
-
-The retained single-ConfigMap backend allows each oversized legacy partition to remain unchanged or shrink. Production
-can migrate larger state to chunks; a non-growing oversized journal retains its compatibility allowance. Optional per-model `historyMaxAge` adds age retention.
-
-### Capacity planning status
-
-Reconciliation assesses capacity before evaluating metrics or models, including during scale cooldown and pending
-journal recovery. `status.historyCapacity` is a fixed-size advisory report:
-
-| Field | Meaning |
-| --- | --- |
-| `projectedStateBytes` | Conservative estimate for all configured full training windows, lifecycle metadata, envelope and current unrelated ConfigMap data. |
-| `projectedJournalBytes` | Nominal future journal size at configured stabilization windows and sync cadence, at least current retained recommendation counts plus one and current journal bytes. |
-| `currentStateBytes` | Normalized encoded stored state and unrelated data, excluding the pending journal. Includes histories awaiting removal. |
-| `currentJournalBytes` | Normalized current journal size, including its field framing. |
-| `stateBudgetBytes` | Logical state budget: 16777216 bytes for automatic allocation; 786432 for the single-ConfigMap backend. |
-| `journalBudgetBytes` | Journal partition budget: 262144 bytes. |
-
-`HistoryCapacityAvailable` reports `WithinBudget`, `ProjectedCapacityExceeded`, `ProjectedJournalCapacityExceeded`, `CurrentCapacityExceeded`, or
-`NotEvaluated` (Unknown, with no numeric report when assessment is unavailable). A current partition overrun takes
-precedence over a projected one. A configuration reduction can clear a projected warning on the next reconciliation.
-Current usage reflects the history read at the beginning of reconciliation; later writes appear in subsequent reports.
-
-The projection accounts for JSON escaping in model names, full configured counts for all five model families,
-wide numeric values and cache/backoff/scheduling metadata. It does not allocate future sample arrays and saturates
-at 9007199254740991 bytes for extremely large totals (the largest exactly representable JSON integer, for compatibility
-with supported API servers). A report at that ceiling means at least that many estimated bytes. Age limits, delayed starts and incomplete warmup do not reduce the requested
-window. Metadata is reserved even when a model is not currently using every field. Actual encoded samples can be
-smaller, so a projected warning does not prove that writes will fail.
-
-These estimates neither reserve space nor change sampling, fitting, fallback or scaling decisions. Actual byte checks
-still govern every write. Journal projection uses ceil(stabilizationWindow/syncPeriod)+1 rows in each direction and
-at least the currently retained count plus one. It includes wide row values, escaped target references and allowances
-for IDs/resource versions. Faster watch-triggered reconciliations, unusually long identity values and future unrelated
-data can exceed the estimate. Review stabilization windows and sync cadence when journal growth is projected.
-Automatic chunk allocation is implemented; eviction is deliberately excluded. Non-Kubernetes backends remain optional
-extensions. See [history recovery](history-recovery.md) for corruption handling and [model runtime](model-runtime.md)
-for worker controls and sizing considerations.
-
-Model execution has fixed [training/search work limits](worker-protocol.md#training-and-search-work-budgets). Exceeding
-one produces a failed forecast through existing backoff/fallback handling; it does not silently trim a training window
-or change model parameters. Reduce the requested history, tree complexity or ARIMA search/order as appropriate.
-
-
-### Sampling source identity and jitter
-
-Periodic sampling wakes at a stable per-resource offset smaller than `min(syncPeriod/10, 1 second)` after the next
-slot. Recorded slot timestamps, earlier lifecycle deadlines and prompt checks after slow I/O remain unchanged.
-
-For timestamped CPU measurements, training stores a hash of contributing pod names/timestamps and their oldest source
-time. A repeated identity or a source watermark that has not advanced consumes the sampling slot but adds no training
-row and does not advance model cadence. `SamplingActive=AwaitingNewObservation` reports this normal waiting state.
-Watermarks persist with model history and are cleared on resets, so restarts cannot re-ingest the same measurement.
-The raw observation cache remains local to the process; no distributed raw-metric cache is required.
-
-Legacy sources without usable timestamps retain slot sampling until a timestamped source has been admitted. Once a
-model has a source watermark, untimestamped observations cannot bypass it. `metricMaxAge` additionally enforces source
-age/future-time rejection for evaluation. Sparse or stalled sources may delay warmup or expire an age-bounded window;
-HPA+ does not fabricate intermediate measurements to fill it.
-
-
-## Forecast runtime controls
-
-`holtWinters.lookAhead` is optional, positive milliseconds (maximum 9223372036854). It selects the first discrete
-forecast point at or beyond the requested horizon after the newest sample. Omission retains the historical one-step
-forecast. The Go adapter sends the ordered timestamps with CPU values; explicit horizons cannot use timestamp-free
-legacy series. Cache lifetime uses the explicit horizon when present. See [model semantics](../user-guide/models.md)
-for the irregular-spacing approximation and freshness policy.
-
-Operator-wide process/session limits and retry circuit controls are configured with Helm `workers` and `modelRetry`
-values or the corresponding binary flags. See [model runtime](model-runtime.md) for defaults, sizing and compatibility.
-
-
-## Complete status capacity
-
-Controller writes enforce 256 KiB of encoded status; pre-scale accounting reserves 64 KiB of that for diagnostics.
-Long stabilization windows and event histories can exhaust the remaining 192 KiB. Decisions are then held with
-`StatusCapacityExceeded` rather than dropping safety history. See [status budgeting](../user-guide/observability.md#complete-status-budget)
-for legacy no-growth handling, hold decisions and recovery behavior.
-
-## Rollout policy and compatible defaults
-
-`spec.mode` accepts `observe`, `assist` or `control`. Omitted/null retains legacy control behavior. Observe reports
-counterfactuals without a new Scale write; assist floors selection at the reactive baseline before normal safeguards.
-See [rollout controls and decision status](../user-guide/rollout.md) for promotion, concurrency and accounting semantics.
-`status.lastDecision` records the latest bounded plan and write outcome, independently of durable journal accounting.
-
-Stable defaults are centralized in the API package. See
-[API compatibility](api-compatibility.md) for preserved wire names, explicit zero/false behavior and migration/version rules.
+Long stabilization windows and event histories can use up the space. Reduce stabilization and policy retention, or
+let old entries expire, and keep the accounting during repairs. A journal from an applied Scale write stays until its
+accounting succeeds. Another writer can still fill the status between the final check and the Scale write, because
+different Kubernetes resources cannot commit together, so the durable journal and recovery are still needed. This
+budget is not an admission limit for other status writers.
