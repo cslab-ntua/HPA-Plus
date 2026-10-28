@@ -1,67 +1,188 @@
-# HPA+ architecture
+# Architecture
 
-HPA+ retains the Kubernetes HPA configuration shape while adding CPU-demand forecasts. Reconciliation computes recommendations and applies scaling; a separate sampler records observations. Both use the same ownership, metrics, history and validation contracts.
+HPA+ is a Kubernetes operator. One manager pod watches `HPAPlus` resources and runs two loops for each of them: the
+history sampler records CPU measurements, and the reconciler forecasts demand and sets the workload's replica count
+through its Scale subresource. The models are bundled Python code that runs inside the manager container or in an
+optional worker sidecar.
+
+```mermaid
+flowchart TB
+    ui["Local UI<br/>make ui"]:::optional
+    hpaplus["HPAPlus spec"]
+    metrics["Metrics APIs"]
+    collector["cgroup collector<br/>DaemonSet"]:::optional
+    prometheus["Prometheus<br/>request counters"]:::optional
+
+    subgraph pod["Operator pod"]
+        sampler["History sampler"]
+        reconciler["Reconciler"]
+        adapters["Model adapters"]
+        python["Python models"]
+        planner["Decision planner"]
+    end
+
+    history[("History<br/>ConfigMaps")]
+    workload["Workload<br/>Scale"]
+    status["HPAPlus status<br/>and Events"]
+
+    ui -. read only .-> hpaplus
+    hpaplus -- watch --> sampler
+    hpaplus -- watch --> reconciler
+    metrics --> sampler
+    metrics --> reconciler
+    collector -.-> sampler
+    collector -.-> reconciler
+    prometheus -. requests .-> reconciler
+    sampler -- CPU samples --> history
+    history -- training window --> adapters
+    reconciler -- runs models --> adapters
+    adapters <-->|JSON| python
+    adapters -- candidates --> planner
+    reconciler -- baseline --> planner
+    planner -- replicas --> workload
+    planner --> status
+
+    classDef optional stroke-dasharray: 5 5
+```
+
+Dashed parts are optional. The cgroup collector and Prometheus are needed only for
+[request-demand mode](user-guide/request-demand.md); the collector can also be the CPU source for every model. Python
+runs in the manager container, or in a worker sidecar in the same pod. The history ConfigMaps also hold cached
+forecasts and the scale journal. The local UI runs on your own machine and only reads.
 
 ## Components
 
-| Path | Responsibility |
+| Path | What it does |
 | --- | --- |
-| `api/v1alpha1/` | HPAPlus configuration, status, defaults and generated deepcopy methods |
-| `internal/controllers/` | Reconciliation, sampling, history publication, Scale writes and recovery |
-| `internal/metrics/` | Kubernetes metrics, pod CPU completeness, source identity and capacity |
-| `internal/decision/` | Candidate selection, rollout modes, constraints and accounting |
-| `internal/history/` | Strict persisted history representation and storage interfaces |
-| `internal/prediction/` | Typed model adapters, forecast timing and CPU-to-replica conversion |
-| `internal/algorithm/`, `algorithms/` | Bounded Go/Python execution, model implementations and protocol |
-| `internal/worker/`, `cmd/worker-server/` | Optional isolated model execution over a private Unix socket |
-| `internal/hook/` | Administrator-controlled runtime tuning hooks |
-| `internal/observability/` | Aggregate telemetry, structured logs and bounded Events |
-| `helm/` | Operator deployment, CRD, resources, RBAC and optional isolation |
+| `main.go` | Manager entry point: flags, wiring, leader election |
+| `api/v1alpha1/` | HPAPlus spec and status types, defaults and generated deepcopy code |
+| `internal/controllers/` | Reconciler, history sampler, history store, scale journal and recovery, request-demand orchestration, status |
+| `internal/validation/` | Checks that the CRD schema cannot express, such as cross-field rules |
+| `internal/decision/` | Candidate selection, rollout modes, guards and scaling behavior, with no clients or writes |
+| `internal/scalebehavior/` | Kubernetes HPA stabilization and rate-limit rules |
+| `internal/metrics/` | Metric gathering, pod CPU from Metrics Server, kubelet or the cgroup collector, and CPU request capacity |
+| `internal/cgroup/`, `cmd/cgroup-collector/` | Optional DaemonSet that reads cgroup v2 counters and serves per-pod CPU snapshots |
+| `internal/history/` | Persisted history format, validation and recovery rules |
+| `internal/prediction/` | Model adapters, forecast timing and CPU-to-replica conversion |
+| `internal/prediction/requestdemand/` | Request-rate forecasts for request-demand mode |
+| `internal/workloaddemand/` | Prometheus request telemetry and online CPU-cost estimation |
+| `internal/forecastquality/` | Forecast error tracking for `forecastReliability` |
+| `internal/algorithm/`, `algorithms/` | Bounded Python process runner, and the Python models and protocol |
+| `internal/worker/`, `cmd/worker-server/` | Optional worker sidecar that runs all Python behind a private Unix socket |
+| `internal/hook/` | HTTP tuning hooks with an origin allowlist and optional credentials |
+| `internal/observability/` | Prometheus metrics, structured logs and Kubernetes Events |
+| `internal/ui/`, `cmd/hpaplus-ui/` | Read-only local web UI (`make ui`) |
+| `internal/fake/` | Test fakes |
+| `helm/` | Chart: operator deployment, CRD, RBAC, worker sidecar, cgroup collector and network policy |
 
-## Reconciliation and sampling
+## Sampling
 
-A reconciliation validates the resource, resolves its target, checks workload identity and recovers pending scale accounting. It gathers metrics, computes the reactive recommendation, loads retained history and evaluates models whose history, cadence and retry state permit execution.
+The sampler wakes at each resource's sampling slot (`syncPeriod`, 15 seconds by default) and records one aggregate CPU
+observation for the workload. It keeps only complete measurements: if a pod or container has no CPU sample, nothing is
+recorded for that slot, and missing data never becomes zero. Each row keeps its source timestamp, and a measurement
+that was already recorded is not stored again. A history belongs to one HPAPlus and one workload UID, so a recreated
+or retargeted workload starts a new history.
 
-Models return CPU demand rather than deriving demand from old replica counts. The runtime validates source identity and units, forecast provenance and validity. It converts eligible results to replicas using the workload's conservative CPU request capacity and utilization target. `includeHPA` controls whether the reactive recommendation joins available predictive candidates; when no prediction is available, the controller retains its fallback behavior.
+CPU comes from the Metrics Server by default. `cpuHistorySource: kubelet` reads kubelet summaries through the node
+proxy, and `cpuHistorySource: cgroup` reads the cgroup collector, which samples cgroup v2 counters on every node every
+two seconds.
 
-The decision planner combines candidates using `decisionType`, then applies rollout mode, incomplete-measurement protection, bounds, stabilization and rate policies. `observe` publishes a counterfactual result without a new Scale write. `assist` protects against predictive downscaling below the reactive baseline. `control` applies the configured candidate policy.
+## Reconciliation and decisions
 
-The independent sampler checks configured sampling slots and records only complete usable deployment CPU observations. It preserves source timestamps, rejects duplicate source observations and isolates histories by workload UID. Missing measurements do not become zero-valued training rows. The default `syncPeriod` is 15,000 milliseconds; resources can set another cadence.
+Each reconciliation validates the resource, resolves the target's Scale, checks the workload identity and finishes any
+scale write that a restart interrupted. It then gathers the configured metrics, computes the reactive HPA
+recommendation, loads the retained history and runs the models whose history, cadence and retry state allow it.
 
-See [configuration](reference/configuration.md), [CPU capacity](reference/cpu-capacity.md) and [rollout modes](user-guide/rollout.md).
+```mermaid
+flowchart TB
+    forecasts["Model forecasts<br/>converted to replicas"] --> combine["Combine candidates<br/>decisionType"]
+    baseline["Reactive baseline"] -. "includeHPA, or no forecast" .-> combine
+    hold["Current replicas"] -. "no forecast, HoldCurrent" .-> combine
+    combine --> guards["Guards<br/>assist: not below the baseline<br/>incomplete metrics: no scale-down"]
+    guards --> behavior["Scaling behavior<br/>stabilization, rate limits, min and max"]
+    behavior --> mode{"mode"}
+    mode -- observe --> report["Report in status"]
+    mode -- "assist, control" --> write["Save journal,<br/>update Scale"]
+```
 
-## Forecasting boundary
+Models forecast CPU demand in millicores, not replicas. The runtime checks each forecast's source, unit, timestamps
+and expiry, then converts it to replicas with the workload's CPU request per pod and utilization target. The planner
+combines the candidates with `decisionType`. The reactive baseline joins them when `includeHPA` is true and replaces
+them when no forecast is usable, unless `predictionFailurePolicy: HoldCurrent` keeps the current replica count instead.
+`assist` mode never goes below the baseline, and incomplete metrics block scale-down. Stabilization windows, rate limits
+and the replica bounds apply last, as in the Kubernetes HPA.
 
-Each model adapter implements the shared typed forecasting interface. Python receives validated timestamped CPU history and model configuration; its output carries demand, timing and provenance. The model suite includes Linear, Holt-Winters, one-shot or incremental ARIMA/SARIMA, XGBoost and LightGBM.
+In `observe` mode the plan is only reported in status. In `assist` and `control` the controller first saves a scale
+journal, then updates the Scale subresource. See [rollout modes](user-guide/rollout.md) and
+[configuration](reference/configuration.md).
 
-Scalar policies convert a forecast to a replica candidate. Optional timed policies consume a trajectory, preserve a still-valid forecast covering the current interval and account for configured lead time before future increases. Future decreases cannot replace the current interval prematurely. Optional reliability policies compare eligible forecast outcomes using actual measurements; missing outcomes remain unavailable.
+## Forecasting
 
-History length, model cadence, fit deadlines, prediction age and forecast horizon are distinct controls. A successful fit can be excluded if its result expires before use. Missing or unevenly spaced CPU measurements affect the information supplied to the models; the runtime cannot reconstruct unobserved CPU demand.
+Each model adapter (Linear, Holt-Winters, ARIMA/SARIMA, XGBoost and LightGBM) implements the same typed forecasting
+interface. Python receives validated, timestamped CPU history and the model configuration over a versioned JSON
+protocol, and returns CPU demand with its forecast time and provenance. Incremental ARIMA keeps a fitted session
+between calls; the other models fit on every run.
 
-See [models](user-guide/models.md), [typed forecasting](reference/typed-forecasting.md), [forecast policy](reference/forecast-policy.md) and [worker protocol](reference/worker-protocol.md).
+A forecast always expires at its forecast horizon, and `predictionMaxAge` allows reusing it until then. Timed
+policies (`predictivePolicy`) keep a short trajectory: they scale up within a lead time before a predicted rise and
+never remove capacity before a predicted drop arrives. Optional reliability checks compare forecasts with the
+measurements that follow and ask a degraded model to refit.
+
+See [models](user-guide/models.md), [typed forecasting](reference/typed-forecasting.md),
+[forecast policy](reference/forecast-policy.md) and [worker protocol](reference/worker-protocol.md).
+
+## Request demand
+
+CPU history cannot show demand that saturated pods failed to serve. Request-demand mode, an opt-in XGBoost option,
+adds per-pod request counters from Prometheus. The reconciler queries them for the workload's own pods, learns the CPU
+cost of a completed request from cgroup CPU measurements while the workload runs, and forecasts either incoming
+requests or CPU demand rebuilt from them. Its learned state lives in its own ConfigMap. When request data or the
+learned cost is unavailable, the model uses its CPU forecast, and without one it holds the current replica count. It
+never falls back to the reactive recommendation.
+
+See [request demand](user-guide/request-demand.md).
 
 ## History and scale accounting
 
-History belongs to an HPAPlus UID and resolved workload UID. Retargeting or recreating the workload invalidates its old history and forecasts. Sampling, forecast results and scale accounting use conditional updates and explicit field ownership so concurrent changes do not overwrite newer state.
+Each HPAPlus has a `hpa-plus-<name>-data` ConfigMap. Small histories fit in it; larger ones move to immutable chunk
+ConfigMaps listed in a versioned manifest in that root, up to 16 MiB per HPAPlus. Readers check ownership, identities,
+sizes and hashes. Writes stage the complete new data first and then publish the manifest with a conditional update,
+so a failed write leaves the previous history readable. Configured training windows are never shortened to save space.
 
-Small histories use a root ConfigMap. Larger histories allocate immutable chunks referenced by a versioned root manifest. Readers validate ownership, identities, sizes and hashes. Publication stages complete replacement data before conditionally publishing its manifest. The backend does not silently shorten configured training windows to fit.
+Before changing Scale, the controller saves a journal of the intended change. After a restart, recovery accounts for
+that change without replaying it. Kubernetes has no transaction across the HPAPlus, its history and the Scale
+subresource, so identity, resource-version and freshness checks narrow the races instead.
 
-Before changing Scale, the controller persists a journal of the intended operation. A later recovery resolves accounting without blindly replaying an old scale request. Kubernetes does not provide a transaction spanning specification, history, Scale and status; identity, resource-version and freshness checks reduce that race surface.
-
-See [history storage](reference/history-storage.md) and [corruption and recovery](reference/history-recovery.md).
+See [history storage](reference/history-storage.md) and [history recovery](reference/history-recovery.md).
 
 ## Runtime and deployment
 
-The manager runs in a Linux/amd64 image with the pinned Python algorithms. One-shot workers have bounded concurrency, incremental workers have bounded retained sessions, and model calls have deadlines and cancellation. Failed fits use persisted, fingerprint-scoped retry backoff. Numerical library threads are bounded; per-process address-space limits remain distinct from aggregate container memory limits.
+The operator image (Linux/amd64) contains the manager, the worker server, the cgroup collector and the pinned Python
+models. Python runs in bounded processes: one-shot fits have a concurrency limit, incremental sessions have a cap,
+every call has a deadline and an address-space limit, and numerical libraries use one thread. Failed fits back off per
+model, and the backoff survives restarts.
 
-With worker isolation enabled, the manager sends all model requests to a sidecar through a private Unix socket. The worker has separate resources and scratch storage and no Kubernetes service-account token. Unavailable workers produce the normal failure/cache/fallback behavior; the manager does not silently execute Python locally.
+With worker isolation enabled, all Python runs in a `model-workers` sidecar that the manager reaches over a private
+Unix socket. The sidecar has its own CPU and memory limits and no Kubernetes credentials. If it is unavailable,
+forecasts fail and the normal fallback applies; Python never runs in the manager instead.
 
-The Helm chart enables leader election and defaults to a Recreate rollout strategy. The manager can be restricted with `--watch-namespace`; that limits watched workloads, while the permissions granted to its service account remain a separate deployment concern. The optional kubelet history source requires additional node-proxy access; the default CPU source remains Metrics Server.
+The Helm chart enables leader election and uses a Recreate rollout. `--watch-namespace` limits the watched resources
+but not the service account's permissions. Holt-Winters tuning hooks can only call HTTP(S) origins on the operator's
+allowlist.
 
-See [installation](user-guide/installation.md), [worker isolation](reference/worker-isolation.md), [runtime limits](reference/model-runtime.md), [RBAC](reference/rbac.md), [network policy](reference/network-policy.md) and [hook security](reference/hook-security.md).
+See [installation](user-guide/installation.md), [worker isolation](reference/worker-isolation.md),
+[model runtime](reference/model-runtime.md), [RBAC](reference/rbac.md), [network policy](reference/network-policy.md)
+and [hook security](reference/hook-security.md).
 
-## Operational visibility
+## Observability and the local UI
 
-HPAPlus status reports metric availability, model warm-up and eligibility, failure/backoff state, capacity and the latest decision. JSON logs distinguish candidate selection, scaling constraints, API write outcomes and accounting. Aggregate metrics are available on the manager endpoint and, when isolated, the worker endpoint.
+HPAPlus status reports metric availability, model warm-up and eligibility, failures and backoff, history capacity
+and the latest decision. The manager writes JSON logs and rate-limited Kubernetes Events, and serves Prometheus
+metrics on port 8080 (8082 for the worker sidecar).
 
-These observations describe different stages: a forecast can succeed but expire, a Scale write can be accepted before pods become ready, and sampling can be active while some measurements are incomplete. See [observability](user-guide/observability.md), [decision reporting](reference/decision-reporting.md) and [operations](user-guide/operations.md).
+`make ui` runs a read-only web page on your machine. It uses your kubeconfig to read HPAPlus objects, their scale
+targets and history ConfigMaps, and shows each autoscaler's decisions, CPU and forecasts. Nothing is installed in the
+cluster.
+
+See [observability](user-guide/observability.md), [decision reporting](reference/decision-reporting.md),
+[operations](user-guide/operations.md) and the [local UI](user-guide/ui.md).
