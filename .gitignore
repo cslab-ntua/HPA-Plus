@@ -1,65 +1,37 @@
-*.out
-__pycache__
-.algorithm_coverage
-.coverage
-.coverage.*
-
-# Binaries for programs and plugins
+# Build output
+bin
+dist
+/HPA-Plus
+/site/
+*.test
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-bin
-dist
-/site/
-tmp
-testbin/*
 
-# Main HPA+ operator binary
-hpa-plus
-predictive-horizontal-pod-autoscaler
-
-# Test binary, build with `go test -c`
-*.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
+# Coverage
 *.out
+.coverage
+.coverage.*
+.algorithm_coverage
 
-# Kubernetes Generated files - skip generated files, except for vendored files
+# Python
+__pycache__
+.venv/
+.mypy_cache/
 
-!vendor/**/zz_generated.*
+# Caches and vendored code
+.cache/
+**/.gocache/
+node_modules/
+vendor/
 
-# editor and IDE paraphernalia
+# Editors
 .idea
 *.swp
 *.swo
 *~
-.venv/
-.venv/
 
-# Pre-commit cache
-**/.cache/pre-commit
-test-arima-hpa-plus.yaml
-test-deployment.yaml
-test-load.yaml
-test-app-server-configmap.yaml
-**/.gocache/
-test_load.yaml
-.cache/
-vendor/
+# Local benchmark runs
 benchmarks/
-arima_utilization.png
-decision_trace_cpu_hpa.png
-decision_trace_cpu.png
-decision_trace_cpu_arima.png
-history.csv
-plain_hpa_utilization.png
-decision_trace_utilization_hpa_lightgbm_raw.png
-decision_trace_utilization_hpa_lightgbm.png
-decision_trace_utilization_comparison.png
-decision_trace_utilization_hpa_xgboost.png
-decision_trace_cpu_xgboost.png
-
-.mypy_cache/
-node_modules/
