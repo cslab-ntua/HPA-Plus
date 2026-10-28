@@ -1,24 +1,28 @@
 repos:
-  # Basic nice-to-have checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-merge-conflict
 
-  # Go tools
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
-    hooks:
-      - id: go-fmt
-      - id: go-vet
-
-  # Optional: run go test on commit
+  # Go checks use the Go version from go.mod, like CI
   - repo: local
     hooks:
+      - id: gofmt
+        name: gofmt
+        entry: gofmt -l -w
+        language: system
+        types: [go]
+      - id: go-vet
+        name: go vet ./...
+        entry: go vet ./...
+        language: system
+        types: [go]
+        pass_filenames: false
       - id: go-test
         name: go test ./...
         entry: go test ./...
         language: system
+        types: [go]
         pass_filenames: false
