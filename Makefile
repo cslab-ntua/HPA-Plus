@@ -10,13 +10,16 @@ UI_PORT ?= 8080
 UI_HOST ?= hpaplus.localtest.me
 UI_NAMESPACE ?=
 
-.PHONY: build worker py_dependencies test gotest pytest docs docker push generate view_coverage get_controller-gen ui
+.PHONY: build worker collector py_dependencies test gotest pytest docs docker push generate view_coverage get_controller-gen ui
 
-build: worker
+build: worker collector
 	go build -trimpath -o bin/manager .
 
 worker:
 	go build -trimpath -o bin/worker-server ./cmd/worker-server
+
+collector:
+	go build -trimpath -o bin/cgroup-collector ./cmd/cgroup-collector
 
 py_dependencies:
 	python -m pip install --require-hashes -r algorithms/requirements.txt

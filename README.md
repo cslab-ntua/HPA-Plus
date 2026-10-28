@@ -47,7 +47,7 @@ To watch what HPA+ decides and why, run `make ui` and open the address it prints
 
 Use the Go version declared in `go.mod` and the Python runtime/dependencies pinned by `Dockerfile` and `algorithms/requirements.txt`.
 
-- `make build`: build the manager and worker service.
+- `make build`: build the manager, the worker server and the cgroup collector.
 - `make py_dependencies`: install the pinned model, docs and dev dependencies.
 - `make docs`: build the docs site with the same checks as CI.
 - `make generate`: regenerate deepcopy code, the CRD and operator RBAC.
