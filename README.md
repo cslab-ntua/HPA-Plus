@@ -24,7 +24,7 @@ Sampling and reconciliation run independently. Missing CPU remains missing; fore
 
 ## Build and install
 
-The operator requires Kubernetes `autoscaling/v2` support and a working resource metrics API for CPU forecasting. The supplied image targets Linux/amd64. Use an image tag that identifies your actual checkout:
+The operator requires Kubernetes 1.23 or newer (`autoscaling/v2`) and a working resource metrics API, such as metrics-server, for CPU forecasting. Installing or upgrading the chart needs cluster-admin rights, because it manages the CRD and cluster-wide RBAC. The supplied image targets Linux/amd64. Use an image tag that identifies your actual checkout:
 
 ```bash
 export REGISTRY=your-registry
@@ -35,6 +35,13 @@ helm upgrade --install hpa-plus-operator ./helm \
   --namespace hpa-plus-system --create-namespace \
   --set image.repository="$REGISTRY/hpa-plus-operator" \
   --set image.tag="$VERSION"
+```
+
+Check that the operator is running and the CRD exists:
+
+```bash
+kubectl -n hpa-plus-system rollout status deployment/hpa-plus-operator
+kubectl get crd hpapluses.hpa.plus
 ```
 
 The Helm chart installs the CRD, operator and required permissions. Each `HPAPlus` belongs in the same namespace as its target workload. Start new configurations in `observe` mode and inspect their status before enabling control. Only one autoscaler should write a workload's replica count.
@@ -49,6 +56,7 @@ Use the Go version declared in `go.mod` and the Python runtime/dependencies pinn
 
 - `make build`: build the manager, the worker server and the cgroup collector.
 - `make py_dependencies`: install the pinned model, docs and dev dependencies.
+- `make test`: run the Go and Python unit tests (needs `make py_dependencies` first).
 - `make docs`: build the docs site with the same checks as CI.
 - `make generate`: regenerate deepcopy code, the CRD and operator RBAC.
 - `make docker` / `make push`: build or publish an operator image.
