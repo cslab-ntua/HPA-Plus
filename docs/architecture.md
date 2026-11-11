@@ -64,8 +64,8 @@ forecasts and the scale journal. The local UI runs on your own machine and only 
 | `internal/cgroup/`, `cmd/cgroup-collector/` | Optional DaemonSet that reads cgroup v2 counters and serves per-pod CPU snapshots |
 | `internal/history/` | Persisted history format, validation and recovery rules |
 | `internal/prediction/` | Model adapters, forecast timing and CPU-to-replica conversion |
-| `internal/prediction/requestdemand/` | Request-rate forecasts for request-demand mode |
-| `internal/workloaddemand/` | Prometheus request telemetry and online CPU-cost estimation |
+| `internal/prediction/requestdemand/` | Request windows and forecasts kept by request-demand mode |
+| `internal/workloaddemand/` | Prometheus request telemetry for request-demand mode |
 | `internal/forecastquality/` | Forecast error tracking for `forecastReliability` |
 | `internal/algorithm/`, `algorithms/` | Bounded Python process runner, and the Python models and protocol |
 | `internal/worker/`, `cmd/worker-server/` | Optional worker sidecar that runs all Python behind a private Unix socket |
@@ -133,12 +133,12 @@ See [models](user-guide/models.md), [typed forecasting](reference/typed-forecast
 
 ## Request demand
 
-CPU history cannot show demand that saturated pods failed to serve. Request-demand mode, an opt-in XGBoost option,
-adds per-pod request counters from Prometheus. The reconciler queries them for the workload's own pods, learns the CPU
-cost of a completed request from cgroup CPU measurements while the workload runs, and forecasts either incoming
-requests or CPU demand rebuilt from them. Its learned state lives in its own ConfigMap. When request data or the
-learned cost is unavailable, the model uses its CPU forecast, and without one it holds the current replica count. It
-never falls back to the reactive recommendation.
+CPU history cannot show demand that saturated pods failed to serve. Request-demand mode, an opt-in setting for any
+model, adds per-pod request counters from Prometheus. The reconciler queries them for the workload's own pods, rebuilds
+each closed window's CPU as measured cgroup CPU times arrivals per completion, and runs the model's own forecaster on
+that rebuilt history. It never recommends fewer pods than the current rebuilt demand needs. Its request windows and
+forecasts live in their own ConfigMap. When request data is unavailable, the model uses its CPU forecast, and without
+one it holds the current replica count. It never falls back to the reactive recommendation.
 
 See [request demand](user-guide/request-demand.md).
 

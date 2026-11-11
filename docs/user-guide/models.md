@@ -37,7 +37,8 @@ Every model entry has these fields:
 - `resetDuration`: optional. Resets the model's history after it has been idle this long.
 - `predictivePolicy`: optional [timed decisions](../reference/forecast-policy.md#timed-decisions).
 - `forecastReliability`: optional [reliability checks](../reference/forecast-policy.md#reliability-checks).
-- `requestDemand`: XGBoost only, see [request demand](request-demand.md).
+- `requestDemand`: optional, every model type; forecasts CPU demand rebuilt from request counters, see
+  [request demand](request-demand.md).
 
 Choose a `lookAhead` longer than the age of the newest training sample plus the fitting time, or the forecast can
 expire before it is used. [Expiry and reuse](../reference/forecast-policy.md#expiry-and-reuse) has the details.
