@@ -16,7 +16,7 @@ import (
 func testConfig() api.RequestDemandConfig {
 	return api.RequestDemandConfig{Traffic: api.TrafficProviderConfig{Provider: "prometheus", ArrivalsMetric: "app_started_total", CompletionsMetric: "app_finished_total", ArrivalSemantics: "started", CompletionSemantics: "finished", RetrySemantics: "attempts"}}
 }
-func TestNativeCounterIntervalsAndWorkloadScope(t *testing.T) {
+func TestCounterRatesAndWorkloadScope(t *testing.T) {
 	from := time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)
 	to := from.Add(30 * time.Second)
 	client := mockHTTPClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,11 +38,8 @@ func TestNativeCounterIntervalsAndWorkloadScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Qualified || got.ArrivalsPerSecond != 10 || got.CompletedRequests != 300 {
-		t.Fatalf("native counter accounting: %+v", got)
-	}
-	if !got.PerPodIntervals[0].Start.Equal(from) || !got.PerPodIntervals[0].End.Equal(to) {
-		t.Fatalf("counter native window was relabelled: %+v", got.PerPodIntervals)
+	if got.ArrivalsPerSecond != 10 || got.Features["traffic_completions"].Value == nil || *got.Features["traffic_completions"].Value != 10 {
+		t.Fatalf("native counter rates: %+v", got)
 	}
 }
 func TestCounterResetAndNewContainerRemainMissing(t *testing.T) {
@@ -88,7 +85,6 @@ func TestSameNameReplacementUIDsHaveIndependentCountersAndCoverage(t *testing.T)
 	config := testConfig()
 	config.Traffic.ErrorsMetric = "app_errors_total"
 	config.Traffic.LatencyBucketMetric = "app_latency_bucket"
-	config.ExtraMetrics = []api.DemandExtraMetric{{Name: "queue", Metric: "app_queue", Unit: "requests", Kind: "gauge"}}
 	for _, missingOld := range []bool{false, true} {
 		t.Run(fmt.Sprintf("missing_old_%t", missingOld), func(t *testing.T) {
 			client := mockHTTPClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,8 +109,6 @@ func TestSameNameReplacementUIDsHaveIndependentCountersAndCoverage(t *testing.T)
 							value := float64(1000 + i*20*(index+1))
 							if metric == "app_errors_total" {
 								value = 0
-							} else if metric == "app_queue" {
-								value = float64(3 + index*4)
 							} else if bound == "0.5" {
 								value /= 2
 							}
@@ -131,24 +125,21 @@ func TestSameNameReplacementUIDsHaveIndependentCountersAndCoverage(t *testing.T)
 				t.Fatal(err)
 			}
 			if missingOld {
-				if got.Qualified || got.ArrivalCoverage != 0 || got.Coverage != .5 || len(got.PerPodIntervals) != 1 || got.PerPodIntervals[0].UID != "new-uid" {
+				if got.ArrivalCoverage != 0 {
 					t.Fatalf("missing old UID was replaced by new UID or counted twice: %+v", got)
 				}
-				for _, key := range []string{"traffic_arrivals", "traffic_completions", "traffic_errors", "traffic_latency_p95", "queue"} {
+				for _, key := range []string{"traffic_arrivals", "traffic_completions", "traffic_errors", "traffic_latency_p95"} {
 					if got.Features[key].Value != nil {
 						t.Fatalf("%s claimed complete replacement coverage: %+v", key, got.Features[key])
 					}
 				}
 				return
 			}
-			if !got.Qualified || got.ArrivalsPerSecond != 30 || got.CompletedRequests != 900 || len(got.PerPodIntervals) != 2 {
+			if got.ArrivalsPerSecond != 30 || got.Features["traffic_completions"].Value == nil || *got.Features["traffic_completions"].Value != 30 {
 				t.Fatalf("same-name UID accounting: %+v", got)
 			}
-			if got.PerPodIntervals[0].UID != "old-uid" || got.PerPodIntervals[1].UID != "new-uid" || got.PerPodIntervals[0].CompletedRequests != 300 || got.PerPodIntervals[1].CompletedRequests != 600 {
-				t.Fatalf("replacement counters were merged: %+v", got.PerPodIntervals)
-			}
-			if value := got.Features["queue"].Value; value == nil || *value != 10 {
-				t.Fatalf("replacement gauge population lost: %+v", got.Features["queue"])
+			if len(got.ArrivalPodCoverage) != 2 || got.ArrivalPodCoverage[0].UID == got.ArrivalPodCoverage[1].UID {
+				t.Fatalf("replacement counters were merged: %+v", got.ArrivalPodCoverage)
 			}
 			if got.Features["traffic_latency_p95"].Value == nil || got.Features["traffic_errors"].Value == nil {
 				t.Fatalf("same-name identities lost in optional feature coverage: %+v", got.Features)
@@ -250,7 +241,7 @@ func TestFinishedOutcomeErrorFractionKeepsProcessedWorkSeparate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !got.Qualified || got.Features["traffic_completions"].Value == nil || *got.Features["traffic_completions"].Value != tc.workRate {
+			if got.Features["traffic_completions"].Value == nil || *got.Features["traffic_completions"].Value != tc.workRate {
 				t.Fatalf("optional denominator changed processed-work accounting: %+v", got)
 			}
 			if feature := got.Features["traffic_errors"]; feature.Value == nil || math.Abs(*feature.Value-tc.errorRate) > 1e-9 || feature.Unit != "errors/second" {

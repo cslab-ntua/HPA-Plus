@@ -20,55 +20,6 @@ type cgroupTestTransport func(*http.Request) (*http.Response, error)
 
 func (f cgroupTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func TestCgroupHistoricalUIDDoesNotJoinRecreatedPod(t *testing.T) {
-	at := time.Now().Add(-40 * time.Second).UTC()
-	finished := at.Add(30 * time.Second)
-	row := cgroup.Pod{Namespace: "a", Name: "p", UID: "old-uid", Containers: []cgroup.Container{{Name: "app", ID: "containerd://aaaa", StartedAt: at, FinishedAt: &finished}}}
-	for i := 0; i < 15; i++ {
-		row.Containers[0].Windows = append(row.Containers[0].Windows, cgroup.Window{From: at.Add(time.Duration(2*i) * time.Second), To: at.Add(time.Duration(2*i+2) * time.Second), CPUSeconds: 1})
-	}
-	snapshot := cgroup.Snapshot{Version: cgroup.Protocol, Node: "n", CollectedAt: time.Now(), IntervalMillis: 2000, Pods: []cgroup.Pod{row}}
-	proxyReads := 0
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v1/namespaces/a/pods/p":
-			_ = json.NewEncoder(w).Encode(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "a", Name: "p", UID: types.UID("new-uid")}, Spec: corev1.PodSpec{NodeName: "n"}})
-		case "/api/v1/namespaces/monitor/pods":
-			_ = json.NewEncoder(w).Encode(&corev1.PodList{Items: []corev1.Pod{{ObjectMeta: metav1.ObjectMeta{Name: "collector", Namespace: "monitor", UID: types.UID("collector-uid")}, Spec: corev1.PodSpec{NodeName: "n"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}}}})
-		case "/api/v1/namespaces/monitor/pods/collector:19091/proxy/snapshot":
-			proxyReads++
-			_ = json.NewEncoder(w).Encode(snapshot)
-		default:
-			t.Errorf("unexpected path %s", r.URL.Path)
-			http.NotFound(w, r)
-		}
-	})
-	transport := cgroupTestTransport(func(r *http.Request) (*http.Response, error) {
-		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, r)
-		return recorder.Result(), nil
-	})
-	k, err := New(&rest.Config{Host: "http://cgroup-test.invalid", Transport: transport})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := k.ConfigureCgroup(CgroupConfig{Namespace: "monitor"}); err != nil {
-		t.Fatal(err)
-	}
-	old, err := k.GatherCgroupPodResources(context.Background(), "a", "p", "old-uid", at, finished)
-	if err != nil || !old.Complete || old.CPUSeconds != 15 || old.RunningPodSeconds != 30 {
-		t.Fatalf("explicit historical identity missing %+v %v", old, err)
-	}
-	new, err := k.GatherCgroupPodResources(context.Background(), "a", "p", "new-uid", at, finished)
-	if err != nil || new.Complete || new.CPUSeconds != 0 {
-		t.Fatalf("old data joined recreated pod %+v %v", new, err)
-	}
-	if proxyReads != 1 {
-		t.Fatalf("node snapshot not shared: %d proxy reads", proxyReads)
-	}
-}
-
 func TestAggregateCgroupResourcesRequiresHistoricalNodeInventory(t *testing.T) {
 	now := time.Now().UTC()
 	from, to := now.Add(-34*time.Second), now.Add(-4*time.Second)

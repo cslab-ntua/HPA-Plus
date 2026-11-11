@@ -87,7 +87,7 @@ func encode(value interface{}) ([]byte, error) {
 }
 func validScript(script string) bool {
 	switch script {
-	case "algorithms/linear_regression/linear_regression.py", "algorithms/arima/arima.py", "algorithms/holt_winters/holt_winters.py", "algorithms/xgboost/xgboost.py", "algorithms/lightgbm/lightgbm.py", "algorithms/request_demand.py":
+	case "algorithms/linear_regression/linear_regression.py", "algorithms/arima/arima.py", "algorithms/holt_winters/holt_winters.py", "algorithms/xgboost/xgboost.py", "algorithms/lightgbm/lightgbm.py":
 		return true
 	}
 	return false
@@ -114,9 +114,6 @@ func (r request) validate() error {
 	case "forecast", "run":
 		if r.Session != "" || !validScript(r.Script) {
 			return fmt.Errorf("unsupported script")
-		}
-		if r.Operation == "forecast" && r.Script == "algorithms/request_demand.py" {
-			return fmt.Errorf("request demand uses its typed run protocol, not the CPU protocol")
 		}
 	default:
 		return fmt.Errorf("unsupported operation")

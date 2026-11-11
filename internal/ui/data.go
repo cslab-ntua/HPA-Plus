@@ -77,7 +77,6 @@ type ModelSummary struct {
 	FloorReplicas    int32      `json:"floorReplicas,omitempty"`
 	ForecastOnly     int32      `json:"forecastOnly,omitempty"`
 	MeasuredCores    float64    `json:"measuredCores,omitempty"`
-	CPUPerRequest    float64    `json:"cpuSecondsPerRequest,omitempty"`
 	FallbackReason   string     `json:"fallbackReason,omitempty"`
 }
 
@@ -120,8 +119,8 @@ type DemandWindow struct {
 	Ready       *float64  `json:"ready,omitempty"`
 }
 
-// DemandSeries is a request-demand model's recent windows and newest forecast,
-// in requests per second for target arrivals and in cores for reconstructedCPU.
+// DemandSeries is a request-demand model's recent windows and newest
+// reconstructed CPU forecast in cores.
 type DemandSeries struct {
 	Model    string          `json:"model"`
 	Target   string          `json:"target"`
@@ -277,7 +276,7 @@ func (r *Reader) summary(item *api.HPAPlus) Summary {
 		}
 		if rd := m.RequestDemand; rd != nil {
 			ms.Source, ms.DecidedBy, ms.FloorReplicas, ms.ForecastOnly = rd.Source, rd.DecidedBy, rd.FloorReplicas, rd.ForecastOnlyReplicas
-			ms.MeasuredCores, ms.CPUPerRequest, ms.FallbackReason = rd.MeasuredCores, rd.CPUSecondsPerRequest, rd.FallbackReason
+			ms.MeasuredCores, ms.FallbackReason = rd.MeasuredCores, rd.FallbackReason
 			if s.DecidedBy == "" {
 				s.DecidedBy = rd.DecidedBy
 			}
@@ -608,10 +607,7 @@ func (r *Reader) demand(ctx context.Context, owner *api.HPAPlus) []DemandSeries 
 		if raw := cm.Data["state"]; raw == "" || json.Unmarshal([]byte(raw), &state) != nil {
 			continue
 		}
-		series := DemandSeries{Model: model.Name, Target: "arrivals", Windows: []DemandWindow{}}
-		if model.RequestDemand.ForecastTarget != "" {
-			series.Target = model.RequestDemand.ForecastTarget
-		}
+		series := DemandSeries{Model: model.Name, Target: api.RequestDemandTargetReconstructedCPU, Windows: []DemandWindow{}}
 		if !state.ForecastIssuedAt.IsZero() {
 			issued := state.ForecastIssuedAt
 			series.IssuedAt = &issued

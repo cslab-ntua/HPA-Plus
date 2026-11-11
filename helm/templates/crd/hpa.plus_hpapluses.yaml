@@ -65,11 +65,6 @@ spec:
           spec:
             description: HPAPlusSpec defines the desired state of HPAPlus
             properties:
-              predictionFailurePolicy:
-                type: string
-                enum:
-                - HoldCurrent
-                - Reactive
               behavior:
                 description: |-
                   behavior configures the scaling behavior of the target
@@ -81,7 +76,8 @@ spec:
                     description: |-
                       scaleDown is scaling policy for scaling Down.
                       If not set, the default value is to allow to scale down to minReplicas pods, with a
-                      0 second stabilization window. Explicit windows are preserved.
+                      300 second stabilization window (i.e., the highest recommendation for
+                      the last 300sec is used).
                     properties:
                       policies:
                         description: |-
@@ -125,7 +121,7 @@ spec:
                           StabilizationWindowSeconds must be greater than or equal to zero and less than or equal to 3600 (one hour).
                           If not set, use the default values:
                           - For scale up: 0 (i.e. no stabilization is done).
-                          - For scale down: 0 seconds (HPA+ default).
+                          - For scale down: 300 (i.e. the stabilization window is 300 seconds long).
                         format: int32
                         type: integer
                     type: object
@@ -133,8 +129,8 @@ spec:
                     description: |-
                       scaleUp is scaling policy for scaling Up.
                       If not set, the default value is the higher of:
-                        * increase no more than 4 pods per 15 seconds (HPA+ default)
-                        * double the number of pods per 15 seconds (HPA+ default)
+                        * increase no more than 4 pods per 60 seconds
+                        * double the number of pods per 60 seconds
                       No stabilization is used.
                     properties:
                       policies:
@@ -179,7 +175,7 @@ spec:
                           StabilizationWindowSeconds must be greater than or equal to zero and less than or equal to 3600 (one hour).
                           If not set, use the default values:
                           - For scale up: 0 (i.e. no stabilization is done).
-                          - For scale down: 0 seconds (HPA+ default).
+                          - For scale down: 300 (i.e. the stabilization window is 300 seconds long).
                         format: int32
                         type: integer
                     type: object
@@ -718,105 +714,6 @@ spec:
                   description: Model represents a prediction model to use, e.g. a
                     linear regression.
                   properties:
-                    requestDemand:
-                      type: object
-                      required:
-                      - traffic
-                      properties:
-                        forecastIntervalSeconds:
-                          description: Future applicability window in seconds; zero keeps the existing thirty-second grid. Input history cadence remains thirty seconds.
-                          type: integer
-                          enum:
-                          - 0
-                          - 5
-                          - 10
-                          - 15
-                          - 30
-                        forecastTarget:
-                          description: What is forecast. Empty or arrivals forecasts incoming requests with the learned CPU cost; reconstructedCPU forecasts measured CPU x arrivals / completed work per closed window and never recommends fewer replicas than the current reconstructed demand needs.
-                          type: string
-                          enum:
-                          - arrivals
-                          - reconstructedCPU
-                        traffic:
-                          type: object
-                          required:
-                          - provider
-                          - arrivalsMetric
-                          - completionsMetric
-                          - arrivalSemantics
-                          - completionSemantics
-                          - retrySemantics
-                          properties:
-                            provider:
-                              type: string
-                              enum:
-                              - prometheus
-                            namespaceLabel:
-                              type: string
-                            podLabel:
-                              type: string
-                            podUIDLabel:
-                              type: string
-                            arrivalsMetric:
-                              type: string
-                            completionsMetric:
-                              type: string
-                            arrivalSemantics:
-                              type: string
-                              enum:
-                              - started
-                            completionSemantics:
-                              type: string
-                              enum:
-                              - finished
-                            retrySemantics:
-                              type: string
-                              enum:
-                              - attempts
-                              - original
-                            additionalLabels:
-                              type: object
-                              additionalProperties:
-                                type: string
-                            errorsMetric:
-                              type: string
-                            outcomesMetric:
-                              description: All finished HTTP/gRPC outcomes, including errors, at the same observation point. Supplies the error-fraction denominator without changing the processed-work completionsMetric.
-                              type: string
-                              pattern: '^[a-zA-Z_:][a-zA-Z0-9_:]*$'
-                            latencyBucketMetric:
-                              type: string
-                            maxAgeSeconds:
-                              type: integer
-                              minimum: 0
-                              maximum: 30
-                        extraMetrics:
-                          type: array
-                          items:
-                            type: object
-                            required:
-                            - name
-                            - metric
-                            - unit
-                            - kind
-                            properties:
-                              name:
-                                type: string
-                              metric:
-                                type: string
-                              unit:
-                                type: string
-                              kind:
-                                type: string
-                                enum:
-                                - gauge
-                                - counter
-                              maxAgeSeconds:
-                                type: integer
-                                minimum: 0
-                                maximum: 120
-                          maxItems: 16
                     arima:
                       description: |-
                         arima is the configuration to use for the ARIMA model, it will only be used if the type is set to
@@ -1235,6 +1132,87 @@ spec:
                       required:
                       - scaleUpLeadSeconds
                       type: object
+                    requestDemand:
+                      description: RequestDemand makes the model forecast CPU demand
+                        rebuilt from request counters.
+                      properties:
+                        forecastTarget:
+                          description: ForecastTarget is reconstructedCPU, the only
+                            target, and may be omitted.
+                          enum:
+                          - reconstructedCPU
+                          type: string
+                        traffic:
+                          description: |-
+                            TrafficProviderConfig identifies counters at a single observation point.
+                            Counter metrics must carry namespace and pod labels referring to the resolved application pods.
+                          properties:
+                            additionalLabels:
+                              additionalProperties:
+                                type: string
+                              description: AdditionalLabels restricts one observation
+                                point; reserved workload labels cannot be overridden.
+                              type: object
+                            arrivalSemantics:
+                              description: 'ArrivalSemantics must be started: counters
+                                increment when a request arrives, before completion.'
+                              enum:
+                              - started
+                              type: string
+                            arrivalsMetric:
+                              type: string
+                            completionSemantics:
+                              enum:
+                              - finished
+                              type: string
+                            completionsMetric:
+                              description: CompletionsMetric counts completed processing
+                                work; cheap pre-execution rejections must not be counted
+                                as equally costly completed work.
+                              type: string
+                            errorsMetric:
+                              type: string
+                            latencyBucketMetric:
+                              type: string
+                            maxAgeSeconds:
+                              type: integer
+                            namespaceLabel:
+                              type: string
+                            outcomesMetric:
+                              description: |-
+                                OutcomesMetric counts all finished HTTP/gRPC outcomes, including errors, at the same observation point.
+                                It supplies the denominator for the optional error fraction; CompletionsMetric remains the processed-work counter.
+                                Without this counter, errors/second is available but the error fraction is unavailable.
+                              type: string
+                            podLabel:
+                              type: string
+                            podUIDLabel:
+                              description: PodUIDLabel defaults to pod_uid; Prometheus
+                                discovery must preserve the Kubernetes pod UID.
+                              type: string
+                            provider:
+                              enum:
+                              - prometheus
+                              type: string
+                            retrySemantics:
+                              description: RetrySemantics documents whether retried
+                                attempts are included. No implicit deduplication is
+                                performed.
+                              enum:
+                              - attempts
+                              - original
+                              type: string
+                          required:
+                          - arrivalSemantics
+                          - arrivalsMetric
+                          - completionSemantics
+                          - completionsMetric
+                          - provider
+                          - retrySemantics
+                          type: object
+                      required:
+                      - traffic
+                      type: object
                     resetDuration:
                       description: |-
                         resetDuration is how long can pass without data for the model before the model should reset.
@@ -1398,6 +1376,13 @@ spec:
                   - type
                   type: object
                 type: array
+              predictionFailurePolicy:
+                description: PredictionFailurePolicy controls unavailable model decisions;
+                  omission preserves legacy reactive fallback.
+                enum:
+                - HoldCurrent
+                - Reactive
+                type: string
               scaleTargetRef:
                 description: |-
                   scaleTargetRef points to the target resource to scale, and is used to the pods for which metrics
@@ -2005,7 +1990,6 @@ spec:
                     - predictive
                     - mixed
                     - hold
-                    - hold
                     type: string
                   controlDesiredReplicas:
                     description: controlDesiredReplicas is the configured control
@@ -2065,52 +2049,6 @@ spec:
                           description: ModelStatus describes the most recently evaluated
                             eligibility and candidate from a configured model.
                           properties:
-                            requestDemand:
-                              type: object
-                              required:
-                              - state
-                              properties:
-                                state:
-                                  type: string
-                                source:
-                                  type: string
-                                fallbackReason:
-                                  type: string
-                                cpuSecondsPerRequest:
-                                  type: number
-                                  format: double
-                                backgroundCoresPerPod:
-                                  type: number
-                                  format: double
-                                qualifiedSamples:
-                                  type: integer
-                                version:
-                                  type: integer
-                                  format: int64
-                                lastObservationAt:
-                                  type: string
-                                  format: date-time
-                                freshUntil:
-                                  type: string
-                                  format: date-time
-                                target:
-                                  type: string
-                                measuredCores:
-                                  type: number
-                                  format: double
-                                reconstructedCores:
-                                  type: number
-                                  format: double
-                                reconstructionFallbacks:
-                                  type: integer
-                                forecastOnlyReplicas:
-                                  type: integer
-                                  format: int32
-                                floorReplicas:
-                                  type: integer
-                                  format: int32
-                                decidedBy:
-                                  type: string
                             consecutiveFailures:
                               format: int32
                               type: integer
@@ -2178,6 +2116,48 @@ spec:
                               - recentSamples
                               - state
                               - underpredictions
+                              type: object
+                            requestDemand:
+                              description: RequestDemand reports the reconstructed
+                                forecast and its source.
+                              properties:
+                                decidedBy:
+                                  description: |-
+                                    DecidedBy is forecast, floor, hold when the window that closed at the
+                                    last sampling boundary was not measured yet, rising when demand was
+                                    still increasing, fast when the last few seconds needed more pods, or
+                                    postponed when a new forecast took back a rise the previous one expected.
+                                  type: string
+                                fallbackReason:
+                                  type: string
+                                floorReplicas:
+                                  format: int32
+                                  type: integer
+                                forecastOnlyReplicas:
+                                  format: int32
+                                  type: integer
+                                freshUntil:
+                                  format: date-time
+                                  type: string
+                                measuredCores:
+                                  description: MeasuredCores and ReconstructedCores
+                                    describe the latest closed window.
+                                  type: number
+                                reconstructedCores:
+                                  type: number
+                                reconstructionFallbacks:
+                                  description: |-
+                                    ReconstructionFallbacks counts history windows that used measured CPU
+                                    because arrival or completion counts were unavailable.
+                                  type: integer
+                                source:
+                                  type: string
+                                state:
+                                  type: string
+                                target:
+                                  type: string
+                              required:
+                              - state
                               type: object
                             requiredSamples:
                               format: int64
@@ -2284,52 +2264,6 @@ spec:
                   description: ModelStatus describes the most recently evaluated eligibility
                     and candidate from a configured model.
                   properties:
-                    requestDemand:
-                      type: object
-                      required:
-                      - state
-                      properties:
-                        state:
-                          type: string
-                        source:
-                          type: string
-                        fallbackReason:
-                          type: string
-                        cpuSecondsPerRequest:
-                          type: number
-                          format: double
-                        backgroundCoresPerPod:
-                          type: number
-                          format: double
-                        qualifiedSamples:
-                          type: integer
-                        version:
-                          type: integer
-                          format: int64
-                        lastObservationAt:
-                          type: string
-                          format: date-time
-                        freshUntil:
-                          type: string
-                          format: date-time
-                        target:
-                          type: string
-                        measuredCores:
-                          type: number
-                          format: double
-                        reconstructedCores:
-                          type: number
-                          format: double
-                        reconstructionFallbacks:
-                          type: integer
-                        forecastOnlyReplicas:
-                          type: integer
-                          format: int32
-                        floorReplicas:
-                          type: integer
-                          format: int32
-                        decidedBy:
-                          type: string
                     consecutiveFailures:
                       format: int32
                       type: integer
@@ -2397,6 +2331,48 @@ spec:
                       - recentSamples
                       - state
                       - underpredictions
+                      type: object
+                    requestDemand:
+                      description: RequestDemand reports the reconstructed forecast
+                        and its source.
+                      properties:
+                        decidedBy:
+                          description: |-
+                            DecidedBy is forecast, floor, hold when the window that closed at the
+                            last sampling boundary was not measured yet, rising when demand was
+                            still increasing, fast when the last few seconds needed more pods, or
+                            postponed when a new forecast took back a rise the previous one expected.
+                          type: string
+                        fallbackReason:
+                          type: string
+                        floorReplicas:
+                          format: int32
+                          type: integer
+                        forecastOnlyReplicas:
+                          format: int32
+                          type: integer
+                        freshUntil:
+                          format: date-time
+                          type: string
+                        measuredCores:
+                          description: MeasuredCores and ReconstructedCores describe
+                            the latest closed window.
+                          type: number
+                        reconstructedCores:
+                          type: number
+                        reconstructionFallbacks:
+                          description: |-
+                            ReconstructionFallbacks counts history windows that used measured CPU
+                            because arrival or completion counts were unavailable.
+                          type: integer
+                        source:
+                          type: string
+                        state:
+                          type: string
+                        target:
+                          type: string
+                      required:
+                      - state
                       type: object
                     requiredSamples:
                       format: int64

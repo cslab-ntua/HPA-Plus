@@ -19,7 +19,9 @@ func TestRequestDemandRejectsReactiveFloorsAndAmbiguousTraffic(t *testing.T) {
 		func(s *api.HPAPlusSpec) { s.IncludeHPA = nil },
 		func(s *api.HPAPlusSpec) { mode := api.ModeAssist; s.Mode = &mode },
 		func(s *api.HPAPlusSpec) { s.PredictionFailurePolicy = "" },
-		func(s *api.HPAPlusSpec) { s.Models[0].XGBoost.ForecastStrategy = "recursive" },
+		func(s *api.HPAPlusSpec) { s.Models[0].PredictivePolicy = nil },
+		func(s *api.HPAPlusSpec) { s.Models[0].PredictionMaxAge = nil },
+		func(s *api.HPAPlusSpec) { s.Models[0].RequestDemand.ForecastTarget = "arrivals" },
 		func(s *api.HPAPlusSpec) {
 			s.Models[0].RequestDemand.Traffic.ArrivalsMetric = s.Models[0].RequestDemand.Traffic.CompletionsMetric
 		},
@@ -35,5 +37,22 @@ func TestRequestDemandRejectsReactiveFloorsAndAmbiguousTraffic(t *testing.T) {
 	}
 	if err := validateRequestDemand(api.HPAPlusSpec{}); err != nil {
 		t.Fatalf("legacy configurations changed: %v", err)
+	}
+}
+
+func TestRequestDemandAcceptsEveryModelType(t *testing.T) {
+	for _, model := range []api.Model{
+		{Type: api.TypeLinear, Linear: &api.Linear{}},
+		{Type: api.TypeHoltWinters, HoltWinters: &api.HoltWinters{}},
+		{Type: api.TypeArima, Arima: &api.Arima{}},
+		{Type: api.TypeLightGBM, LightGBM: &api.LightGBM{}},
+		{Type: api.TypeXGBoost, XGBoost: &api.XGBoost{ForecastStrategy: "recursive"}},
+	} {
+		s := demandSpec()
+		model.Name, model.PredictivePolicy, model.PredictionMaxAge, model.RequestDemand = "m", s.Models[0].PredictivePolicy, s.Models[0].PredictionMaxAge, s.Models[0].RequestDemand
+		s.Models = []api.Model{model}
+		if err := validateRequestDemand(s); err != nil {
+			t.Fatalf("%s: %v", model.Type, err)
+		}
 	}
 }
