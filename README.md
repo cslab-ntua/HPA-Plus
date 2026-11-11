@@ -15,12 +15,14 @@ In a 4-hour test on a live cluster, HPA+ with [request-demand forecasting](docs/
 ## How it works
 
 1. Collect workload metrics and retain complete CPU observations in durable history.
-2. Compute the reactive HPA-style recommendation and evaluate eligible models.
+2. Compute the reactive HPA-style recommendation and evaluate eligible models. With [request demand](docs/user-guide/request-demand.md), each history window is first rebuilt as measured CPU × requests started ÷ requests finished.
 3. Convert forecast CPU demand into replicas, optionally combining it with the reactive recommendation through `includeHPA`.
 4. Apply the configured decision policy, rollout mode, replica bounds and scaling behavior.
 5. Update the workload's Scale resource and publish status, logs and operational metrics.
 
 Sampling and reconciliation run independently. Missing CPU remains missing; forecasts have source timestamps and expiry. Timed predictive policies can preserve the forecast covering the current interval and defer future decreases until their interval begins.
+
+The [architecture](docs/architecture.md) page shows where each step happens.
 
 ## Build and install
 
