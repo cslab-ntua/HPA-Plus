@@ -36,7 +36,7 @@ func latestWindowClosed(end, now time.Time, period time.Duration) bool {
 const reconstructedWindowMatch = 15 * time.Second
 
 func reconstructsCPU(model *api.Model) bool {
-	return model.RequestDemand != nil && model.RequestDemand.ForecastTarget == api.RequestDemandTargetReconstructedCPU
+	return model.RequestDemand != nil
 }
 
 func observedFeature(row requestforecast.Observation, name string) (float64, bool) {

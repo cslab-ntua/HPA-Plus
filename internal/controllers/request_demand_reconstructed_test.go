@@ -140,19 +140,21 @@ func TestReconstructedReplicasFloorStopsWrongScaleIn(t *testing.T) {
 	}
 }
 
-func TestReconstructedTargetRequiresThirtySecondGrid(t *testing.T) {
+func TestReconstructedIsTheOnlyTarget(t *testing.T) {
 	config := api.RequestDemandConfig{Traffic: api.TrafficProviderConfig{Provider: "prometheus", ArrivalsMetric: "started_total", CompletionsMetric: "finished_total",
-		ArrivalSemantics: "started", CompletionSemantics: "finished", RetrySemantics: "attempts"}, ForecastTarget: api.RequestDemandTargetReconstructedCPU}
+		ArrivalSemantics: "started", CompletionSemantics: "finished", RetrySemantics: "attempts"}}
 	if err := workloaddemand.ValidateConfig(config); err != nil {
 		t.Fatal(err)
 	}
-	config.ForecastIntervalSeconds = 10
-	if workloaddemand.ValidateConfig(config) == nil {
-		t.Fatal("reconstructed target accepted a sub-window forecast grid")
+	config.ForecastTarget = api.RequestDemandTargetReconstructedCPU
+	if err := workloaddemand.ValidateConfig(config); err != nil {
+		t.Fatal(err)
 	}
-	config.ForecastIntervalSeconds, config.ForecastTarget = 0, "requests"
-	if workloaddemand.ValidateConfig(config) == nil {
-		t.Fatal("unknown forecast target accepted")
+	for _, target := range []string{"arrivals", "requests"} {
+		config.ForecastTarget = target
+		if workloaddemand.ValidateConfig(config) == nil {
+			t.Fatalf("forecast target %q accepted", target)
+		}
 	}
 }
 
@@ -181,7 +183,6 @@ func TestReconstructedTargetForecastsRebuiltDemandAndFloorsDecision(t *testing.T
 	r.TrafficPrometheusURL = "http://unused.invalid"
 	ctx := context.Background()
 	model := &owner.Spec.Models[0]
-	model.RequestDemand.ForecastTarget = api.RequestDemandTargetReconstructedCPU
 	tolerance := .1
 	model.PredictivePolicy = &api.PredictivePolicy{ScaleUpLeadSeconds: 30, Tolerance: &tolerance}
 	object := &appsv1.Deployment{}
@@ -195,7 +196,6 @@ func TestReconstructedTargetForecastsRebuiltDemandAndFloorsDecision(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The cost estimator never qualified: the reconstructed path must not need it.
 	state.CreatedAt = now.Add(-time.Hour)
 	state.LastSlot = now.Add(-4 * time.Second)
 	state.LastFitSlot = state.LastSlot.Add(-30 * time.Second)
@@ -219,7 +219,7 @@ func TestReconstructedTargetForecastsRebuiltDemandAndFloorsDecision(t *testing.T
 		t.Fatal(err)
 	}
 	r.WorkloadRunner = demandIntegrationRunner(func(string, string, int) (string, error) {
-		t.Fatal("reconstructed target must not run the arrival worker")
+		t.Fatal("reconstructed target must not call the worker directly")
 		return "", nil
 	})
 	fake := &reconstructedRuntime{cpu: 1200}
@@ -545,5 +545,76 @@ func TestForecastRiseCountsFromTheStepInsideItsWindow(t *testing.T) {
 		if got := splitRisingWindows(windows, capacity, tolerance); !reflect.DeepEqual(got, windows) {
 			t.Fatalf("%v must not be split: %+v", cores, got)
 		}
+	}
+}
+
+func TestReconstructedDemandRunsWithEveryModelType(t *testing.T) {
+	historySize, lookAhead := 40, 90000
+	for _, configure := range []func(*api.Model){
+		func(m *api.Model) {
+			m.Type, m.Linear = api.TypeLinear, &api.Linear{HistorySize: 20, LookAhead: lookAhead}
+		},
+		func(m *api.Model) {
+			m.Type, m.HoltWinters = api.TypeHoltWinters, &api.HoltWinters{SeasonalPeriods: 10, StoredSeasons: 3, Trend: "add", Seasonal: "add", LookAhead: &lookAhead}
+		},
+		func(m *api.Model) {
+			m.Type, m.Arima = api.TypeArima, &api.Arima{HistorySize: &historySize, LookAhead: lookAhead}
+		},
+		func(m *api.Model) {
+			m.Type, m.LightGBM = api.TypeLightGBM, &api.LightGBM{HistorySize: 25, LookAhead: lookAhead}
+		},
+		func(m *api.Model) {
+			m.Type, m.XGBoost = api.TypeXGBoost, &api.XGBoost{HistorySize: 60, LookAhead: lookAhead, ForecastStrategy: "recursive"}
+		},
+	} {
+		r, owner, scale, now := demandIntegrationFixture(t)
+		r.TrafficPrometheusURL = "http://unused.invalid"
+		ctx := context.Background()
+		model := &owner.Spec.Models[0]
+		model.XGBoost = nil
+		configure(model)
+		want := prediction.RequiredHistorySize(model)
+		t.Run(model.Type, func(t *testing.T) {
+			object := &appsv1.Deployment{}
+			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: "a", Name: "app"}, object); err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
+			template := raw["spec"].(map[string]interface{})["template"]
+			identity := demandHash([]interface{}{string(owner.UID), scaleTargetIdentity(owner, scale), model, template, demandMeasurementSource, r.TrafficPrometheusURL})
+			cm, state, err := r.loadDemandState(ctx, owner, model, identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state.CreatedAt = now.Add(-time.Hour)
+			state.LastSlot = now.Add(-4 * time.Second)
+			state.LastFitSlot = state.LastSlot.Add(-30 * time.Second)
+			var sampled []api.TimestampedSample
+			for i := 0; i < 70; i++ {
+				until := state.LastSlot.Add(time.Duration(i-69) * 30 * time.Second)
+				state.Observations = append(state.Observations, demandRow(until, map[string]float64{"traffic_arrivals": 20, "traffic_completions": 10}))
+				sampled = append(sampled, cpuSample(until.Add(-time.Second), 600, 3))
+			}
+			if err := r.saveDemandState(ctx, cm, state); err != nil {
+				t.Fatal(err)
+			}
+			fake := &reconstructedRuntime{cpu: 900}
+			r.Runtime = fake
+			request, target := int64(1000), int32(60)
+			snapshot := cpuMetricSnapshot{RequestPerPodMillicores: &request, TargetUtilizationPercentage: &target, TargetIdentity: scaleTargetIdentity(owner, scale)}
+			report := &api.ModelStatus{}
+			n, _, usable := r.processRequestDemand(ctx, owner, model, scale, snapshot, report, sampled)
+			// Rebuilt demand is 0.6 x 20/10 = 1.2 cores, two pods at 60% of one core.
+			if !usable || n != 2 || report.RequestDemand.Source != "request-demand" {
+				t.Fatalf("reconstructed decision unavailable: n=%d usable=%v status=%+v", n, usable, report.RequestDemand)
+			}
+			if len(fake.requests) != 1 || fake.requests[0].Model.Type != model.Type {
+				t.Fatalf("model's own forecaster not run once: %d", len(fake.requests))
+			}
+			history := fake.requests[0].History
+			if len(history) != want || *history[len(history)-1].TotalCPUUsageMillicores != 1200 {
+				t.Fatalf("history size %d, want %d from the model's own settings", len(history), want)
+			}
+		})
 	}
 }

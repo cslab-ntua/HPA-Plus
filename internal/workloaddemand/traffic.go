@@ -35,43 +35,15 @@ type FeatureValue struct {
 	MissingReason     string        `json:"missingReason,omitempty"`
 	MeasurementWindow *TimeInterval `json:"measurementWindow,omitempty"`
 }
-type PodCounterInterval struct {
-	Pod               string    `json:"pod"`
-	UID               string    `json:"uid"`
-	Start             time.Time `json:"start"`
-	End               time.Time `json:"end"`
-	CompletedRequests float64   `json:"completedRequests"`
-}
 type TrafficWindow struct {
 	Start                   time.Time               `json:"start"`
 	End                     time.Time               `json:"end"`
 	AvailableAt             time.Time               `json:"availableAt"`
 	ArrivalsPerSecond       float64                 `json:"arrivalsPerSecond"`
-	CompletedRequests       float64                 `json:"completedRequests"`
-	PerPodIntervals         []PodCounterInterval    `json:"perPodIntervals"`
 	Features                map[string]FeatureValue `json:"features"`
 	ArrivalCoverage         float64                 `json:"arrivalCoverage"`
-	Coverage                float64                 `json:"coverage"`
-	Qualified               bool                    `json:"qualified"`
-	Reason                  string                  `json:"reason,omitempty"`
 	ArrivalBoundaryAveraged bool                    `json:"arrivalBoundaryAveraged"`
 	ArrivalPodCoverage      []PodTrafficCoverage    `json:"arrivalPodCoverage,omitempty"`
-	ExpectedPodSeconds      float64                 `json:"expectedPodSeconds"`
-	NativePodSeconds        float64                 `json:"nativePodSeconds"`
-	NativeSupportFraction   float64                 `json:"nativeSupportFraction"`
-	PerPodNativeIntervals   []PodCounterInterval    `json:"-"`
-	ArrivalIntervals        []ArrivalInterval       `json:"arrivalIntervals,omitempty"`
-}
-
-// ArrivalInterval is a separately measured rate on a shorter counter window.
-// It never replaces the original thirty-second mean or fills its gaps.
-type ArrivalInterval struct {
-	From             time.Time `json:"from"`
-	To               time.Time `json:"to"`
-	AvailableAt      time.Time `json:"availableAt"`
-	Rate             *float64  `json:"rate"`
-	Coverage         float64   `json:"coverage"`
-	BoundaryAveraged bool      `json:"boundaryAveraged"`
 }
 
 type TrafficReader struct {
@@ -85,20 +57,8 @@ var labelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // ValidateConfig prevents arbitrary PromQL and ambiguous workload boundaries.
 func ValidateConfig(config api.RequestDemandConfig) error {
-	switch config.ForecastIntervalSeconds {
-	case 0, 5, 10, 15, 30:
-	default:
-		return errors.New("request forecast interval must be 5, 10, 15 or 30 seconds")
-	}
-	switch config.ForecastTarget {
-	case "", api.RequestDemandTargetArrivals:
-	case api.RequestDemandTargetReconstructedCPU:
-		// Reconstructed demand exists only per closed thirty-second window.
-		if config.ForecastIntervalSeconds != 0 && config.ForecastIntervalSeconds != 30 {
-			return errors.New("reconstructedCPU forecasts use the thirty-second grid")
-		}
-	default:
-		return errors.New("request forecast target must be arrivals or reconstructedCPU")
+	if config.ForecastTarget != "" && config.ForecastTarget != api.RequestDemandTargetReconstructedCPU {
+		return errors.New("request forecast target must be reconstructedCPU")
 	}
 	t := config.Traffic
 	if t.Provider != "prometheus" || t.ArrivalSemantics != "started" || t.CompletionSemantics != "finished" || (t.RetrySemantics != "attempts" && t.RetrySemantics != "original") {
@@ -135,19 +95,6 @@ func ValidateConfig(config api.RequestDemandConfig) error {
 	if t.MaxAgeSeconds < 0 || t.MaxAgeSeconds > 30 {
 		return errors.New("traffic maxAgeSeconds must be between 1 and 30, or omitted")
 	}
-	if len(config.ExtraMetrics) > 16 {
-		return errors.New("at most sixteen optional metrics are supported")
-	}
-	names := map[string]bool{"cpu_usage": true, "memory_usage": true, "cpu_throttled": true, "cpu_pressure": true, "requested_replicas": true, "ready_replicas": true, "running_replicas": true, "cpu_request_per_pod": true}
-	for _, m := range config.ExtraMetrics {
-		if !labelName.MatchString(m.Name) || names[m.Name] || strings.HasPrefix(m.Name, "traffic_") {
-			return errors.New("extra metric names must be unique valid names outside reserved traffic_ prefix")
-		}
-		names[m.Name] = true
-		if !metricName.MatchString(m.Metric) || m.Unit == "" || len(m.Unit) > 64 || (m.Kind != "gauge" && m.Kind != "counter") || m.MaxAgeSeconds < 0 || m.MaxAgeSeconds > 120 {
-			return errors.New("extra metrics require a metric name, unit, gauge/counter kind and at most 120 seconds age")
-		}
-	}
 	return nil
 }
 func labels(t api.TrafficProviderConfig) (string, string, string) {
@@ -166,7 +113,6 @@ func labels(t api.TrafficProviderConfig) (string, string, string) {
 
 // ReadWindow queries native counter samples, not query_range evaluation timestamps.
 // Every selector is scoped server-side to resolved namespace, pod names and UIDs.
-// The caller must integrate CPU over PerPodIntervals before updating its estimator.
 func (r *TrafficReader) ReadWindow(ctx context.Context, scope Scope, config api.RequestDemandConfig, from, to time.Time) (TrafficWindow, error) {
 	out := TrafficWindow{Start: from, End: to, Features: map[string]FeatureValue{}}
 	if err := ValidateConfig(config); err != nil {
@@ -196,30 +142,6 @@ func (r *TrafficReader) ReadWindow(ctx context.Context, scope Scope, config api.
 	out.AvailableAt = now()
 	arrivalRate, coverage, averaged, arrivalSource, details := fleetCounterRate(scope, arrival, from, to)
 	out.ArrivalsPerSecond, out.ArrivalCoverage, out.ArrivalBoundaryAveraged, out.ArrivalPodCoverage = arrivalRate, coverage, averaged, details
-	if seconds := config.ForecastIntervalSeconds; seconds > 0 && seconds < 30 {
-		step := time.Duration(seconds) * time.Second
-		for left := from; !left.Add(step).After(to); left = left.Add(step) {
-			right := left.Add(step)
-			rate, covered, boundary, _, _ := fleetCounterRate(scope, arrival, left, right)
-			point := ArrivalInterval{From: left, To: right, Coverage: covered, BoundaryAveraged: boundary}
-			if covered >= .95 {
-				value := rate
-				point.Rate = &value
-			}
-			out.ArrivalIntervals = append(out.ArrivalIntervals, point)
-		}
-	}
-	out.PerPodIntervals, out.PerPodNativeIntervals, out.Coverage, out.ExpectedPodSeconds, out.NativePodSeconds, out.Reason = nativeCompletionSupport(scope, completed)
-	if out.ExpectedPodSeconds > 0 {
-		out.NativeSupportFraction = out.NativePodSeconds / out.ExpectedPodSeconds
-	}
-	for _, interval := range out.PerPodIntervals {
-		out.CompletedRequests += interval.CompletedRequests
-	}
-	out.Qualified = completionErr == nil && out.Coverage == 1 && len(out.PerPodIntervals) > 0
-	if completionErr != nil {
-		out.Reason = completionErr.Error()
-	}
 	feature := func(name, unit string, value *float64, source time.Time, reason string) {
 		if source.IsZero() {
 			source = to
@@ -273,36 +195,8 @@ func (r *TrafficReader) ReadWindow(ctx context.Context, scope Scope, config api.
 			feature("traffic_latency_p95", "seconds", &v, source, "")
 		}
 	}
-	for _, m := range config.ExtraMetrics {
-		age := time.Duration(m.MaxAgeSeconds) * time.Second
-		if age == 0 {
-			age = maxAge
-		}
-		if m.Kind == "counter" {
-			values, e := r.counterSupports(ctx, scope, config.Traffic, m.Metric, from, to, age)
-			v, cov, _, source, _ := fleetCounterRate(scope, values, from, to)
-			if e != nil || cov < .95 {
-				feature(m.Name, m.Unit, nil, to, "optional counter unavailable")
-			} else {
-				feature(m.Name, m.Unit, &v, source, "")
-			}
-		} else {
-			v, source, e := r.readGauge(ctx, scope, config.Traffic, m.Metric, to, age)
-			if e != nil {
-				feature(m.Name, m.Unit, nil, to, e.Error())
-			} else {
-				feature(m.Name, m.Unit, &v, source, "")
-				value := out.Features[m.Name]
-				value.MeasurementWindow = nil
-				out.Features[m.Name] = value
-			}
-		}
-	}
 	// Optional queries can finish later; their receipt must never be backdated.
 	out.AvailableAt = now()
-	for i := range out.ArrivalIntervals {
-		out.ArrivalIntervals[i].AvailableAt = out.AvailableAt
-	}
 	for key, value := range out.Features {
 		value.ReceivedAt = out.AvailableAt
 		out.Features[key] = value
@@ -469,48 +363,6 @@ func counterDelta(samples []promSample, from, to time.Time, maxAge time.Duration
 	return counterValue{Start: a.At, End: b.At, Count: b.Value - a.Value, Valid: true}, true
 }
 
-func (r *TrafficReader) readGauge(ctx context.Context, scope Scope, t api.TrafficProviderConfig, metric string, to time.Time, age time.Duration) (float64, time.Time, error) {
-	series, e := r.query(ctx, scope, t, metric, to.Add(-age), to)
-	if e != nil {
-		return 0, time.Time{}, e
-	}
-	_, podLabel, uidLabel := labels(t)
-	expected := map[PodIdentity]bool{}
-	for _, pod := range scope.Pods {
-		life, known, _ := expectedLifetime(scope, pod, to, to.Add(time.Nanosecond))
-		if !known {
-			return 0, time.Time{}, errors.New("optional gauge runtime inventory unavailable")
-		}
-		if len(life) > 0 {
-			expected[pod] = true
-		}
-	}
-	seen := map[PodIdentity]bool{}
-	value := 0.
-	source := to
-	for _, s := range series {
-		pod := PodIdentity{Name: s.Metric[podLabel], UID: s.Metric[uidLabel]}
-		if !expected[pod] {
-			continue
-		}
-		if len(s.Samples) == 0 {
-			continue
-		}
-		last := s.Samples[len(s.Samples)-1]
-		if to.Sub(last.At) > age || last.At.After(to) {
-			return 0, time.Time{}, errors.New("optional gauge is stale")
-		}
-		value += last.Value
-		seen[pod] = true
-		if last.At.Before(source) {
-			source = last.At
-		}
-	}
-	if len(seen) != len(expected) {
-		return 0, time.Time{}, errors.New("optional gauge has incomplete active pod coverage")
-	}
-	return value, source, nil
-}
 func (r *TrafficReader) readLatency(ctx context.Context, scope Scope, t api.TrafficProviderConfig, from, to time.Time, age time.Duration) (float64, time.Time, error) {
 	queryTo := to.Add(age)
 	now := time.Now()
@@ -682,3 +534,5 @@ func (r *TrafficReader) query(ctx context.Context, scope Scope, t api.TrafficPro
 	}
 	return out, nil
 }
+
+func finite(x float64) bool { return !math.IsNaN(x) && !math.IsInf(x, 0) }

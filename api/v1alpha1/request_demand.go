@@ -6,30 +6,20 @@ const (
 	PredictionFailureHoldCurrent = "HoldCurrent"
 	PredictionFailureReactive    = "Reactive"
 
-	RequestDemandTargetArrivals         = "arrivals"
 	RequestDemandTargetReconstructedCPU = "reconstructedCPU"
 )
 
-// RequestDemandConfig opts an XGBoost model into arrival forecasting and online CPU-cost learning.
-// Telemetry is read from the operator-configured trusted Prometheus endpoint.
+// RequestDemandConfig makes a model forecast CPU demand rebuilt from each closed
+// window as measured CPU x arrivals / completed work, so saturation no longer
+// hides unmet demand. The model never recommends fewer replicas than the
+// current reconstructed demand needs. Telemetry is read from the
+// operator-configured trusted Prometheus endpoint.
 type RequestDemandConfig struct {
 	Traffic TrafficProviderConfig `json:"traffic"`
-	// ForecastIntervalSeconds controls future applicability windows. Zero keeps
-	// the existing thirty-second grid; input history remains thirty seconds.
+	// ForecastTarget is reconstructedCPU, the only target, and may be omitted.
 	// +optional
-	// +kubebuilder:validation:Enum=0;5;10;15;30
-	ForecastIntervalSeconds int `json:"forecastIntervalSeconds,omitempty"`
-	// ForecastTarget selects what is forecast. Empty or arrivals forecasts incoming
-	// requests and converts them with the learned CPU cost. reconstructedCPU
-	// forecasts CPU demand rebuilt from each closed window as measured CPU x
-	// arrivals / completed work, so saturation no longer hides unmet demand, and
-	// never recommends fewer replicas than the current reconstructed demand needs.
-	// +optional
-	// +kubebuilder:validation:Enum=arrivals;reconstructedCPU
+	// +kubebuilder:validation:Enum=reconstructedCPU
 	ForecastTarget string `json:"forecastTarget,omitempty"`
-	// ExtraMetrics supplies optional historical inputs, not independent scaling recommendations.
-	// +optional
-	ExtraMetrics []DemandExtraMetric `json:"extraMetrics,omitempty"`
 }
 
 // TrafficProviderConfig identifies counters at a single observation point.
@@ -71,33 +61,14 @@ type TrafficProviderConfig struct {
 	MaxAgeSeconds int `json:"maxAgeSeconds,omitempty"`
 }
 
-// DemandExtraMetric is a bounded gauge or counter read with the same workload scope.
-type DemandExtraMetric struct {
-	Name   string `json:"name"`
-	Metric string `json:"metric"`
-	Unit   string `json:"unit"`
-	// +kubebuilder:validation:Enum=gauge;counter
-	Kind string `json:"kind"`
-	// +optional
-	MaxAgeSeconds int `json:"maxAgeSeconds,omitempty"`
-}
-
-// RequestDemandStatus explains whether the learned conversion is qualified and which predictor is active.
+// RequestDemandStatus explains whether the reconstructed forecast is usable and which predictor is active.
 type RequestDemandStatus struct {
-	State                 string  `json:"state"`
-	Source                string  `json:"source,omitempty"`
-	FallbackReason        string  `json:"fallbackReason,omitempty"`
-	CPUSecondsPerRequest  float64 `json:"cpuSecondsPerRequest,omitempty"`
-	BackgroundCoresPerPod float64 `json:"backgroundCoresPerPod,omitempty"`
-	QualifiedSamples      int     `json:"qualifiedSamples,omitempty"`
-	Version               uint64  `json:"version,omitempty"`
-	// +optional
-	LastObservationAt *metav1.Time `json:"lastObservationAt,omitempty"`
+	State          string `json:"state"`
+	Source         string `json:"source,omitempty"`
+	FallbackReason string `json:"fallbackReason,omitempty"`
 	// +optional
 	FreshUntil *metav1.Time `json:"freshUntil,omitempty"`
-
-	// The fields below are reported only for forecastTarget reconstructedCPU.
-	Target string `json:"target,omitempty"`
+	Target     string       `json:"target,omitempty"`
 	// MeasuredCores and ReconstructedCores describe the latest closed window.
 	MeasuredCores      float64 `json:"measuredCores,omitempty"`
 	ReconstructedCores float64 `json:"reconstructedCores,omitempty"`
@@ -115,9 +86,6 @@ type RequestDemandStatus struct {
 
 func (in *RequestDemandConfig) DeepCopyInto(out *RequestDemandConfig) {
 	*out = *in
-	if in.ExtraMetrics != nil {
-		out.ExtraMetrics = append([]DemandExtraMetric(nil), in.ExtraMetrics...)
-	}
 	in.Traffic.DeepCopyInto(&out.Traffic)
 }
 func (in *RequestDemandConfig) DeepCopy() *RequestDemandConfig {
@@ -139,9 +107,6 @@ func (in *TrafficProviderConfig) DeepCopyInto(out *TrafficProviderConfig) {
 }
 func (in *RequestDemandStatus) DeepCopyInto(out *RequestDemandStatus) {
 	*out = *in
-	if in.LastObservationAt != nil {
-		out.LastObservationAt = in.LastObservationAt.DeepCopy()
-	}
 	if in.FreshUntil != nil {
 		out.FreshUntil = in.FreshUntil.DeepCopy()
 	}

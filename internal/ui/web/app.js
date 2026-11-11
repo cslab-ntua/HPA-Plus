@@ -555,7 +555,7 @@
       const peak = Math.max.apply(null, s.forecast.map((w) => w.value));
       const minutes = Math.max(1, Math.round((s.forecast[s.forecast.length - 1].until - now()) / 60000));
       tiles.push(tile('Forecast peak', number(peak),
-        'next ' + minutes + ' min' + (s.forecastPods !== undefined ? ', asks for ' + pods(s.forecastPods) : ''), s.forecastUnit === 'cores' ? 'cores' : 'req/s'));
+        'next ' + minutes + ' min' + (s.forecastPods !== undefined ? ', asks for ' + pods(s.forecastPods) : ''), 'cores'));
     }
     if (s.arrivals.length) {
       const last = s.arrivals[s.arrivals.length - 1];
@@ -663,11 +663,9 @@
     // model's own, else the first model's cached CPU trajectory. Its pods are
     // the count HPA+ reported, which already includes tolerance and timing.
     let forecast = [];
-    let forecastUnit = 'cores';
     let forecastModel = '';
     if (demand && demand.forecast && demand.forecast.length) {
       forecast = demand.forecast.map((p) => ({ from: time(p.at), until: time(p.until), value: p.value }));
-      forecastUnit = demand.target === 'reconstructedCPU' ? 'cores' : 'requests';
       forecastModel = demand.model;
     } else {
       const withForecast = (d.series || []).find((s) => s.forecast && s.forecast.length);
@@ -699,7 +697,6 @@
       latency: pick('latencyP95'),
       errors: pick('errors'),
       forecast: forecast,
-      forecastUnit: forecastUnit,
       forecastPods: forecastPods,
       historyError: d.historyError,
     };
@@ -730,10 +727,10 @@
     const cpuSeries = [{ name: 'CPU used', color: '--s-cpu', points: s.used, area: true }];
     if (s.capacity.length) cpuSeries.push({ name: 'Capacity at target', color: '--s-cap', points: s.capacity, step: true, width: 1.5 });
     if (s.limit.length) cpuSeries.push({ name: 'CPU limit', color: '--s-limit', points: s.limit, step: true, width: 1.5 });
-    if (s.forecast.length && s.forecastUnit === 'cores') cpuSeries.push({ name: 'Forecast', color: '--s-forecast', windows: s.forecast, dash: true });
+    if (s.forecast.length) cpuSeries.push({ name: 'Forecast', color: '--s-forecast', windows: s.forecast, dash: true });
     C.render(cpu.el, Object.assign({}, common, {
       series: cpuSeries, format: cores, tick: tick, height: 250,
-      label: 'CPU used' + (s.used.length ? ', now ' + cores(s.used[s.used.length - 1][1]) : '') + (s.forecast.length && s.forecastUnit === 'cores' ? ', forecast up to ' + cores(Math.max.apply(null, s.forecast.map((w) => w.value))) : ''),
+      label: 'CPU used' + (s.used.length ? ', now ' + cores(s.used[s.used.length - 1][1]) : '') + (s.forecast.length ? ', forecast up to ' + cores(Math.max.apply(null, s.forecast.map((w) => w.value))) : ''),
       empty: s.historyError ? 'Could not read the stored history: ' + s.historyError : 'No CPU history yet. HPA+ stores a sample every sync period, so this fills in within minutes.',
     }));
     shown.push(cpu.el);
@@ -753,7 +750,6 @@
     if (s.arrivals.length || s.completions.length) {
       const req = figure('requests', 'Requests per second', 'Arriving requests and the requests the pods finished, per measurement window.');
       const reqSeries = [{ name: 'Arriving', color: '--s-arrivals', windows: s.arrivals, width: 3 }, { name: 'Finished', color: '--s-done', windows: s.completions, width: 1.25 }];
-      if (s.forecast.length && s.forecastUnit === 'requests') reqSeries.push({ name: 'Forecast', color: '--s-forecast', windows: s.forecast, dash: true });
       C.render(req.el, Object.assign({}, common, { series: reqSeries, format: rate, tick: tick, height: 200, label: 'Requests per second' }));
       shown.push(req.el);
     }

@@ -2,7 +2,6 @@ package workloaddemand
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -46,7 +45,6 @@ type counterSupport struct {
 	Expected []TimeInterval
 	Known    bool
 	Reason   string
-	Native   []PodCounterInterval
 	SourceAt time.Time
 }
 
@@ -194,14 +192,8 @@ func supportsFromSeries(scope Scope, t api.TrafficProviderConfig, series []promS
 			continue
 		}
 		common := append([]TimeInterval(nil), expected...)
-		// Native pairs shared by every counter label can be matched exactly to
-		// CPU. A lazily absent category is not silently assumed to be zero.
-		type pairKey struct{ from, to time.Time }
-		pairs := map[pairKey]float64{}
-		pairLabels := map[pairKey]int{}
 		for _, row := range rows {
 			var support []TimeInterval
-			seenPairs := map[pairKey]bool{}
 			for i := 1; i < len(row.Samples); i++ {
 				a, b := row.Samples[i-1], row.Samples[i]
 				if !b.At.After(a.At) || a.Value < 0 || b.Value < a.Value || b.At.Sub(a.At) > 2*age {
@@ -223,25 +215,11 @@ func supportsFromSeries(scope Scope, t api.TrafficProviderConfig, series []promS
 					if b.At.After(value.SourceAt) {
 						value.SourceAt = b.At
 					}
-					if !a.At.Before(life.From) && !b.At.After(life.To) {
-						key := pairKey{a.At, b.At}
-						pairs[key] += b.Value - a.Value
-						if !seenPairs[key] {
-							pairLabels[key]++
-							seenPairs[key] = true
-						}
-					}
 				}
 			}
 			common = intersectIntervals(common, unionIntervals(support))
 		}
 		value.Covered = common
-		for pair, count := range pairs {
-			if pairLabels[pair] == len(rows) {
-				value.Native = append(value.Native, PodCounterInterval{Pod: pod.Name, UID: pod.UID, Start: pair.from, End: pair.to, CompletedRequests: count})
-			}
-		}
-		sort.Slice(value.Native, func(i, j int) bool { return value.Native[i].Start.Before(value.Native[j].Start) })
 		out[pod] = value
 	}
 	return out
@@ -283,52 +261,4 @@ func fleetCounterRate(scope Scope, values map[PodIdentity]counterSupport, from, 
 		}
 	}
 	return count / seconds, math.Min(1, coverage), averaged, source, details
-}
-
-func mergeNativeIntervals(values []PodCounterInterval) []PodCounterInterval {
-	var out []PodCounterInterval
-	for _, value := range values {
-		if len(out) > 0 && out[len(out)-1].UID == value.UID && out[len(out)-1].End.Equal(value.Start) {
-			out[len(out)-1].End = value.End
-			out[len(out)-1].CompletedRequests += value.CompletedRequests
-		} else {
-			out = append(out, value)
-		}
-	}
-	return out
-}
-
-func nativeCompletionSupport(scope Scope, values map[PodIdentity]counterSupport) ([]PodCounterInterval, []PodCounterInterval, float64, float64, float64, string) {
-	var native []PodCounterInterval
-	var expected, present int
-	var expectedSeconds, measuredSeconds float64
-	var reasons []string
-	for _, pod := range scope.Pods {
-		value, exists := values[pod]
-		if !exists || !value.Known {
-			expectedSeconds += intervalSeconds(value.Expected)
-			expected++
-			reasons = append(reasons, pod.Name+": unknown runtime inventory")
-			continue
-		}
-		expectedSeconds += intervalSeconds(value.Expected)
-		if len(value.Expected) == 0 {
-			continue
-		}
-		expected++
-		if len(value.Native) == 0 {
-			reasons = append(reasons, pod.Name+": no complete native completion interval")
-			continue
-		}
-		present++
-		for _, interval := range value.Native {
-			native = append(native, interval)
-			measuredSeconds += interval.End.Sub(interval.Start).Seconds()
-		}
-	}
-	coverage := 1.
-	if expected > 0 {
-		coverage = float64(present) / float64(expected)
-	}
-	return mergeNativeIntervals(native), native, coverage, expectedSeconds, measuredSeconds, fmt.Sprint(reasons)
 }

@@ -38,7 +38,7 @@ func nativePoints(from time.Time, first, last, rate float64) []promSample {
 	return out
 }
 
-func TestArrivalBracketingAveragesPreserveNativeSourceAndNativeCostSupport(t *testing.T) {
+func TestArrivalBracketingAveragesPreserveNativeSource(t *testing.T) {
 	from := time.Unix(1000, 0)
 	to := from.Add(30 * time.Second)
 	pod := PodIdentity{"app", "uid"}
@@ -48,15 +48,12 @@ func TestArrivalBracketingAveragesPreserveNativeSourceAndNativeCostSupport(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.ArrivalCoverage != 1 || value.ArrivalsPerSecond != 10 || !value.ArrivalBoundaryAveraged || !value.Qualified {
+	if value.ArrivalCoverage != 1 || value.ArrivalsPerSecond != 10 || !value.ArrivalBoundaryAveraged {
 		t.Fatalf("bracketing lost complete measured arrival support: %+v", value)
 	}
 	feature := value.Features["traffic_arrivals"]
 	if feature.MeasurementWindow == nil || !feature.MeasurementWindow.From.Equal(from) || !feature.MeasurementWindow.To.Equal(to) || !feature.SourceAt.Equal(to.Add(time.Second)) || !feature.ReceivedAt.Equal(to.Add(4*time.Second)) {
 		t.Fatalf("native availability was relabelled: %+v", feature)
-	}
-	if len(value.PerPodIntervals) != 1 || !value.PerPodIntervals[0].Start.Equal(from.Add(time.Second)) || !value.PerPodIntervals[0].End.Equal(to.Add(-time.Second)) || value.CompletedRequests != 280 || math.Abs(value.NativeSupportFraction-28./30) > 1e-10 {
-		t.Fatalf("cost escaped exact native support: %+v", value)
 	}
 }
 
@@ -77,10 +74,10 @@ func TestKnownAbsentRuntimeDoesNotInvalidateLivingFleet(t *testing.T) {
 				t.Fatal(err)
 			}
 			if knownAbsent {
-				if value.ArrivalCoverage != 1 || value.ArrivalsPerSecond != 10 || !value.Qualified || value.ExpectedPodSeconds != 30 {
+				if value.ArrivalCoverage != 1 || value.ArrivalsPerSecond != 10 || value.Features["traffic_completions"].Value == nil {
 					t.Fatalf("known absence required nonexistent counters: %+v", value)
 				}
-			} else if value.ArrivalCoverage != 0 || value.Qualified || value.Features["traffic_arrivals"].Value != nil {
+			} else if value.ArrivalCoverage != 0 || value.Features["traffic_arrivals"].Value != nil || value.Features["traffic_completions"].Value != nil {
 				t.Fatalf("healthy subset claimed total fleet: %+v", value)
 			}
 		})
@@ -140,11 +137,6 @@ func TestCounterResetAndRuntimeRestartNeverBridgeUnknownIntervals(t *testing.T) 
 		}
 		if value.ArrivalCoverage >= .95 || value.Features["traffic_arrivals"].Value != nil {
 			t.Fatalf("reset/restart pair crossed as measured arrivals: %+v", value)
-		}
-		for _, pair := range value.PerPodNativeIntervals {
-			if pair.Start.Before(from.Add(15*time.Second)) && pair.End.After(from.Add(15*time.Second)) {
-				t.Fatal("cost pair crosses runtime reset")
-			}
 		}
 	}
 }

@@ -461,7 +461,7 @@ type CPUForecastPoint struct {
 
 // Model represents a prediction model to use, e.g. a linear regression.
 type Model struct {
-	// RequestDemand enables live arrival forecasting and learned CPU capacity.
+	// RequestDemand makes the model forecast CPU demand rebuilt from request counters.
 	// +optional
 	RequestDemand *RequestDemandConfig `json:"requestDemand,omitempty"`
 
@@ -789,7 +789,7 @@ type HPAPlusSpec struct {
 
 // ModelStatus describes the most recently evaluated eligibility and candidate from a configured model.
 type ModelStatus struct {
-	// RequestDemand reports the live cost learner and forecast source.
+	// RequestDemand reports the reconstructed forecast and its source.
 	// +optional
 	RequestDemand *RequestDemandStatus `json:"requestDemand,omitempty"`
 

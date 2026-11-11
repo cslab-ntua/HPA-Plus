@@ -5,15 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"math"
 	"sort"
-	"strings"
 	"time"
 
 	api "github.com/cslab-ntua/HPA-Plus/api/v1alpha1"
 	"github.com/cslab-ntua/HPA-Plus/internal/cgroup"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction"
 	requestforecast "github.com/cslab-ntua/HPA-Plus/internal/prediction/requestdemand"
 	"github.com/cslab-ntua/HPA-Plus/internal/workloaddemand"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
@@ -94,48 +92,13 @@ type demandPod struct {
 
 // Separate owned state keeps the CPU fallback history independent of traffic
 // availability. Publication of the state always precedes use of a new forecast.
-type demandCPUAccount struct {
-	Pod               string    `json:"pod"`
-	UID               string    `json:"uid"`
-	From              time.Time `json:"from"`
-	To                time.Time `json:"to"`
-	CompletedRequests float64   `json:"completedRequests"`
-	CPUSeconds        float64   `json:"cpuSeconds"`
-	PodSeconds        float64   `json:"podSeconds"`
-	Coverage          float64   `json:"coverage"`
-	SourceAt          time.Time `json:"sourceAt"`
-	ReceivedAt        time.Time `json:"receivedAt"`
-	BoundaryAveraged  bool      `json:"boundaryAveraged"`
-}
-type demandCPURejection struct {
-	Pod    string    `json:"pod"`
-	UID    string    `json:"uid"`
-	From   time.Time `json:"from"`
-	To     time.Time `json:"to"`
-	Reason string    `json:"reason"`
-}
-
-type demandAccounting struct {
-	Rejections              []demandCPURejection                `json:"rejections,omitempty"`
-	Slot                    time.Time                           `json:"slot"`
-	Window                  workloaddemand.Window               `json:"window"`
-	Pods                    []demandCPUAccount                  `json:"pods"`
-	Reason                  string                              `json:"reason,omitempty"`
-	ArrivalCoverage         float64                             `json:"arrivalCoverage"`
-	ArrivalBoundaryAveraged bool                                `json:"arrivalBoundaryAveraged"`
-	ArrivalPodCoverage      []workloaddemand.PodTrafficCoverage `json:"arrivalPodCoverage,omitempty"`
-	NativeSupportFraction   float64                             `json:"nativeSupportFraction"`
-	ExpectedPodSeconds      float64                             `json:"expectedPodSeconds"`
-}
-
 type demandForecastEvent struct {
-	IssuedAt          time.Time                   `json:"issuedAt"`
-	AvailableAt       time.Time                   `json:"availableAt,omitempty"`
-	ConsumedAt        time.Time                   `json:"consumedAt"`
-	Forecasts         []requestforecast.Point     `json:"forecasts"`
-	ComputedForecasts []requestforecast.Point     `json:"computedForecasts,omitempty"`
-	DroppedIntervals  int                         `json:"droppedIntervals,omitempty"`
-	Diagnostics       requestforecast.Diagnostics `json:"diagnostics"`
+	IssuedAt          time.Time               `json:"issuedAt"`
+	AvailableAt       time.Time               `json:"availableAt,omitempty"`
+	ConsumedAt        time.Time               `json:"consumedAt"`
+	Forecasts         []requestforecast.Point `json:"forecasts"`
+	ComputedForecasts []requestforecast.Point `json:"computedForecasts,omitempty"`
+	DroppedIntervals  int                     `json:"droppedIntervals,omitempty"`
 }
 
 // A bounded history of real Kubernetes reads avoids losing the last causal
@@ -149,32 +112,27 @@ type demandCapacityContext struct {
 }
 
 type demandState struct {
-	Version                 int                                     `json:"version"`
-	Identity                string                                  `json:"identity"`
-	CreatedAt               time.Time                               `json:"createdAt"`
-	LastSlot                time.Time                               `json:"lastSlot"`
-	LastFitSlot             time.Time                               `json:"lastFitSlot"`
-	Accounting              []demandAccounting                      `json:"accounting,omitempty"`
-	Estimator               workloaddemand.State                    `json:"estimator"`
-	Observations            []requestforecast.Observation           `json:"observations"`
-	Forecasts               []requestforecast.Point                 `json:"forecasts"`
-	ForecastIssuedAt        time.Time                               `json:"forecastIssuedAt"`
-	ForecastAvailableAt     time.Time                               `json:"forecastAvailableAt,omitempty"`
-	ForecastConsumedAt      time.Time                               `json:"forecastConsumedAt"`
-	ForecastDiagnostics     *requestforecast.Diagnostics            `json:"forecastDiagnostics,omitempty"`
-	LastForecastDiagnostics *requestforecast.Diagnostics            `json:"lastForecastDiagnostics,omitempty"`
-	ForecastEvents          []demandForecastEvent                   `json:"forecastEvents,omitempty"`
-	LastForecastAttemptAt   time.Time                               `json:"lastForecastAttemptAt,omitempty"`
-	LastForecastOutcome     string                                  `json:"lastForecastOutcome,omitempty"`
-	LastForecastReason      string                                  `json:"lastForecastReason,omitempty"`
-	Pods                    []demandPod                             `json:"pods"`
-	Context                 map[string]requestforecast.FeatureValue `json:"context"`
-	CapacityHistory         []demandCapacityContext                 `json:"capacityHistory,omitempty"`
+	Version               int                                     `json:"version"`
+	Identity              string                                  `json:"identity"`
+	CreatedAt             time.Time                               `json:"createdAt"`
+	LastSlot              time.Time                               `json:"lastSlot"`
+	LastFitSlot           time.Time                               `json:"lastFitSlot"`
+	Observations          []requestforecast.Observation           `json:"observations"`
+	Forecasts             []requestforecast.Point                 `json:"forecasts"`
+	ForecastIssuedAt      time.Time                               `json:"forecastIssuedAt"`
+	ForecastAvailableAt   time.Time                               `json:"forecastAvailableAt,omitempty"`
+	ForecastConsumedAt    time.Time                               `json:"forecastConsumedAt"`
+	ForecastEvents        []demandForecastEvent                   `json:"forecastEvents,omitempty"`
+	LastForecastAttemptAt time.Time                               `json:"lastForecastAttemptAt,omitempty"`
+	LastForecastOutcome   string                                  `json:"lastForecastOutcome,omitempty"`
+	LastForecastReason    string                                  `json:"lastForecastReason,omitempty"`
+	Pods                  []demandPod                             `json:"pods"`
+	Context               map[string]requestforecast.FeatureValue `json:"context"`
+	CapacityHistory       []demandCapacityContext                 `json:"capacityHistory,omitempty"`
 }
 
 type demandResourceGatherer interface {
 	GatherCgroupResources(context.Context, string, labels.Selector, time.Time, time.Time) (*cgroup.WorkloadObservation, error)
-	GatherCgroupPodResources(context.Context, string, string, string, time.Time, time.Time) (*cgroup.WorkloadObservation, error)
 }
 
 func demandHash(value interface{}) string {
@@ -211,7 +169,7 @@ func (r *HPAPlusReconciler) loadDemandState(ctx context.Context, instance *api.H
 		}
 	}
 	if state.Identity != identity || state.Version != 1 {
-		state = demandState{Version: 1, Identity: identity, CreatedAt: r.now(), Estimator: workloaddemand.NewEstimator(identity).Snapshot()}
+		state = demandState{Version: 1, Identity: identity, CreatedAt: r.now()}
 		// Persist the epoch before waiting for its first closed accounting slot.
 		// Otherwise every cold reconciliation recreates CreatedAt=now and the
 		// first interval can never become old enough to collect.
@@ -288,8 +246,8 @@ func feature(value float64, unit string, source, receipt time.Time) requestforec
 	return requestforecast.FeatureValue{Value: &value, Unit: unit, SourceAt: source, ReceivedAt: receipt}
 }
 
-// sampled is the model's own sampled CPU history; only forecastTarget
-// reconstructedCPU uses it.
+// sampled is the model's own sampled CPU history, which is rebuilt from the
+// request windows and forecast with the model's ordinary CPU forecaster.
 func (r *HPAPlusReconciler) processRequestDemand(ctx context.Context, instance *api.HPAPlus, model *api.Model,
 	scale *autoscalingv1.Scale, snapshot cpuMetricSnapshot, status *api.ModelStatus, sampled []api.TimestampedSample) (int32, time.Time, bool) {
 	diagnostic := &api.RequestDemandStatus{State: "unavailable", Source: "hold", FallbackReason: "request demand has not qualified"}
@@ -320,10 +278,6 @@ func (r *HPAPlusReconciler) processRequestDemand(ctx context.Context, instance *
 	cm, state, err := r.loadDemandState(ctx, instance, model, identity)
 	if err != nil {
 		return fail("request-demand state unavailable")
-	}
-	estimator, err := workloaddemand.Restore(identity, state.Estimator)
-	if err != nil {
-		return fail("request-demand state invalid")
 	}
 	now := r.now()
 	pods := &corev1.PodList{}
@@ -387,6 +341,10 @@ func (r *HPAPlusReconciler) processRequestDemand(ctx context.Context, instance *
 	if len(scope.Pods) == 0 {
 		return fail("no workload pods")
 	}
+	historySize := prediction.RequiredHistorySize(model)
+	if historySize <= 0 {
+		historySize = 60
+	}
 	// A brief publication delay permits the scrape containing the closed window.
 	// The slot is immutable after its first acquisition, including missing results.
 	slot := now.Add(-demandPublicationDelay).UTC().Truncate(30 * time.Second)
@@ -423,10 +381,7 @@ func (r *HPAPlusReconciler) processRequestDemand(ctx context.Context, instance *
 		}
 		row.ReceivedAt = r.now()
 		if readErr == nil {
-			for _, point := range traffic.ArrivalIntervals {
-				row.ArrivalIntervals = append(row.ArrivalIntervals, requestforecast.ArrivalInterval{At: point.From, Until: point.To, ReceivedAt: point.AvailableAt, Rate: point.Rate, Coverage: point.Coverage, BoundaryAveraged: point.BoundaryAveraged})
-			}
-			if traffic.ArrivalCoverage >= .95 && cpuWindowErr == nil && cpuWindow != nil {
+			if traffic.ArrivalCoverage >= .95 {
 				v := traffic.ArrivalsPerSecond
 				row.ArrivalsPerSecond = &v
 			}
@@ -440,39 +395,8 @@ func (r *HPAPlusReconciler) processRequestDemand(ctx context.Context, instance *
 				}
 				row.Features[name] = value
 			}
-			evidence := collectDemandNativeAccounting(ctx, resources, instance.Namespace, identity, slot, traffic, cpuWindow)
-			account := evidence.Window
-			if cpuWindowErr != nil || cpuWindow == nil {
-				account.Qualified = false
-				account.Reason = "deployment runtime inventory unavailable"
-			}
-			if !homogeneous {
-				account.Qualified = false
-				account.Reason = "mixed pod capacity or workload revision"
-			}
-			// Preserve the accounting contamination guard: errors per processed
-			// completion, not errors/all HTTP or gRPC outcomes. Cheap rejected
-			// requests do not become equally costly completed processing work.
-			errors, completions := traffic.Features["traffic_errors"], traffic.Features["traffic_completions"]
-			if errors.Value != nil && completions.Value != nil && *completions.Value > 0 && *errors.Value / *completions.Value > .01 {
-				account.Qualified = false
-				account.Reason = "failed requests contaminate completed-work accounting"
-			}
-			account.AvailableAt = r.now()
-			estimator.Observe(account, r.now())
-			evidence.Window = account
-			state.Accounting = append(state.Accounting, evidence)
-			if len(state.Accounting) > 32 {
-				state.Accounting = state.Accounting[len(state.Accounting)-32:]
-			}
 		} else {
 			diagnostic.FallbackReason = "traffic observation unavailable"
-			account := workloaddemand.Window{ID: identity + "/" + slot.Format(time.RFC3339), Start: row.At, End: row.Until, AvailableAt: r.now(), Qualified: false, Reason: readErr.Error()}
-			estimator.Observe(account, r.now())
-			state.Accounting = append(state.Accounting, demandAccounting{Slot: slot, Window: account, Reason: readErr.Error()})
-			if len(state.Accounting) > 32 {
-				state.Accounting = state.Accounting[len(state.Accounting)-32:]
-			}
 		}
 		if state.Context == nil {
 			state.Context = map[string]requestforecast.FeatureValue{}
@@ -480,106 +404,30 @@ func (r *HPAPlusReconciler) processRequestDemand(ctx context.Context, instance *
 		recordDemandResourceFeatures(state.Context, &row, cpuWindow, cpuWindowErr, r.now())
 		row.ReceivedAt = r.now()
 		state.Observations = append(state.Observations, row)
-		historySize := 60
-		if model.XGBoost != nil && model.XGBoost.HistorySize > 0 {
-			historySize = int(model.XGBoost.HistorySize)
-		}
 		state.Observations = retainDemandObservations(state.Observations, historySize)
 		// These Kubernetes states were observed now, so only later intervals may use them.
-		if state.Context == nil {
-			state.Context = map[string]requestforecast.FeatureValue{}
-		}
 		recordDemandCapacityContext(&state, demandCapacityContext{ObservedAt: capacityObservedAt,
 			Requested: scale.Spec.Replicas, Ready: ready, Running: running,
 			CPURequestMillicores: snapshot.RequestPerPodMillicores})
-		state.Estimator = estimator.Snapshot()
 		changed = true
 	}
-	estimate := estimator.Estimate(r.now())
-	diagnostic.State, diagnostic.QualifiedSamples, diagnostic.Version = estimate.State, estimate.QualifiedWindows, estimate.Version
-	diagnostic.CPUSecondsPerRequest, diagnostic.BackgroundCoresPerPod = estimate.CPUSecondsPerRequest, estimate.BackgroundCPUPerPod
-	if !estimate.LastObservationAt.IsZero() {
-		diagnostic.LastObservationAt = &metav1.Time{Time: estimate.LastObservationAt}
-	}
-	if !estimate.FreshUntil.IsZero() {
-		diagnostic.FreshUntil = &metav1.Time{Time: estimate.FreshUntil}
-	}
-	reconstructed := reconstructsCPU(model)
-	var reconstructedRows []api.TimestampedSample
-	reconstructionFallbacks, reconstructedSize := 0, 60
-	if model.XGBoost != nil && model.XGBoost.HistorySize > 0 {
-		reconstructedSize = int(model.XGBoost.HistorySize)
-	}
-	if reconstructed {
-		// State and freshness describe the reconstructed path; the cost estimator
-		// keeps learning but does not gate it.
-		diagnostic.State, diagnostic.FreshUntil, diagnostic.Target = "learning", nil, api.RequestDemandTargetReconstructedCPU
-		reconstructedRows, reconstructionFallbacks = reconstructedHistory(sampled, state.Observations, reconstructedSize)
-		// Fit once per closed slot, after that slot's own CPU sample exists.
-		if state.LastFitSlot.Before(state.LastSlot) && len(reconstructedRows) >= reconstructedSize &&
-			!reconstructedRows[len(reconstructedRows)-1].Time.Time.Before(state.LastSlot.Add(-reconstructedWindowMatch)) {
-			requested := r.now()
-			result, fitErr := r.runReconstructedForecast(ctx, instance, model, reconstructedRows, scaleTargetIdentity(instance, scale), status)
-			state.LastForecastAttemptAt = requested
-			state.LastForecastOutcome, state.LastForecastReason = "ready", ""
-			state.LastForecastDiagnostics = nil
-			if fitErr != nil {
-				state.LastForecastOutcome, state.LastForecastReason = "unavailable", "worker_or_protocol_failure"
-				log.FromContext(ctx).Info("Reconstructed forecast unavailable", "model", model.Name, "reason", "worker_or_protocol_failure")
-			} else {
-				publishRequestForecast(&state, result, requested, r.now())
-			}
-			state.LastFitSlot = state.LastSlot
-			changed = true
-		}
-	} else if state.LastFitSlot.Before(state.LastSlot) && len(state.Observations) >= 60 {
+	diagnostic.State, diagnostic.Target = "learning", api.RequestDemandTargetReconstructedCPU
+	reconstructedRows, reconstructionFallbacks := reconstructedHistory(sampled, state.Observations, historySize)
+	// Fit once per closed slot, after that slot's own CPU sample exists.
+	if state.LastFitSlot.Before(state.LastSlot) && len(reconstructedRows) >= historySize &&
+		!reconstructedRows[len(reconstructedRows)-1].Time.Time.Before(state.LastSlot.Add(-reconstructedWindowMatch)) {
 		requested := r.now()
-		// Start at the next unstarted interval. An extra unconditional interval
-		// would shift the configured three-step forecast an additional 30s out.
-		config, err := requestforecast.ConfigFromModel(model)
-		if err == nil {
-			frame := config.ForecastIntervalSeconds
-			if frame == 0 {
-				frame = config.IntervalSeconds
-			}
-			first := requested.UTC().Truncate(time.Duration(frame) * time.Second).Add(time.Duration(frame) * time.Second)
-			units := map[string]string{"cpu_usage": "cores", "memory_usage": "bytes", "cpu_throttled": "seconds/second", "cpu_pressure": "seconds/second", "requested_replicas": "replicas", "ready_replicas": "replicas", "running_replicas": "replicas", "cpu_request_per_pod": "cores", "traffic_arrivals": "requests/second", "traffic_completions": "requests/second", "traffic_errors": "errors/second", "traffic_error_rate": "ratio", "traffic_latency_p95": "seconds"}
-			for _, extra := range model.RequestDemand.ExtraMetrics {
-				units[extra.Name] = extra.Unit
-			}
-			for name, unit := range units {
-				maximumAge := 120
-				for _, extra := range model.RequestDemand.ExtraMetrics {
-					if extra.Name == name {
-						maximumAge = extra.MaxAgeSeconds
-						if maximumAge == 0 {
-							maximumAge = 30
-						}
-					}
-				}
-				config.Features = append(config.Features, requestforecast.FeatureSpec{Name: name, Unit: unit, MaxAgeSeconds: maximumAge})
-			}
-			// Keep the runtime schema identical to replay/tuning: feature
-			// subsampling must never depend on Go map iteration order.
-			sort.Slice(config.Features, func(i, j int) bool { return config.Features[i].Name < config.Features[j].Name })
-			result, fitErr := r.runRequestForecast(ctx, model, state.Observations, requested, first, config, status)
-			state.LastForecastAttemptAt = requested
-			state.LastForecastOutcome, state.LastForecastReason = result.Status, result.Reason
-			state.LastForecastDiagnostics = nil
-			if fitErr == nil {
-				state.LastForecastDiagnostics = &result.Diagnostics
-			}
-			if fitErr != nil {
-				state.LastForecastOutcome, state.LastForecastReason = "unavailable", "worker_or_protocol_failure"
-			}
-			state.LastFitSlot = state.LastSlot
-			changed = true
-			if fitErr == nil && result.Status == "ready" {
-				publishRequestForecast(&state, result, requested, r.now())
-			} else if fitErr != nil {
-				log.FromContext(ctx).Info("Request forecast unavailable", "model", model.Name, "reason", "worker_or_protocol_failure")
-			}
+		result, fitErr := r.runReconstructedForecast(ctx, instance, model, reconstructedRows, scaleTargetIdentity(instance, scale), status)
+		state.LastForecastAttemptAt = requested
+		state.LastForecastOutcome, state.LastForecastReason = "ready", ""
+		if fitErr != nil {
+			state.LastForecastOutcome, state.LastForecastReason = "unavailable", "worker_or_protocol_failure"
+			log.FromContext(ctx).Info("Reconstructed forecast unavailable", "model", model.Name, "reason", "worker_or_protocol_failure")
+		} else {
+			publishRequestForecast(&state, result, requested, r.now())
 		}
+		state.LastFitSlot = state.LastSlot
+		changed = true
 	}
 	if changed {
 		if err := r.saveDemandState(ctx, cm, state); err != nil {
@@ -589,44 +437,9 @@ func (r *HPAPlusReconciler) processRequestDemand(ctx context.Context, instance *
 	if !homogeneous {
 		return fail("heterogeneous pod capacity or workload revision")
 	}
-	if reconstructed {
-		recent := r.recentReconstructedWindow(ctx, instance, scale, state.Observations, sampled)
-		return r.reconstructedRecommendation(scopedPolicy(model, pods.Items), scale, snapshot, state, sampled, reconstructedRows, reconstructionFallbacks, reconstructedSize,
-			syncPeriodForInstance(instance), recent, status, fail)
-	}
-	if estimate.State != "qualified" {
-		return fail("CPU-cost estimate " + estimate.State)
-	}
-	if snapshot.RequestPerPodMillicores == nil || snapshot.TargetUtilizationPercentage == nil {
-		return fail("CPU capacity configuration unavailable")
-	}
-	if model.PredictionMaxAge == nil || state.ForecastConsumedAt.IsZero() || !r.now().Before(state.ForecastConsumedAt.Add(time.Duration(*model.PredictionMaxAge)*time.Millisecond)) {
-		return fail("request forecast missing or expired")
-	}
-	replicas, deadline, err := requestReplicas(state.Forecasts, estimate, effectivePolicy(*model.PredictivePolicy, pods.Items), float64(*snapshot.RequestPerPodMillicores)/1000, float64(*snapshot.TargetUtilizationPercentage)/100, scale.Spec.Replicas, r.now())
-	if err != nil {
-		return fail("request forecast interval unavailable")
-	}
-	ageDeadline := state.ForecastConsumedAt.Add(time.Duration(*model.PredictionMaxAge) * time.Millisecond)
-	if ageDeadline.Before(deadline) {
-		deadline = ageDeadline
-	}
-	if estimate.FreshUntil.Before(deadline) {
-		deadline = estimate.FreshUntil
-	}
-	diagnostic.Source = "request-demand"
-	diagnostic.FallbackReason = ""
-	status.State = "Ready"
-	status.HistorySamples = 0
-	for _, observation := range state.Observations {
-		if observation.ArrivalsPerSecond != nil {
-			status.HistorySamples++
-		}
-	}
-	status.ForecastReplicas = &replicas
-	status.ConsumedUntil = &metav1.Time{Time: state.ForecastConsumedAt}
-	status.ExpiresAt = &metav1.Time{Time: deadline}
-	return replicas, deadline, true
+	recent := r.recentReconstructedWindow(ctx, instance, scale, state.Observations, sampled)
+	return r.reconstructedRecommendation(scopedPolicy(model, pods.Items), scale, snapshot, state, sampled, reconstructedRows, reconstructionFallbacks, historySize,
+		syncPeriodForInstance(instance), recent, status, fail)
 }
 
 // selectDemandCapacityFeatures uses the most recent read actually available by
@@ -696,7 +509,7 @@ func publishRequestForecast(state *demandState, result requestforecast.Result, r
 		IssuedAt: requested, AvailableAt: available, ConsumedAt: result.TrainedThrough,
 		Forecasts:         append([]requestforecast.Point{}, future...),
 		ComputedForecasts: append([]requestforecast.Point(nil), result.Forecasts...),
-		DroppedIntervals:  len(result.Forecasts) - len(future), Diagnostics: result.Diagnostics,
+		DroppedIntervals:  len(result.Forecasts) - len(future),
 	})
 	if len(state.ForecastEvents) > 10 {
 		state.ForecastEvents = state.ForecastEvents[len(state.ForecastEvents)-10:]
@@ -710,38 +523,6 @@ func publishRequestForecast(state *demandState, result requestforecast.Result, r
 	state.ForecastIssuedAt = requested
 	state.ForecastAvailableAt = available
 	state.ForecastConsumedAt = result.TrainedThrough
-	state.ForecastDiagnostics = &result.Diagnostics
-}
-
-// runRequestForecast reports the same end-to-end attempt accounting as the
-// CPU forecast path. These fields describe the latest forecast invocation;
-// RequestDemand.Source separately describes the currently usable scale source.
-// Recording an outcome never changes request cadence, reuse or failure policy.
-func (r *HPAPlusReconciler) runRequestForecast(ctx context.Context, model *api.Model, observations []requestforecast.Observation, requested, first time.Time, config requestforecast.Config, status *api.ModelStatus) (requestforecast.Result, error) {
-	status.LastAttemptTime = &metav1.Time{Time: requested}
-	started := time.Now()
-	result, err := requestforecast.Predict(ctx, r.WorkloadRunner, model, observations, requested, first, config)
-	outcome := "success"
-	switch {
-	case errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded):
-		outcome = "timeout"
-	case errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled):
-		outcome = "canceled"
-	case err != nil:
-		outcome = "failed"
-	case result.Status == "warming":
-		outcome = "insufficient_history"
-	case result.Status != "ready":
-		outcome = "failed"
-	}
-	elapsed := time.Since(started)
-	duration := elapsed.Milliseconds()
-	status.LastRunDurationMilliseconds, status.LastRunOutcome = &duration, outcome
-	if outcome == "success" {
-		status.LastSuccessTime = &metav1.Time{Time: r.now()}
-	}
-	r.Telemetry.ObserveModelRun(model.Type, outcome, elapsed)
-	return result, err
 }
 
 // A closed window contributes its own measured values or explicit missing
@@ -784,136 +565,6 @@ func recordDemandResourceFeatures(context map[string]requestforecast.FeatureValu
 			row.Features[name] = value
 		}
 	}
-}
-
-// collectDemandNativeAccounting never substitutes a fleet CPU total for partial
-// completion support. Every accepted count is paired with CPU and pod-seconds
-// over exactly the same native interval. Selection depends on measurement
-// validity, never utilization or model output.
-func collectDemandNativeAccounting(ctx context.Context, resources demandResourceGatherer, namespace, identity string, slot time.Time, traffic workloaddemand.TrafficWindow, retained ...*cgroup.WorkloadObservation) demandAccounting {
-	readCPU := resources.GatherCgroupPodResources
-	if len(retained) > 0 && retained[0] != nil && len(retained[0].NativeSnapshots) > 0 {
-		batch := retained[0]
-		readCPU = func(_ context.Context, ns, pod, uid string, from, to time.Time) (*cgroup.WorkloadObservation, error) {
-			views := make([]cgroup.Snapshot, 0, len(batch.NativeSnapshots))
-			found := false
-			for _, original := range batch.NativeSnapshots {
-				view := original
-				view.Pods = nil
-				for _, value := range original.Pods {
-					if value.Namespace == ns && value.Name == pod && value.UID == uid {
-						view.Pods = append(view.Pods, value)
-						found = true
-					}
-				}
-				views = append(views, view)
-			}
-			if !found {
-				return nil, fmt.Errorf("native pod identity unavailable in retained batch")
-			}
-			return cgroup.Integrate(views, ns, labels.Everything(), from, to, batch.ReceivedAt)
-		}
-	}
-	evidence := demandAccounting{Slot: slot, ArrivalCoverage: traffic.ArrivalCoverage, ArrivalBoundaryAveraged: traffic.ArrivalBoundaryAveraged, ArrivalPodCoverage: traffic.ArrivalPodCoverage, ExpectedPodSeconds: traffic.ExpectedPodSeconds}
-	account := workloaddemand.Window{ID: identity + "/" + slot.Format(time.RFC3339), Start: slot.Add(-30 * time.Second), End: slot, Coverage: traffic.Coverage, Qualified: traffic.Qualified}
-	if !account.Qualified {
-		account.Reason = "incomplete fleet native completion support: " + traffic.Reason
-	}
-	first := true
-	appendCPU := func(interval workloaddemand.PodCounterInterval, cpu *cgroup.WorkloadObservation) {
-		value := demandCPUAccount{Pod: interval.Pod, UID: interval.UID, From: interval.Start, To: interval.End, CompletedRequests: interval.CompletedRequests, CPUSeconds: cpu.CPUSeconds, PodSeconds: cpu.RunningPodSeconds, Coverage: cpu.Coverage, SourceAt: cpu.SourceAt, ReceivedAt: cpu.ReceivedAt, BoundaryAveraged: cpu.BoundaryAveraged}
-		if len(evidence.Pods) > 0 && evidence.Pods[len(evidence.Pods)-1].UID == value.UID && evidence.Pods[len(evidence.Pods)-1].To.Equal(value.From) {
-			previous := &evidence.Pods[len(evidence.Pods)-1]
-			previous.To = value.To
-			previous.CompletedRequests += value.CompletedRequests
-			previous.CPUSeconds += value.CPUSeconds
-			previous.PodSeconds += value.PodSeconds
-			previous.Coverage = math.Min(previous.Coverage, value.Coverage)
-			previous.BoundaryAveraged = previous.BoundaryAveraged || value.BoundaryAveraged
-			if value.SourceAt.After(previous.SourceAt) {
-				previous.SourceAt = value.SourceAt
-			}
-			if value.ReceivedAt.After(previous.ReceivedAt) {
-				previous.ReceivedAt = value.ReceivedAt
-			}
-		} else {
-			evidence.Pods = append(evidence.Pods, value)
-		}
-		account.CompletedRequests += interval.CompletedRequests
-		account.CPUSeconds += cpu.CPUSeconds
-		account.PodSeconds += cpu.RunningPodSeconds
-		if first || interval.Start.Before(account.Start) {
-			account.Start = interval.Start
-		}
-		if first || interval.End.After(account.End) {
-			account.End = interval.End
-		}
-		first = false
-	}
-	validCPU := func(cpu *cgroup.WorkloadObservation, err error) bool {
-		return err == nil && cpu != nil && cpu.Complete && cpu.Coverage >= .95
-	}
-	rejected := func(interval workloaddemand.PodCounterInterval, cpu *cgroup.WorkloadObservation, err error) {
-		reason := "incomplete native CPU accounting"
-		if err != nil {
-			reason = "native CPU collection failed"
-		} else if cpu != nil && len(cpu.MissingReasons) > 0 {
-			reason = strings.Join(cpu.MissingReasons, "; ")
-		}
-		if len(evidence.Rejections) > 0 {
-			previous := &evidence.Rejections[len(evidence.Rejections)-1]
-			if previous.UID == interval.UID && previous.Reason == reason && previous.To.Equal(interval.Start) {
-				previous.To = interval.End
-				return
-			}
-		}
-		if len(evidence.Rejections) < 64 {
-			evidence.Rejections = append(evidence.Rejections, demandCPURejection{Pod: interval.Pod, UID: interval.UID, From: interval.Start, To: interval.End, Reason: reason})
-		}
-	}
-	acceptedGroups := 0
-	for _, interval := range traffic.PerPodIntervals {
-		cpu, err := readCPU(ctx, namespace, interval.Pod, interval.UID, interval.Start, interval.End)
-		if validCPU(cpu, err) {
-			appendCPU(interval, cpu)
-			acceptedGroups++
-			continue
-		}
-		accepted := false
-		pairsRead := 0
-		// A startup/end boundary may spoil only one short native pair. Retain
-		// complete later/earlier pairs, and persist each rejected part as a gap.
-		for _, pair := range traffic.PerPodNativeIntervals {
-			if pair.UID != interval.UID || pair.Start.Before(interval.Start) || pair.End.After(interval.End) {
-				continue
-			}
-			part, e := readCPU(ctx, namespace, pair.Pod, pair.UID, pair.Start, pair.End)
-			pairsRead++
-			if validCPU(part, e) {
-				appendCPU(pair, part)
-				accepted = true
-			} else {
-				rejected(pair, part, e)
-			}
-		}
-		if accepted {
-			acceptedGroups++
-		} else if pairsRead == 0 {
-			rejected(interval, cpu, err)
-		}
-	}
-	if len(traffic.PerPodIntervals) == 0 || acceptedGroups != len(traffic.PerPodIntervals) {
-		account.Qualified = false
-		account.Reason = "native CPU/completion support missing for an active fleet member"
-		if len(traffic.PerPodIntervals) > 0 {
-			account.Coverage = math.Min(account.Coverage, float64(acceptedGroups)/float64(len(traffic.PerPodIntervals)))
-		}
-	}
-	if traffic.ExpectedPodSeconds > 0 {
-		evidence.NativeSupportFraction = account.PodSeconds / traffic.ExpectedPodSeconds
-	}
-	evidence.Window = account
-	return evidence
 }
 
 func demandWindowScope(scope workloaddemand.Scope, window *cgroup.WorkloadObservation) workloaddemand.Scope {
@@ -1006,48 +657,4 @@ func mergeRequestInterval(old, fresh []requestforecast.Point, now time.Time) []r
 		out = append(out, p)
 	}
 	return append(out, fresh...)
-}
-
-func requestReplicas(points []requestforecast.Point, estimate workloaddemand.Estimate, policy api.PredictivePolicy, request, target float64, current int32, now time.Time) (int32, time.Time, error) {
-	var value float64
-	known := false
-	upcoming := false
-	var deadline time.Time
-	consider := func(t time.Time) {
-		if t.After(now) && (deadline.IsZero() || t.Before(deadline)) {
-			deadline = t
-		}
-	}
-	for _, p := range points {
-		consider(p.At)
-		consider(p.Until)
-		consider(p.At.Add(-time.Duration(policy.ScaleUpLeadSeconds) * time.Second))
-		if !now.Before(p.At) && now.Before(p.Until) {
-			known = true
-			if p.Value > value {
-				value = p.Value
-			}
-		}
-		if p.At.After(now) && !p.At.After(now.Add(time.Duration(policy.ScaleUpLeadSeconds)*time.Second)) {
-			upcoming = true
-			if p.Value > value {
-				value = p.Value
-			}
-		}
-	}
-	if deadline.IsZero() || (!known && !upcoming) {
-		return 0, time.Time{}, fmt.Errorf("no live request forecast")
-	}
-	ratio, err := workloaddemand.RequiredReplicas(value, request, target, estimate, now)
-	if err != nil || ratio > math.MaxInt32 {
-		return 0, time.Time{}, fmt.Errorf("invalid learned capacity")
-	}
-	desired := int32(math.Ceil(ratio))
-	if !known && desired < current {
-		desired = current
-	}
-	if desired > current && current > 0 && ratio/float64(current) <= 1+policy.EffectiveTolerance() {
-		desired = current
-	}
-	return desired, deadline, nil
 }

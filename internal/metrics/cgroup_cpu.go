@@ -16,7 +16,6 @@ import (
 	resourcemetrics "github.com/jthomperoo/k8shorizmetrics/v2/metrics/resource"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -311,42 +310,6 @@ func fenceCgroupAPIPopulation(observation *cgroup.WorkloadObservation, pods []co
 			missing(pod.Name + ": API running pod has no collector runtime identity")
 		}
 	}
-}
-
-// GatherCgroupPodResources binds native telemetry accounting to one exact pod
-// UID. Reusing a pod name after recreation cannot attach old CPU to new traffic.
-func (k *Kubernetes) GatherCgroupPodResources(ctx context.Context, namespace, podName, podUID string, from, to time.Time) (*cgroup.WorkloadObservation, error) {
-	if k.cgroup == nil || podUID == "" {
-		return nil, fmt.Errorf("cgroup collector and pod UID required")
-	}
-	pod, err := k.cgroup.client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, err
-	}
-	var nodes map[string]bool
-	if err == nil && string(pod.UID) == podUID && pod.Spec.NodeName != "" {
-		nodes = map[string]bool{pod.Spec.NodeName: true}
-	}
-	// Explicit historical UIDs remain queryable after deletion/recreation. The
-	// selector caller must retain its previously owned UID; no new UID is adopted.
-	snapshots, err := k.cgroup.read(ctx, nodes)
-	if err != nil {
-		return nil, err
-	}
-	for i := range snapshots {
-		var rows []cgroup.Pod
-		for _, row := range snapshots[i].Pods {
-			if row.Namespace == namespace && row.Name == podName && row.UID == podUID {
-				rows = append(rows, row)
-			}
-		}
-		snapshots[i].Pods = rows
-	}
-	observation, err := cgroup.Integrate(snapshots, namespace, labels.Everything(), from, to, time.Now())
-	if err == nil && pod != nil && string(pod.UID) == podUID {
-		fenceCgroupAPIPopulation(observation, []corev1.Pod{*pod})
-	}
-	return observation, err
 }
 
 // historyStartGap is how long after a container start its first counter read

@@ -17,12 +17,6 @@ func validateRequestDemand(spec api.HPAPlusSpec) error {
 		if spec.SyncPeriod == nil || *spec.SyncPeriod != 30000 {
 			return fmt.Errorf("model %q: requestDemand requires an explicit 30000 millisecond syncPeriod", model.Name)
 		}
-		if model.Type != api.TypeXGBoost || model.XGBoost == nil {
-			return fmt.Errorf("model %q: requestDemand is supported only by XGBoost", model.Name)
-		}
-		if model.XGBoost.ForecastStrategy != "direct" {
-			return fmt.Errorf("model %q: requestDemand requires XGBoost direct forecast strategy", model.Name)
-		}
 		if model.PredictivePolicy == nil || model.PredictionMaxAge == nil {
 			return fmt.Errorf("model %q: requestDemand requires predictivePolicy and predictionMaxAge", model.Name)
 		}

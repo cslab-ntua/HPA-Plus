@@ -2,11 +2,10 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/cslab-ntua/HPA-Plus/internal/cgroup"
 	metricadapter "github.com/cslab-ntua/HPA-Plus/internal/metrics"
 	requestforecast "github.com/cslab-ntua/HPA-Plus/internal/prediction/requestdemand"
-	"github.com/cslab-ntua/HPA-Plus/internal/workloaddemand"
 	gathered "github.com/jthomperoo/k8shorizmetrics/v2/metrics"
 	"github.com/jthomperoo/k8shorizmetrics/v2/metrics/podmetrics"
 	resourceMetric "github.com/jthomperoo/k8shorizmetrics/v2/metrics/resource"
@@ -34,18 +32,20 @@ import (
 
 func TestRequestDemandRequeueKeepsPublicationAndDecisionClocksIndependent(t *testing.T) {
 	base := time.Date(2026, 10, 20, 17, 0, 0, 0, time.UTC)
-	request := &api.HPAPlus{Spec: api.HPAPlusSpec{Models: []api.Model{{RequestDemand: &api.RequestDemandConfig{}}}}}
+	period := 30000
+	// The floor's fast window is five seconds at this period, so no requeue waits longer.
+	request := &api.HPAPlus{Spec: api.HPAPlusSpec{SyncPeriod: &period, Models: []api.Model{{RequestDemand: &api.RequestDemandConfig{}}}}}
 	for _, tc := range []struct {
 		name                        string
 		at, regular, cooldown, want time.Duration
 	}{
 		{"before-publication", time.Second, 30 * time.Second, 0, 3 * time.Second},
 		{"second-slot", 31 * time.Second, 30 * time.Second, 0, 3 * time.Second},
-		{"already-published", 5 * time.Second, 30 * time.Second, 0, 29 * time.Second},
-		{"exact-publication", 34 * time.Second, 30 * time.Second, 0, 30 * time.Second},
+		{"already-published", 5 * time.Second, 30 * time.Second, 0, 5 * time.Second},
+		{"exact-publication", 34 * time.Second, 30 * time.Second, 0, 5 * time.Second},
 		{"earlier-decision", time.Second, time.Second, 0, time.Second},
-		{"earlier-cooldown", 5 * time.Second, 30 * time.Second, 10 * time.Second, 5 * time.Second},
-		{"expired-cooldown", 5 * time.Second, 30 * time.Second, time.Second, 29 * time.Second},
+		{"earlier-cooldown", 5 * time.Second, 30 * time.Second, 7 * time.Second, 2 * time.Second},
+		{"expired-cooldown", 5 * time.Second, 30 * time.Second, time.Second, 5 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var cooldown time.Time
@@ -79,9 +79,6 @@ func (g *demandScheduleGatherer) Gather(_ context.Context, specs []autoscalingv2
 func (g *demandScheduleGatherer) GatherCgroupResources(context.Context, string, labels.Selector, time.Time, time.Time) (*cgroup.WorkloadObservation, error) {
 	g.acquisitions++
 	return nil, fmt.Errorf("deliberately missing observation, never fabricate CPU")
-}
-func (*demandScheduleGatherer) GatherCgroupPodResources(context.Context, string, string, string, time.Time, time.Time) (*cgroup.WorkloadObservation, error) {
-	return nil, fmt.Errorf("no per-pod observation")
 }
 
 func TestRequestDemandCooldownRefreshesAndFitsButNeverWritesScale(t *testing.T) {
@@ -126,12 +123,11 @@ func TestRequestDemandCooldownRefreshesAndFitsButNeverWritesScale(t *testing.T) 
 	}
 	closed := now.UTC().Truncate(30 * time.Second)
 	state.CreatedAt, state.LastSlot, state.LastFitSlot = now.Add(-time.Hour), closed.Add(-30*time.Second), closed.Add(-60*time.Second)
-	state.Estimator = workloaddemand.NewEstimator(identity).Snapshot()
-	state.Estimator.Last = workloaddemand.Estimate{State: "qualified", CPUSecondsPerRequest: .02, BackgroundCPUPerPod: .1,
-		QualifiedWindows: 25, Version: 6, LastObservationAt: closed.Add(-30 * time.Second), FreshUntil: closed.Add(2 * time.Minute)}
+	var sampled []api.TimestampedSample
 	for i := 0; i < 60; i++ {
-		at, value := closed.Add(time.Duration(i-61)*30*time.Second), float64(30+i%7)
-		state.Observations = append(state.Observations, requestforecast.Observation{At: at, Until: at.Add(30 * time.Second), ReceivedAt: at.Add(34 * time.Second), ArrivalsPerSecond: &value})
+		until := closed.Add(time.Duration(i-59) * 30 * time.Second)
+		state.Observations = append(state.Observations, demandRow(until, map[string]float64{"traffic_arrivals": 30, "traffic_completions": 30}))
+		sampled = append(sampled, cpuSample(until.Add(-time.Second), 300, 3))
 	}
 	if err := r.saveDemandState(ctx, cm, state); err != nil {
 		t.Fatal(err)
@@ -140,47 +136,34 @@ func TestRequestDemandCooldownRefreshesAndFitsButNeverWritesScale(t *testing.T) 
 		t.Fatal(err)
 	}
 	if err := r.mutateConfigMapData(ctx, owner, func(data *api.HPAPlusData) (bool, error) {
-		data.ModelHistories[model.Name] = api.ModelHistory{Type: model.Type, HistoryEpoch: 1}
+		data.ModelHistories[model.Name] = api.ModelHistory{Type: model.Type, HistoryEpoch: 1, ReplicaHistory: sampled}
 		return true, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	fits := 0
-	r.WorkloadRunner = demandIntegrationRunner(func(_, payload string, _ int) (string, error) {
-		fits++
-		var input struct {
-			RequestedAt, FirstForecastAt time.Time
-			Config                       requestforecast.Config
+	fake := &reconstructedRuntime{cpu: 1200}
+	r.Runtime = fake
+	fits := func() int {
+		n := 0
+		for _, request := range fake.requests {
+			if strings.HasSuffix(request.Model.SessionID, "/reconstructed") {
+				n++
+			}
 		}
-		if err := json.Unmarshal([]byte(payload), &input); err != nil {
-			return "", err
-		}
-		if !input.FirstForecastAt.Equal(closed.Add(30 * time.Second)) {
-			t.Fatalf("publication skipped interval: %v", input.FirstForecastAt)
-		}
-		if len(input.Config.Features) == 0 || !sort.SliceIsSorted(input.Config.Features, func(i, j int) bool { return input.Config.Features[i].Name < input.Config.Features[j].Name }) {
-			t.Fatal("worker feature schema is not deterministic by name")
-		}
-		result := requestforecast.Result{Protocol: requestforecast.Protocol, Unit: requestforecast.Unit, GeneratedAt: input.RequestedAt, Status: "ready", TrainedThrough: closed.Add(-30 * time.Second)}
-		for i := 0; i < 3; i++ {
-			at := input.FirstForecastAt.Add(time.Duration(i) * 30 * time.Second)
-			result.Forecasts = append(result.Forecasts, requestforecast.Point{At: at, Until: at.Add(30 * time.Second), Value: 200})
-		}
-		body, err := json.Marshal(result)
-		return string(body), err
-	})
+		return n
+	}
 	result, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(owner)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.acquisitions != 1 || fits != 1 {
-		t.Fatalf("cooldown blocked acquisition/fit: acquired=%d fits=%d", g.acquisitions, fits)
+	if g.acquisitions != 1 || fits() != 1 {
+		t.Fatalf("cooldown blocked acquisition/fit: acquired=%d fits=%d", g.acquisitions, fits())
 	}
 	if writes != 0 {
 		t.Fatalf("cooldown wrote Scale %d times", writes)
 	}
-	if result.RequeueAfter != 26*time.Second {
-		t.Fatalf("did not preserve cooldown expiry: %+v", result)
+	if result.RequeueAfter != 5*time.Second {
+		t.Fatalf("floor not rechecked within its fast window during cooldown: %+v", result)
 	}
 	_, published, err := r.loadDemandState(ctx, owner, model, identity)
 	if err != nil || !published.LastSlot.Equal(closed) || len(published.Forecasts) != 3 {
@@ -193,6 +176,16 @@ func TestRequestDemandCooldownRefreshesAndFitsButNeverWritesScale(t *testing.T) 
 	if !latest.Status.LastScaleTime.Equal(owner.Status.LastScaleTime) || latest.Status.LastDecision != nil {
 		t.Fatal("cooldown changed scale accounting")
 	}
+	// The floor waits for the window that closed at the last boundary, so
+	// store its CPU sample before deciding again.
+	if err := r.mutateConfigMapData(ctx, owner, func(data *api.HPAPlusData) (bool, error) {
+		history := data.ModelHistories[model.Name]
+		history.ReplicaHistory = append(history.ReplicaHistory, cpuSample(closed.Add(29*time.Second), 300, 3))
+		data.ModelHistories[model.Name] = history
+		return true, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	*now = closed.Add(31 * time.Second)
 	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(owner)}); err != nil {
 		t.Fatal(err)
@@ -200,8 +193,8 @@ func TestRequestDemandCooldownRefreshesAndFitsButNeverWritesScale(t *testing.T) 
 	if writes != 1 {
 		t.Fatalf("write not permitted after cooldown: %d", writes)
 	}
-	if fits != 1 {
-		t.Fatalf("same closed interval fitted again: %d", fits)
+	if fits() != 1 {
+		t.Fatalf("same closed interval fitted again: %d", fits())
 	}
 }
 
