@@ -68,4 +68,24 @@ ADD --checksum=sha256:ee8496066ba403a526754243375820cd7384364ce2ad739ab0b45d16c2
 RUN chmod -R a+rX /app/toto-site /app/models
 USER 65532:65532
 
+# TiRex: PyTorch, TiRex-2's packages and the TiRex-2 weights on top of the default image.
+# Build with --target tirex. Its packages go in their own folder, as for Toto.
+FROM runtime AS tirex
+USER root
+COPY algorithms/requirements-tirex.txt ./algorithms/requirements-tirex.txt
+RUN python -m pip install --no-cache-dir --require-hashes --no-deps --target /app/tirex-site \
+    -r algorithms/requirements-tirex.txt
+ADD --checksum=sha256:e591152ebc5bd7245b5258cd26a52b57c1f6cfe60d6743111856ab0b12f7425e \
+    https://huggingface.co/NX-AI/TiRex-2/resolve/30788a311699acba7e6393ad9700ea7b7cb9bb2d/config.json /app/models/tirex-2/config.json
+ADD --checksum=sha256:17760e4eee4c14e0d8bad8b9d9ce6f5076aaeeb9d956a88b8e95cf1493a1c176 \
+    https://huggingface.co/NX-AI/TiRex-2/resolve/30788a311699acba7e6393ad9700ea7b7cb9bb2d/model.safetensors /app/models/tirex-2/model.safetensors
+ADD --checksum=sha256:a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9 \
+    https://huggingface.co/NX-AI/TiRex-2/resolve/30788a311699acba7e6393ad9700ea7b7cb9bb2d/LICENSE /app/models/tirex-2/LICENSE
+ADD --checksum=sha256:e00534420d17a0305afcd15982a9ef0c30a421d9e3f7ad22e70a7ff5018c0b74 \
+    https://huggingface.co/NX-AI/TiRex-2/resolve/30788a311699acba7e6393ad9700ea7b7cb9bb2d/NOTICE /app/models/tirex-2/NOTICE
+ADD --checksum=sha256:ec10f277ff820fb8915b4ff3988916c25bc892167902aba84bb9bfe24d190b70 \
+    https://huggingface.co/NX-AI/TiRex-2/resolve/30788a311699acba7e6393ad9700ea7b7cb9bb2d/README.md /app/models/tirex-2/README.md
+RUN chmod -R a+rX /app/tirex-site /app/models
+USER 65532:65532
+
 FROM runtime
