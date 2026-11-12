@@ -34,15 +34,31 @@ func makeCPUUtilizationMetric(target int32) autoscalingv2.MetricSpec {
 	}
 }
 
-// cpuOnlyUnlessDemand marks a test model CPU-only when it has no requestDemand, as every model must say which.
-func cpuOnlyUnlessDemand(model hpaplusv1alpha1.Model) hpaplusv1alpha1.Model {
-	model.CPUOnly = model.RequestDemand == nil
+// withRequestDemand gives a test model the request demand every model needs, with the settings it requires.
+func withRequestDemand(model hpaplusv1alpha1.Model) hpaplusv1alpha1.Model {
+	if model.RequestDemand == nil {
+		model.RequestDemand = &hpaplusv1alpha1.RequestDemandConfig{Traffic: hpaplusv1alpha1.TrafficProviderConfig{
+			Provider: "prometheus", ArrivalsMetric: "started_total", CompletionsMetric: "finished_total",
+			ArrivalSemantics: "started", CompletionSemantics: "finished", RetrySemantics: "attempts"}}
+	}
+	if model.PredictivePolicy == nil {
+		model.PredictivePolicy = &hpaplusv1alpha1.PredictivePolicy{}
+	}
+	if model.PredictionMaxAge == nil {
+		model.PredictionMaxAge = intPtr(120000)
+	}
 	return model
 }
 
+// demandSettings are the spec settings request demand requires.
+func demandSettings(spec *hpaplusv1alpha1.HPAPlusSpec) {
+	no, cadence := false, 30000
+	spec.SyncPeriod, spec.IncludeHPA, spec.PredictionFailurePolicy = &cadence, &no, hpaplusv1alpha1.PredictionFailureHoldCurrent
+}
+
 func makeInstance(model hpaplusv1alpha1.Model) *hpaplusv1alpha1.HPAPlus {
-	model = cpuOnlyUnlessDemand(model)
-	return &hpaplusv1alpha1.HPAPlus{
+	model = withRequestDemand(model)
+	instance := &hpaplusv1alpha1.HPAPlus{
 		Spec: hpaplusv1alpha1.HPAPlusSpec{
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: "app"},
 			MaxReplicas:    10,
@@ -50,16 +66,20 @@ func makeInstance(model hpaplusv1alpha1.Model) *hpaplusv1alpha1.HPAPlus {
 			Models:         []hpaplusv1alpha1.Model{model},
 		},
 	}
+	demandSettings(&instance.Spec)
+	return instance
 }
 
 func makeInstanceWithoutMetrics(model hpaplusv1alpha1.Model) *hpaplusv1alpha1.HPAPlus {
-	model = cpuOnlyUnlessDemand(model)
-	return &hpaplusv1alpha1.HPAPlus{
+	model = withRequestDemand(model)
+	instance := &hpaplusv1alpha1.HPAPlus{
 		Spec: hpaplusv1alpha1.HPAPlusSpec{
 			MaxReplicas: 10,
 			Models:      []hpaplusv1alpha1.Model{model},
 		},
 	}
+	demandSettings(&instance.Spec)
+	return instance
 }
 
 func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
@@ -300,19 +320,12 @@ func TestValidateRejectsCPUHistoryModelsWithoutCPUUtilizationMetric(t *testing.T
 	}
 }
 
-func TestValidateRequiresRequestDemandOrCPUOnly(t *testing.T) {
+func TestValidateRequiresRequestDemand(t *testing.T) {
 	model := hpaplusv1alpha1.Model{Name: "lin", Type: hpaplusv1alpha1.TypeLinear, Linear: &hpaplusv1alpha1.Linear{HistorySize: 10, LookAhead: 1000}}
-	instance := makeInstance(model)
-	instance.Spec.Models[0].CPUOnly = false
-	if err := Validate(instance); err == nil || !strings.Contains(err.Error(), "set requestDemand") {
-		t.Fatalf("a model with neither requestDemand nor cpuOnly must be rejected, got %v", err)
+	if err := validateModelBasics(model); err == nil || !strings.Contains(err.Error(), "requestDemand is required") {
+		t.Fatalf("a model without requestDemand must be rejected, got %v", err)
 	}
-	instance.Spec.Models[0].CPUOnly = true
-	if err := Validate(instance); err != nil {
-		t.Fatalf("cpuOnly must be accepted, got %v", err)
-	}
-	model.CPUOnly, model.RequestDemand = true, &hpaplusv1alpha1.RequestDemandConfig{}
-	if err := validateModelBasics(model); err == nil || !strings.Contains(err.Error(), "cannot both be set") {
-		t.Fatalf("requestDemand with cpuOnly must be rejected, got %v", err)
+	if err := Validate(makeInstance(model)); err != nil {
+		t.Fatalf("a model with request demand must be accepted, got %v", err)
 	}
 }

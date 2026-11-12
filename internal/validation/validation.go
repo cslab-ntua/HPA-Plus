@@ -418,11 +418,8 @@ func validateSpec(spec hpaplusv1alpha1.HPAPlusSpec) error {
 }
 
 func validateModelBasics(model hpaplusv1alpha1.Model) error {
-	if model.RequestDemand == nil && !model.CPUOnly {
-		return errors.New("set requestDemand to forecast the demand rebuilt from request counters, or cpuOnly: true to forecast measured CPU only")
-	}
-	if model.RequestDemand != nil && model.CPUOnly {
-		return errors.New("requestDemand and cpuOnly cannot both be set")
+	if model.RequestDemand == nil {
+		return errors.New("requestDemand is required: HPA+ forecasts the demand rebuilt from the workload's request counters")
 	}
 	if model.ForecastReliability != nil {
 		p := model.ForecastReliability.Effective()

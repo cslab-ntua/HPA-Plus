@@ -831,12 +831,6 @@ spec:
                       maximum: 9223372036854
                       minimum: 1
                       type: integer
-                    cpuOnly:
-                      description: |-
-                        CPUOnly forecasts measured CPU without the request-demand rebuild, for applications without request
-                        counters. It does much worse: measured CPU stops at what saturated pods can do, so it hides the demand
-                        they could not serve.
-                      type: boolean
                     forecastReliability:
                       description: ForecastReliability enables shared error detection
                         and adapter-specific refitting.
@@ -1139,9 +1133,8 @@ spec:
                       - scaleUpLeadSeconds
                       type: object
                     requestDemand:
-                      description: |-
-                        RequestDemand makes the model forecast CPU demand rebuilt from request counters. Every model needs
-                        either requestDemand or cpuOnly.
+                      description: RequestDemand makes the model forecast CPU demand
+                        rebuilt from request counters. Every model needs it.
                       properties:
                         forecastTarget:
                           description: ForecastTarget is reconstructedCPU, the only

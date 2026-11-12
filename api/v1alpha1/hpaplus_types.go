@@ -518,16 +518,9 @@ type CPUForecastPoint struct {
 
 // Model represents a prediction model to use, e.g. a linear regression.
 type Model struct {
-	// RequestDemand makes the model forecast CPU demand rebuilt from request counters. Every model needs
-	// either requestDemand or cpuOnly.
+	// RequestDemand makes the model forecast CPU demand rebuilt from request counters. Every model needs it.
 	// +optional
 	RequestDemand *RequestDemandConfig `json:"requestDemand,omitempty"`
-
-	// CPUOnly forecasts measured CPU without the request-demand rebuild, for applications without request
-	// counters. It does much worse: measured CPU stops at what saturated pods can do, so it hides the demand
-	// they could not serve.
-	// +optional
-	CPUOnly bool `json:"cpuOnly,omitempty"`
 
 	// ForecastReliability enables shared error detection and adapter-specific refitting.
 	// +optional
