@@ -77,8 +77,8 @@ in a ConfigMap of its own. The local UI runs on your own machine and only reads.
 | `internal/validation/` | Checks that the CRD schema cannot express, such as cross-field rules |
 | `internal/decision/` | Candidate selection, rollout modes, guards and scaling behavior, with no clients or writes |
 | `internal/scalebehavior/` | Kubernetes HPA stabilization and rate-limit rules |
-| `internal/metrics/` | Metric gathering, pod CPU from Metrics Server, kubelet or the cgroup collector, and CPU request capacity |
-| `internal/cgroup/`, `cmd/cgroup-collector/` | Optional DaemonSet that reads cgroup v2 counters and serves per-pod CPU snapshots |
+| `internal/metrics/` | Metric gathering, pod CPU from the cgroup collector, and CPU request capacity |
+| `internal/cgroup/`, `cmd/cgroup-collector/` | DaemonSet that reads cgroup v2 counters and serves per-pod CPU snapshots |
 | `internal/history/` | Persisted history format, validation and recovery rules |
 | `internal/prediction/` | Model adapters, forecast timing and CPU-to-replica conversion |
 | `internal/prediction/requestdemand/` | Request windows and forecasts kept by request-demand mode |
@@ -100,9 +100,7 @@ recorded for that slot, and missing data never becomes zero. Each row keeps its 
 that was already recorded is not stored again. A history belongs to one HPAPlus and one workload UID, so a recreated
 or retargeted workload starts a new history.
 
-CPU comes from the Metrics Server by default. `cpuHistorySource: kubelet` reads kubelet summaries through the node
-proxy, and `cpuHistorySource: cgroup` reads the cgroup collector, which samples cgroup v2 counters on every node every
-two seconds.
+CPU comes from the cgroup collector, which samples cgroup v2 counters on every node every two seconds.
 
 ## Reconciliation and decisions
 

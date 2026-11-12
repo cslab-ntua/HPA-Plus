@@ -53,13 +53,13 @@ Security level must allow it in the operator's namespace.
 
 The chart deploys one collector per selected Linux node. The collector has a read-only `/sys/fs/cgroup` host mount, reads counters every two seconds and retains three minutes of raw windows. It does not use a container-runtime socket or privileged mode. Pod discovery uses a node-filtered Kubernetes informer; a configured `watchNamespace` limits its RBAC to that namespace. The operator reads shared node snapshots through the Kubernetes pod proxy.
 
-The corresponding operator flags are `--cpu-history-source=cgroup`, `--cgroup-collector-namespace`, `--cgroup-collector-selector`, `--cgroup-collector-port` and `--traffic-prometheus-url`. Helm configures the collector namespace as the release namespace. The standalone collector also accepts `--watch-namespace`.
+The corresponding operator flags are `--cgroup-collector-namespace`, `--cgroup-collector-selector`, `--cgroup-collector-port` and `--traffic-prometheus-url`. Helm configures the collector namespace as the release namespace. The standalone collector also accepts `--watch-namespace`.
 
 CPU consumption is the difference between cumulative `usage_usec` counters divided by actual elapsed time. Measurements retain container IDs, pod UIDs and interval boundaries. The collector also reads memory, throttling and CPU pressure where the kernel exposes them. Missing optional counters stay unavailable. Counter resets, absent containers, missed reads and unsupported cgroup layouts leave gaps.
 
-Both reactive CPU evaluation and CPU forecasting use the selected cgroup source with a fixed thirty-second averaging window. Helm does not expose a separate averaging-window setting. Two-second collection reduces measurement delay; it does not make thirty seconds of a new container's history immediately available. A new container needs two reads for its first rate and a complete averaging window for the CPU history path. Gaps are never interpolated. Changing the CPU collection contract resets incompatible stored CPU training histories.
+Both reactive CPU evaluation and CPU forecasting use the cgroup collector with a fixed thirty-second averaging window. Helm does not expose a separate averaging-window setting. Two-second collection reduces measurement delay; it does not make thirty seconds of a new container's history immediately available. A new container needs two reads for its first rate and a complete averaging window for the CPU history path. Gaps are never interpolated. Changing the CPU collection contract resets incompatible stored CPU training histories.
 
-Request demand requires the cgroup collector. The `metrics-server` and `kubelet` sources in `cpuHistorySource` only suit an HPAPlus without models. A failed cgroup read does not silently switch to Metrics API measurements.
+The cgroup collector is the only CPU source; metrics-server and kubelet summaries are too coarse for request demand. A failed cgroup read leaves a gap.
 
 ## Required traffic telemetry and HPAPlus configuration
 

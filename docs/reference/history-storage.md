@@ -128,7 +128,7 @@ reclaim orphan chunks. Journal-only updates reuse unchanged state chunks, remove
 publication, and deleting the HPAPlus lets Kubernetes garbage collection remove the root and the chunks.
 
 Chunk reads and cleanup lists use the uncached API reader, so the operator doesn't start a cluster-wide informer
-that would keep every chunk in its cache. Raw metric reuse stays inside the process: the metrics API remains the
+that would keep every chunk in its cache. Raw metric reuse stays inside the process: the cgroup collector remains the
 source of measurements, and durable source watermarks prevent duplicate training across restarts and writers.
 
 ## Format changes and missing data

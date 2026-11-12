@@ -14,8 +14,6 @@ Inspect `status.modelStatuses`, conditions and current metrics. Models need enou
 
 Baseline-only decisions, or holds with `predictionFailurePolicy: HoldCurrent`, are expected during warm-up, failed fits, expired forecasts or unavailable history. Find out which one applies before changing model parameters. Check the forecast horizon and age separately from fitting duration and collection age. Valid cached forecasts stay usable until they expire, and retries don't extend them.
 
-The optional `cpuHistorySource: kubelet` path changes the CPU training source and requires node-proxy access. It does not guarantee complete or earlier readings. Reactive evaluation continues through the normal metric path.
-
 ## Status, history and storage
 
 History is tied to the HPAPlus and target UIDs. Resource recreation or retargeting starts a new window rather than merging different workload histories. Histories use a root ConfigMap and, when needed, immutable chunks. Preserve the root and all referenced chunks when capturing state; a root-only copy is insufficient for allocated history.

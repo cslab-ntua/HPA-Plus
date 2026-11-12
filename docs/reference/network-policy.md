@@ -24,8 +24,8 @@ kubectl -n kube-system get pods --show-labels
 ```
 
 Account for every API endpoint in an HA cluster, the API Service port and any service-to-endpoint translation.
-Node-local DNS may require an explicit DNS IP rule instead of the pod selector. The operator accesses resource,
-custom and external metrics through the Kubernetes API; it does not normally connect directly to metrics-server.
+Node-local DNS may require an explicit DNS IP rule instead of the pod selector. The operator reads collector snapshots
+through the pod proxy and custom and external metrics through the Kubernetes API; it does not connect to metrics-server.
 Unix-socket worker communication needs no network allowance. Hooks run in the manager and need their own egress rule.
 
 The chart supports a deliberately restricted rule format:
