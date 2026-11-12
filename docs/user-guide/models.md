@@ -25,10 +25,8 @@ traffic before giving it control.
 Every model entry has these fields:
 
 - `type`: `Linear`, `HoltWinters`, `ARIMA`, `XGBoost`, `LightGBM`, `Toto`, `TiRex` or `SeasonalNaive`.
-- `requestDemand` or `cpuOnly`: every model needs one. `requestDemand` forecasts the demand rebuilt from request
-  counters and is the default way to run HPA+; see [request demand](request-demand.md). `cpuOnly: true` forecasts
-  measured CPU only, for workloads without request counters, and does much worse. The examples below show only the
-  model's own block.
+- `requestDemand`: required. The model forecasts the demand rebuilt from request counters; see
+  [request demand](request-demand.md). The examples below show only the model's own block.
 - `name`: unique within the HPAPlus.
 - `perSyncPeriod`: new samples needed after the last successful run before the model runs again. Default `1`; with
   regular sampling, `2` runs it about every other sync. It cannot exceed the retained history.
@@ -53,11 +51,8 @@ Models learn from the workload's aggregate CPU usage, which the history sampler 
 row keeps the time of the CPU measurement. A missing pod or container leaves a gap instead of a lower number.
 Complete CPU from starting pods is kept for training, even when the reactive HPA calculation skips it.
 
-CPU comes from the Metrics Server by default. The operator setting `cpuHistorySource: kubelet` (flag
-`--cpu-history-source=kubelet`) reads container CPU rates from kubelet summaries instead. It needs `get` on
-`nodes/proxy`, which the chart grants only when this source is selected, and every serving container must report.
-It changes only the training data; the reactive recommendation still uses the Metrics API. `cpuHistorySource: cgroup`
-reads the [cgroup collector](request-demand.md#installation-and-measurements) for both. A measured zero is valid; a
+CPU comes from the [cgroup collector](request-demand.md#installation-and-measurements), which the chart enables and
+request demand needs. It feeds both the training data and the reactive recommendation. A measured zero is valid; a
 missing or stale rate is not. Whatever the source, CPU near an enforced limit can hide demand that the application
 turned away.
 

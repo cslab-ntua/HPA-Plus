@@ -17,9 +17,9 @@ logging:
   level: info
 
 # cgroup supplies the same counter-window measurements to CPU training and
-# reactive evaluation, and requires the collector below. Request demand, the
-# default way to forecast, needs it. metrics-server and kubelet (CPU training
-# only, grants nodes/proxy access) still work for cpuOnly models.
+# reactive evaluation, and requires the collector below. Request demand needs
+# it. metrics-server and kubelet (grants nodes/proxy access) only suit an
+# HPAPlus without models.
 cpuHistorySource: cgroup
 
 # Trusted Prometheus origin with the application's request counters. Request

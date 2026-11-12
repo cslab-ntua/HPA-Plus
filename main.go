@@ -83,7 +83,7 @@ func main() {
 	flag.StringVar(&collectorSelector, "cgroup-collector-selector", "app.kubernetes.io/component=cgroup-collector", "Label selector for trusted cgroup collectors.")
 	flag.IntVar(&collectorPort, "cgroup-collector-port", 19091, "Cgroup collector HTTP port accessed through Kubernetes pod proxy.")
 	flag.StringVar(&trafficPrometheusURL, "traffic-prometheus-url", "", "Trusted Prometheus origin for workload traffic telemetry; empty disables request-demand mode.")
-	flag.StringVar(&cpuHistorySource, "cpu-history-source", "metrics-server", "CPU measurements: metrics-server, kubelet, or optional cgroup collector. Cgroup applies to CPU training and reactive evaluation.")
+	flag.StringVar(&cpuHistorySource, "cpu-history-source", "metrics-server", "CPU measurements: metrics-server, kubelet, or cgroup collector. Models need cgroup. Cgroup applies to CPU training and reactive evaluation.")
 	flag.StringVar(&watchNamespace, "watch-namespace", "", "Restrict the manager cache and reconciliation to one namespace; empty watches all namespaces.")
 	var enableLeaderElection bool
 	var probeAddr string

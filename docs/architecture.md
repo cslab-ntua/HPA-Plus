@@ -8,16 +8,16 @@ optional worker sidecar.
 ```mermaid
 flowchart TB
     hpaplus["HPAPlus spec"]
-    cpu["Pod CPU<br/>Metrics API or cgroup collector"]
-    prometheus["Prometheus<br/>requests started and finished"]:::optional
+    cpu["Pod CPU<br/>cgroup collector"]
+    prometheus["Prometheus<br/>requests started and finished"]
 
     subgraph pod["Operator pod"]
         sampler["History sampler<br/>one CPU row per syncPeriod"]
         subgraph round["Reconciler, every round"]
             baseline["Reactive baseline<br/>HPA formula on current CPU"]
-            rebuild["Rebuild each window<br/>CPU × started ÷ finished"]:::optional
+            rebuild["Rebuild each window<br/>CPU × started ÷ finished"]
             model["Model forecasts CPU<br/>Python, over JSON"]
-            floor["Floor and fast check<br/>replicas current demand needs"]:::optional
+            floor["Floor and fast check<br/>replicas current demand needs"]
             replicas["CPU to replicas<br/>forecast ÷ (request × target)"]
             planner["Decision planner<br/>combine, fall back, HPA rules"]
         end
@@ -33,11 +33,11 @@ flowchart TB
     sampler -- CPU rows --> history
     history -- training window --> rebuild
     history ~~~ prometheus
-    prometheus -. requests .-> rebuild
+    prometheus -- requests --> rebuild
     rebuild -- history --> model
     model -- CPU forecast --> replicas
-    cpu -. current CPU .-> floor
-    floor -. at least .-> replicas
+    cpu -- current CPU --> floor
+    floor -- at least --> replicas
     cpu -- current CPU --> baseline
     replicas -- model replicas --> planner
     baseline -- baseline replicas --> planner
@@ -48,11 +48,10 @@ flowchart TB
     classDef optional stroke-dasharray: 5 5
 ```
 
-Dashed parts belong to [request demand](user-guide/request-demand.md) and are optional. Without it, the training
-window goes to the model unchanged and there is no floor. Each reconciler round:
+The dashed local UI is optional. Each reconciler round:
 
 1. Reads the current CPU and computes the reactive baseline, the replicas the Kubernetes HPA formula would ask for.
-2. Loads the training window from the history ConfigMaps. With request demand, each window is first rebuilt as
+2. Loads the training window from the history ConfigMaps. Each window is first rebuilt as
    measured CPU × requests started ÷ requests finished, so pods at full CPU no longer hide the work they could not
    serve.
 3. Runs the model when its cadence allows, usually once per new sample. The model forecasts CPU demand for the next
@@ -64,7 +63,7 @@ window goes to the model unchanged and there is no floor. Each reconciler round:
    decision is always reported in status; in `assist` and `control` the controller also saves a scale journal and then
    updates the workload's Scale.
 
-CPU comes from the Metrics Server by default, or from the cgroup collector, which request demand needs. Python runs in
+CPU comes from the cgroup collector, which the chart enables and request demand needs. Python runs in
 the manager container, or in a worker sidecar in the same pod. Request demand keeps its request windows and forecasts
 in a ConfigMap of its own. The local UI runs on your own machine and only reads.
 
@@ -151,8 +150,8 @@ See [models](user-guide/models.md), [typed forecasting](reference/typed-forecast
 
 ## Request demand
 
-CPU history cannot show demand that saturated pods failed to serve. Request demand, the default for every model
-unless it sets `cpuOnly`, adds per-pod request counters from Prometheus. The reconciler queries them for the workload's own pods, rebuilds
+CPU history cannot show demand that saturated pods failed to serve. Request demand adds per-pod request
+counters from Prometheus to every model. The reconciler queries them for the workload's own pods, rebuilds
 each closed window's CPU as measured cgroup CPU times arrivals per completion, and runs the model's own forecaster on
 that rebuilt history. It never recommends fewer pods than the current rebuilt demand needs. Its request windows and
 forecasts live in their own ConfigMap. When request data is unavailable, the model uses its CPU forecast, and without

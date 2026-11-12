@@ -4,7 +4,7 @@ Install the operator using the [installation guide](installation.md), with `traf
 Prometheus that scrapes your application. Select an existing Deployment whose serving containers have positive CPU
 requests. The HPAPlus and target must be in the same namespace.
 
-By default HPA+ forecasts the demand rebuilt from two per-pod request counters, requests started and requests
+HPA+ forecasts the demand rebuilt from two per-pod request counters, requests started and requests
 finished. [Request demand](request-demand.md) lists what it needs. Create an HPAPlus for that workload, replacing the
 namespace, deployment name and metric names:
 
@@ -65,11 +65,5 @@ windows at a 30-second cadence take about ten minutes to accumulate, with longer
 Inspect conditions and model status for configuration errors, missing CPU or request counts, warm-up and expired
 forecasts. Compare recommendations with actual workload behavior before setting `spec.mode: control`. Ensure only one
 autoscaler writes the Deployment's replicas when control is enabled.
-
-## Without request counters
-
-If the application has no request counters, replace the `requestDemand` block with `cpuOnly: true`. The model then
-forecasts measured CPU only. It does much worse: when pods are full their CPU stops at what they can do, so the
-forecast misses the demand they could not serve. See [request demand](request-demand.md#without-request-counters).
 
 See [model configuration](models.md), [rollout modes](rollout.md), [configuration reference](../reference/configuration.md) and [operating HPA+](operations.md).

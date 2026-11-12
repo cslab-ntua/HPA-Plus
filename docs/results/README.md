@@ -22,7 +22,7 @@ Both used a 60% CPU target, 1 to 8 pods with 1 CPU each and a 30-second sync per
 limits: when scaling up, at most double or 4 more pods per 60 seconds; when scaling down, any amount per 30 seconds,
 with no stabilization window.
 
-These runs also included an earlier HPA+ mode that forecast from measured CPU alone. That mode is being removed from
+These runs also included an earlier HPA+ mode that forecast from measured CPU alone. That mode has been removed from
 HPA+, so its results are not shown.
 
 ## Results by traffic

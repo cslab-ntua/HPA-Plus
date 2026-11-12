@@ -1,6 +1,6 @@
 # HPA+
 
-HPA+ is a Kubernetes predictive autoscaling operator. It keeps the familiar Horizontal Pod Autoscaler configuration and forecasts the CPU a workload needs. When pods are full, their measured CPU stops at what they can do and hides the rest. So by default HPA+ rebuilds the demand from request counters, as measured CPU × requests started ÷ requests finished, and a model forecasts that. The operator turns the forecast into replicas using CPU requests and the utilization target. Workloads without request counters can forecast measured CPU only, which does much worse.
+HPA+ is a Kubernetes predictive autoscaling operator. It keeps the familiar Horizontal Pod Autoscaler configuration and forecasts the CPU a workload needs. When pods are full, their measured CPU stops at what they can do and hides the rest. So HPA+ rebuilds the demand from request counters, as measured CPU × requests started ÷ requests finished, and a model forecasts that. The operator turns the forecast into replicas using CPU requests and the utilization target. It needs per-pod counters of requests started and finished.
 
 Supported models are Linear, Holt-Winters, ARIMA/SARIMA, XGBoost, LightGBM, Toto, TiRex and a seasonal naive baseline. Models share history collection, workload identity checks, forecast validity checks, worker limits and the scaling decision path. Predictive performance depends on the workload, measurements and configuration.
 
@@ -23,7 +23,7 @@ When pods are full, requests start faster than they finish and the measured CPU 
 ![What saturated pods hide: requests started and finished, and CPU measured, rebuilt and needed, at one peak](docs/results/figures/rebuild.svg)
 
 1. Collect workload metrics and retain complete CPU observations in durable history.
-2. Compute the reactive HPA-style recommendation and evaluate eligible models. With [request demand](docs/user-guide/request-demand.md), the default, each history window is first rebuilt as measured CPU × requests started ÷ requests finished. Models set to `cpuOnly` skip this step.
+2. Compute the reactive HPA-style recommendation and evaluate eligible models. Each history window is first rebuilt as measured CPU × requests started ÷ requests finished ([request demand](docs/user-guide/request-demand.md)).
 3. Convert forecast CPU demand into replicas, optionally combining it with the reactive recommendation through `includeHPA`.
 4. Apply the configured decision policy, rollout mode, replica bounds and scaling behavior.
 5. Update the workload's Scale resource and publish status, logs and operational metrics.
