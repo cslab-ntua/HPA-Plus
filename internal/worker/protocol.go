@@ -87,7 +87,7 @@ func encode(value interface{}) ([]byte, error) {
 }
 func validScript(script string) bool {
 	switch script {
-	case "algorithms/linear_regression/linear_regression.py", "algorithms/arima/arima.py", "algorithms/holt_winters/holt_winters.py", "algorithms/xgboost/xgboost.py", "algorithms/lightgbm/lightgbm.py":
+	case "algorithms/linear_regression/linear_regression.py", "algorithms/arima/arima.py", "algorithms/holt_winters/holt_winters.py", "algorithms/xgboost/xgboost.py", "algorithms/lightgbm/lightgbm.py", "algorithms/seasonal_naive/seasonal_naive.py":
 		return true
 	}
 	return false
@@ -108,7 +108,7 @@ func (r request) validate() error {
 		}
 		return nil
 	case "session":
-		if r.Session == "" || r.Script != "algorithms/arima/incremental_worker.py" {
+		if r.Session == "" || (r.Script != "algorithms/arima/incremental_worker.py" && r.Script != "algorithms/toto/toto.py") {
 			return fmt.Errorf("invalid session")
 		}
 	case "forecast", "run":

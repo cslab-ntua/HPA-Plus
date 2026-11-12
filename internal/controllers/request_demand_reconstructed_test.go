@@ -566,6 +566,12 @@ func TestReconstructedDemandRunsWithEveryModelType(t *testing.T) {
 		func(m *api.Model) {
 			m.Type, m.XGBoost = api.TypeXGBoost, &api.XGBoost{HistorySize: 60, LookAhead: lookAhead, ForecastStrategy: "recursive"}
 		},
+		func(m *api.Model) {
+			m.Type, m.Toto = api.TypeToto, &api.Toto{HistorySize: 45, LookAhead: lookAhead}
+		},
+		func(m *api.Model) {
+			m.Type, m.SeasonalNaive = api.TypeSeasonalNaive, &api.SeasonalNaive{HistorySize: 50, LookAhead: lookAhead}
+		},
 	} {
 		r, owner, scale, now := demandIntegrationFixture(t)
 		r.TrafficPrometheusURL = "http://unused.invalid"

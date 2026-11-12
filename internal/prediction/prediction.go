@@ -128,7 +128,9 @@ func UsesCPUHistory(modelType string) bool {
 		hpaplusv1alpha1.TypeHoltWinters,
 		hpaplusv1alpha1.TypeArima,
 		hpaplusv1alpha1.TypeXGBoost,
-		hpaplusv1alpha1.TypeLightGBM:
+		hpaplusv1alpha1.TypeLightGBM,
+		hpaplusv1alpha1.TypeToto,
+		hpaplusv1alpha1.TypeSeasonalNaive:
 		return true
 	default:
 		return false

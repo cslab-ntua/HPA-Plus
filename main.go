@@ -53,6 +53,8 @@ import (
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/holtwinters"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/lightgbm"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/linear"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction/seasonalnaive"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction/toto"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/xgboost"
 	"github.com/cslab-ntua/HPA-Plus/internal/worker"
 	//+kubebuilder:scaffold:imports
@@ -261,6 +263,12 @@ func main() {
 					Runner: pyRunner,
 				},
 				&lightgbm.Predict{
+					Runner: pyRunner,
+				},
+				&toto.Predict{
+					Runner: persistentPyRunner,
+				},
+				&seasonalnaive.Predict{
 					Runner: pyRunner,
 				},
 			},

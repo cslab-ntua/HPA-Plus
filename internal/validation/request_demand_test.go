@@ -47,6 +47,8 @@ func TestRequestDemandAcceptsEveryModelType(t *testing.T) {
 		{Type: api.TypeArima, Arima: &api.Arima{}},
 		{Type: api.TypeLightGBM, LightGBM: &api.LightGBM{}},
 		{Type: api.TypeXGBoost, XGBoost: &api.XGBoost{ForecastStrategy: "recursive"}},
+		{Type: api.TypeToto, Toto: &api.Toto{}},
+		{Type: api.TypeSeasonalNaive, SeasonalNaive: &api.SeasonalNaive{}},
 	} {
 		s := demandSpec()
 		model.Name, model.PredictivePolicy, model.PredictionMaxAge, model.RequestDemand = "m", s.Models[0].PredictivePolicy, s.Models[0].PredictionMaxAge, s.Models[0].RequestDemand

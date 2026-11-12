@@ -100,6 +100,10 @@ func family(kind string) string {
 		return "xgboost"
 	case api.TypeLightGBM:
 		return "lightgbm"
+	case api.TypeToto:
+		return "toto"
+	case api.TypeSeasonalNaive:
+		return "seasonal_naive"
 	default:
 		return "other"
 	}

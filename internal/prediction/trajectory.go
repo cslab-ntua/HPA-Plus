@@ -29,6 +29,14 @@ func ModelTrajectoryExpiry(model *api.Model, points []api.CPUForecastPoint, cons
 		if model.LightGBM != nil {
 			millis = model.LightGBM.LookAhead
 		}
+	case api.TypeToto:
+		if model.Toto != nil {
+			millis = model.Toto.LookAhead
+		}
+	case api.TypeSeasonalNaive:
+		if model.SeasonalNaive != nil {
+			millis = model.SeasonalNaive.LookAhead
+		}
 	case api.TypeHoltWinters:
 		if model.HoltWinters != nil && model.HoltWinters.LookAhead == nil {
 			if err := algorithm.ValidateForecastTrajectory(points); err != nil {

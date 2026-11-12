@@ -32,6 +32,7 @@ MODELS = {
     "ARIMA": "arima/arima.py",
     "XGBoost": "xgboost/xgboost.py",
     "LightGBM": "lightgbm/lightgbm.py",
+    "SeasonalNaive": "seasonal_naive/seasonal_naive.py",
 }
 
 

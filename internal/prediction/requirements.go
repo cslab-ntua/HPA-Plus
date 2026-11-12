@@ -17,6 +17,14 @@ func RequiredHistorySize(model *api.Model) int {
 		if model.LightGBM != nil {
 			return model.LightGBM.HistorySize
 		}
+	case api.TypeToto:
+		if model.Toto != nil {
+			return model.Toto.HistorySize
+		}
+	case api.TypeSeasonalNaive:
+		if model.SeasonalNaive != nil {
+			return model.SeasonalNaive.HistorySize
+		}
 	case api.TypeArima:
 		if model.Arima != nil && model.Arima.HistorySize != nil {
 			return *model.Arima.HistorySize

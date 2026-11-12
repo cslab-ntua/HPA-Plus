@@ -11,7 +11,8 @@ from forecast_time import parse_timestamp, forecast_steps
 
 _active = ContextVar("forecast_diagnostics", default=None)
 ENGINES = {"Linear": "statsmodels", "HoltWinters": "statsmodels", "ARIMA": "statsmodels",
-           "XGBoost": "xgboost", "LightGBM": "lightgbm"}
+           "XGBoost": "xgboost", "LightGBM": "lightgbm",
+           "Toto": "toto-2", "SeasonalNaive": "numpy"}
 MAX_STAGE_NS = 86400 * 1000000000
 
 

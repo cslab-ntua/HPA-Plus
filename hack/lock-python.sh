@@ -7,3 +7,6 @@ for dir in algorithms docs; do
   python -m piptools compile --generate-hashes --strip-extras \
     --output-file=$dir/requirements.txt $dir/requirements.in
 done
+# Toto's own lock, installed with --no-deps into /app/toto-site by the image's toto target.
+python -m piptools compile --generate-hashes --strip-extras --allow-unsafe \
+  --output-file=algorithms/requirements-toto.txt algorithms/requirements-toto.in

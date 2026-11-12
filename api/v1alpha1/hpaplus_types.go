@@ -33,11 +33,13 @@ const (
 )
 
 const (
-	TypeHoltWinters = "HoltWinters"
-	TypeLinear      = "Linear"
-	TypeArima       = "ARIMA"
-	TypeXGBoost     = "XGBoost"
-	TypeLightGBM    = "LightGBM"
+	TypeHoltWinters   = "HoltWinters"
+	TypeLinear        = "Linear"
+	TypeArima         = "ARIMA"
+	TypeXGBoost       = "XGBoost"
+	TypeLightGBM      = "LightGBM"
+	TypeToto          = "Toto"
+	TypeSeasonalNaive = "SeasonalNaive"
 )
 
 const (
@@ -341,6 +343,42 @@ type LightGBM struct {
 	RegAlpha *float64 `json:"regAlpha,omitempty"`
 }
 
+// Toto is the pretrained Toto 2.0 22M forecaster from Datadog, trained on observability metrics. It forecasts
+// aggregate CPU usage from the stored history without fitting, and keeps the model loaded in a persistent worker.
+type Toto struct {
+	// historySize is how many timestamped CPU samples are kept and given to the model as context.
+	// +kubebuilder:validation:Minimum=2
+	HistorySize int `json:"historySize"`
+
+	// lookAhead is how far ahead (in milliseconds) the prediction should forecast.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=9223372036854
+	LookAhead int `json:"lookAhead"`
+
+	// quantileLevel is the forecast quantile used as CPU demand: 0.1, 0.2, ..., 0.9. Defaults to 0.9.
+	// +kubebuilder:validation:Enum=0.1;0.2;0.3;0.4;0.5;0.6;0.7;0.8;0.9
+	// +optional
+	QuantileLevel *float64 `json:"quantileLevel,omitempty"`
+}
+
+// SeasonalNaive repeats the CPU usage of the same point one cycle earlier, or the newest sample when the
+// history shows no cycle. It fits nothing and is the baseline the other models should beat.
+type SeasonalNaive struct {
+	// historySize is how many timestamped CPU samples are kept.
+	// +kubebuilder:validation:Minimum=3
+	HistorySize int `json:"historySize"`
+
+	// lookAhead is how far ahead (in milliseconds) the prediction should forecast.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=9223372036854
+	LookAhead int `json:"lookAhead"`
+
+	// seasonalPeriodSeconds fixes the cycle length. When omitted, the cycle is found from the history.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	SeasonalPeriodSeconds *int `json:"seasonalPeriodSeconds,omitempty"`
+}
+
 // Arima represents an ARIMA (AutoRegressive Integrated Moving Average) prediction model configuration
 type Arima struct {
 	// order is the ARIMA order parameters [p, d, q] where:
@@ -476,7 +514,7 @@ type Model struct {
 
 	// type is the type of the model, for example 'Linear'. To see a full list of supported model types visit
 	// https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/models.md.
-	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA;XGBoost;LightGBM
+	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA;XGBoost;LightGBM;Toto;SeasonalNaive
 	Type string `json:"type"`
 
 	// name is the name of the model, this can be any arbitrary name and is just used to distinguish between models if
@@ -574,6 +612,15 @@ type Model struct {
 	// 'LightGBM'
 	// +optional
 	LightGBM *LightGBM `json:"lightgbm,omitempty"`
+
+	// toto is the configuration to use for the Toto model, it will only be used if the type is set to 'Toto'
+	// +optional
+	Toto *Toto `json:"toto,omitempty"`
+
+	// seasonalNaive is the configuration to use for the seasonal naive model, it will only be used if the type is
+	// set to 'SeasonalNaive'
+	// +optional
+	SeasonalNaive *SeasonalNaive `json:"seasonalNaive,omitempty"`
 }
 
 // TimestampedSample records CPU demand and replica context, or a replica recommendation/event.
