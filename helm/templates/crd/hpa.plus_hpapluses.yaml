@@ -1221,6 +1221,31 @@ spec:
                         This value is a string duration, e.g. 2m30s is 2 minutes and 30 seconds.
                       pattern: ^\+?(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+$
                       type: string
+                    seasonalNaive:
+                      description: |-
+                        seasonalNaive is the configuration to use for the seasonal naive model, it will only be used if the type is
+                        set to 'SeasonalNaive'
+                      properties:
+                        historySize:
+                          description: historySize is how many timestamped CPU samples
+                            are kept.
+                          minimum: 3
+                          type: integer
+                        lookAhead:
+                          description: lookAhead is how far ahead (in milliseconds)
+                            the prediction should forecast.
+                          maximum: 9223372036854
+                          minimum: 1
+                          type: integer
+                        seasonalPeriodSeconds:
+                          description: seasonalPeriodSeconds fixes the cycle length.
+                            When omitted, the cycle is found from the history.
+                          minimum: 1
+                          type: integer
+                      required:
+                      - historySize
+                      - lookAhead
+                      type: object
                     startInterval:
                       description: |-
                         startInterval is the next interval to start applying this model at. This allows you to make sure a model starts
@@ -1229,6 +1254,39 @@ spec:
                         This value is a string duration, e.g. 2m30s is 2 minutes and 30 seconds.
                       pattern: ^\+?(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+$
                       type: string
+                    toto:
+                      description: toto is the configuration to use for the Toto model,
+                        it will only be used if the type is set to 'Toto'
+                      properties:
+                        historySize:
+                          description: historySize is how many timestamped CPU samples
+                            are kept and given to the model as context.
+                          minimum: 2
+                          type: integer
+                        lookAhead:
+                          description: lookAhead is how far ahead (in milliseconds)
+                            the prediction should forecast.
+                          maximum: 9223372036854
+                          minimum: 1
+                          type: integer
+                        quantileLevel:
+                          description: 'quantileLevel is the forecast quantile used
+                            as CPU demand: 0.1, 0.2, ..., 0.9. Defaults to 0.9.'
+                          enum:
+                          - 0.1
+                          - 0.2
+                          - 0.3
+                          - 0.4
+                          - 0.5
+                          - 0.6
+                          - 0.7
+                          - 0.8
+                          - 0.9
+                          type: number
+                      required:
+                      - historySize
+                      - lookAhead
+                      type: object
                     type:
                       description: |-
                         type is the type of the model, for example 'Linear'. To see a full list of supported model types visit
@@ -1239,6 +1297,8 @@ spec:
                       - ARIMA
                       - XGBoost
                       - LightGBM
+                      - Toto
+                      - SeasonalNaive
                       type: string
                     xgboost:
                       description: |-

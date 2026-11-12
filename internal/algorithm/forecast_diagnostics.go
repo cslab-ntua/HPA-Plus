@@ -32,7 +32,7 @@ func (d *ForecastDiagnostics) Validate() error {
 	if d == nil {
 		return nil
 	}
-	engine := map[string]string{"Linear": "statsmodels", "HoltWinters": "statsmodels", "ARIMA": "statsmodels", "XGBoost": "xgboost", "LightGBM": "lightgbm"}[d.Model]
+	engine := map[string]string{"Linear": "statsmodels", "HoltWinters": "statsmodels", "ARIMA": "statsmodels", "XGBoost": "xgboost", "LightGBM": "lightgbm", "Toto": "toto-2", "SeasonalNaive": "numpy"}[d.Model]
 	if d.SchemaVersion != 1 || engine == "" || d.Engine != engine || len(d.EngineVersion) == 0 || len(d.EngineVersion) > 64 || strings.ContainsAny(d.EngineVersion, "\x00\r\n") || d.Uncertainty != "unavailable" {
 		return fmt.Errorf("invalid forecast provenance")
 	}

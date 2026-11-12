@@ -1,0 +1,5 @@
+# Toto 2.0 on CPU only; PyTorch comes from its CPU wheel index. Installed with --no-deps into
+# /app/toto-site, apart from the other models: Toto needs an older pandas.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.15.0+cpu
+toto-2==2.0.0

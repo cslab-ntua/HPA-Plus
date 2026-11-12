@@ -262,6 +262,43 @@ func validateModels(spec hpaplusv1alpha1.HPAPlusSpec) error {
 			}
 		}
 
+		if model.Type == hpaplusv1alpha1.TypeToto {
+			tt := model.Toto
+			if tt == nil {
+				return fmt.Errorf("invalid model '%s', type is '%s' but no Toto configuration provided",
+					model.Name, model.Type)
+			}
+			if !hasCPUUtilizationMetric {
+				return fmt.Errorf("invalid model '%s', Toto CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
+			}
+			if tt.HistorySize < 2 || tt.HistorySize > 2048 {
+				return fmt.Errorf("invalid model '%s', Toto historySize must be between 2 and 2048", model.Name)
+			}
+			if !validDuration(tt.LookAhead, time.Millisecond, 1) {
+				return fmt.Errorf("invalid model '%s', Toto lookAhead must be a positive millisecond duration", model.Name)
+			}
+			if q := tt.QuantileLevel; q != nil && (math.IsNaN(*q) || *q < 0.1 || *q > 0.9 || math.Abs(*q*10-math.Round(*q*10)) > 1e-9) {
+				return fmt.Errorf("invalid model '%s', Toto quantileLevel must be one of 0.1, 0.2, ..., 0.9", model.Name)
+			}
+		}
+
+		if model.Type == hpaplusv1alpha1.TypeSeasonalNaive {
+			sn := model.SeasonalNaive
+			if sn == nil {
+				return fmt.Errorf("invalid model '%s', type is '%s' but no seasonal naive configuration provided",
+					model.Name, model.Type)
+			}
+			if !hasCPUUtilizationMetric {
+				return fmt.Errorf("invalid model '%s', seasonal naive CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
+			}
+			if sn.HistorySize < 3 || !validDuration(sn.LookAhead, time.Millisecond, 1) {
+				return fmt.Errorf("invalid model '%s', seasonal naive historySize must be >= 3 and lookAhead must be a positive millisecond duration", model.Name)
+			}
+			if sn.SeasonalPeriodSeconds != nil && *sn.SeasonalPeriodSeconds < 1 {
+				return fmt.Errorf("invalid model '%s', seasonal naive seasonalPeriodSeconds must be positive", model.Name)
+			}
+		}
+
 		if model.Type == hpaplusv1alpha1.TypeLightGBM {
 			lgb := model.LightGBM
 			if lgb == nil {
@@ -385,7 +422,7 @@ func validateModelBasics(model hpaplusv1alpha1.Model) error {
 		return fmt.Errorf("unknown model type %q", model.Type)
 	}
 	configs := 0
-	for _, present := range []bool{model.Linear != nil, model.HoltWinters != nil, model.Arima != nil, model.XGBoost != nil, model.LightGBM != nil} {
+	for _, present := range []bool{model.Linear != nil, model.HoltWinters != nil, model.Arima != nil, model.XGBoost != nil, model.LightGBM != nil, model.Toto != nil, model.SeasonalNaive != nil} {
 		if present {
 			configs++
 		}
@@ -492,6 +529,10 @@ func validateModelHistory(model hpaplusv1alpha1.Model, syncPeriod *int) error {
 		retained = model.XGBoost.HistorySize
 	case hpaplusv1alpha1.TypeLightGBM:
 		retained = model.LightGBM.HistorySize
+	case hpaplusv1alpha1.TypeToto:
+		retained = model.Toto.HistorySize
+	case hpaplusv1alpha1.TypeSeasonalNaive:
+		retained = model.SeasonalNaive.HistorySize
 	case hpaplusv1alpha1.TypeArima:
 		retained = hpaplusv1alpha1.DefaultARIMAHistorySize
 		if model.Arima.HistorySize != nil {

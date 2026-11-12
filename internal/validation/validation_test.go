@@ -89,6 +89,23 @@ func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 			wantErr: "XGBoost colsampleBytree must be in (0, 1]",
 		},
 		{
+			name:    "toto-missing-config",
+			model:   hpaplusv1alpha1.Model{Name: "tt", Type: hpaplusv1alpha1.TypeToto},
+			wantErr: "no Toto configuration provided",
+		},
+		{
+			name: "toto-quantile-between-levels",
+			model: hpaplusv1alpha1.Model{Name: "tt", Type: hpaplusv1alpha1.TypeToto,
+				Toto: &hpaplusv1alpha1.Toto{HistorySize: 20, LookAhead: 1000, QuantileLevel: float64Ptr(0.85)}},
+			wantErr: "Toto quantileLevel must be one of 0.1, 0.2, ..., 0.9",
+		},
+		{
+			name: "seasonal-naive-two-samples",
+			model: hpaplusv1alpha1.Model{Name: "sn", Type: hpaplusv1alpha1.TypeSeasonalNaive,
+				SeasonalNaive: &hpaplusv1alpha1.SeasonalNaive{HistorySize: 2, LookAhead: 1000}},
+			wantErr: "seasonal naive historySize must be >= 3",
+		},
+		{
 			name: "lightgbm-zero-subsample",
 			model: hpaplusv1alpha1.Model{
 				Name: "lgb",

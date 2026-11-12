@@ -54,6 +54,8 @@ func forecastModel(script string) (string, error) {
 		return "XGBoost", nil
 	case "algorithms/lightgbm/lightgbm.py":
 		return "LightGBM", nil
+	case "algorithms/seasonal_naive/seasonal_naive.py":
+		return "SeasonalNaive", nil
 	default:
 		return "", fmt.Errorf("unsupported CPU forecast script")
 	}

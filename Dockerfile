@@ -30,7 +30,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o manager main.go 
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o worker-server ./cmd/worker-server && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o cgroup-collector ./cmd/cgroup-collector
 
-FROM python:3.14.7-slim-trixie@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2
+FROM python:3.14.7-slim-trixie@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS runtime
 WORKDIR /app
 
 # Install system dependencies for Python packages
@@ -51,3 +51,21 @@ RUN chmod -R go+rX /app/algorithms && \
 USER 65532:65532
 
 ENTRYPOINT ["/app/manager"]
+
+# Toto: PyTorch, Toto's packages and the Toto-2.0-22m weights on top of the default image.
+# Build with --target toto. Toto needs an older pandas, so its packages go in their own folder.
+FROM runtime AS toto
+USER root
+COPY algorithms/requirements-toto.txt ./algorithms/requirements-toto.txt
+RUN python -m pip install --no-cache-dir --require-hashes --no-deps --target /app/toto-site \
+    -r algorithms/requirements-toto.txt
+ADD --checksum=sha256:abeaf0fcd54aaac66757fde69ec3ddb4d3bfdcf96e0c8f767aefd03ab4c9e8d9 \
+    https://huggingface.co/Datadog/Toto-2.0-22m/resolve/685e4ae3e2be8d8998025e53dd98e7fdcb296a89/config.json /app/models/toto-2.0-22m/config.json
+ADD --checksum=sha256:9cd503d82df3aa71747862688f47a31c1d0a4b80f898df6e046189016eaa21dd \
+    https://huggingface.co/Datadog/Toto-2.0-22m/resolve/685e4ae3e2be8d8998025e53dd98e7fdcb296a89/model.safetensors /app/models/toto-2.0-22m/model.safetensors
+ADD --checksum=sha256:ee8496066ba403a526754243375820cd7384364ce2ad739ab0b45d16c2cf0257 \
+    https://huggingface.co/Datadog/Toto-2.0-22m/resolve/685e4ae3e2be8d8998025e53dd98e7fdcb296a89/README.md /app/models/toto-2.0-22m/README.md
+RUN chmod -R a+rX /app/toto-site /app/models
+USER 65532:65532
+
+FROM runtime

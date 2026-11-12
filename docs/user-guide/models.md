@@ -24,7 +24,7 @@ traffic before giving it control.
 
 Every model entry has these fields:
 
-- `type`: `Linear`, `HoltWinters`, `ARIMA`, `XGBoost` or `LightGBM`.
+- `type`: `Linear`, `HoltWinters`, `ARIMA`, `XGBoost`, `LightGBM`, `Toto` or `SeasonalNaive`.
 - `name`: unique within the HPAPlus.
 - `perSyncPeriod`: new samples needed after the last successful run before the model runs again. Default `1`; with
   regular sampling, `2` runs it about every other sync. It cannot exceed the retained history.
@@ -263,6 +263,67 @@ Key fields:
 - `lightgbm.numLeaves`, `minChildSamples`: tree shape.
 - `lightgbm.regLambda`, `regAlpha`: regularization.
 
+## Toto
+
+Use this when there is little history to learn from. Toto 2.0 is a pretrained forecasting model from Datadog, trained
+on observability metrics such as CPU and request rates (about 22 million parameters, Apache 2.0). It forecasts the
+stored CPU history directly, without fitting anything, so it works from the first few samples.
+
+```yaml
+models:
+  - type: Toto
+    name: cpu-predictor
+    calculationTimeout: 30000
+    toto:
+      historySize: 60
+      lookAhead: 90000
+      quantileLevel: 0.9
+```
+
+Key fields:
+
+- `toto.historySize`: CPU samples kept and given to the model, between 2 and 2048.
+- `toto.lookAhead`: how far ahead to forecast, in milliseconds. At most 64 steps of the sampling cadence.
+- `toto.quantileLevel`: one of 0.1, 0.2, ..., 0.9 (default 0.9), the quantiles the model predicts.
+
+The model runs in a worker that stays up between forecasts. The first forecast loads PyTorch and Toto, about 13
+seconds on one core, so keep `calculationTimeout` at 30000 or more; later forecasts take about 100 milliseconds. The
+worker uses about 730 MiB of memory and reserves about 1.3 GiB of address space, so set `workers.memoryMiB`
+(`--worker-memory-mib`) to at least 1536.
+
+The default image doesn't include Toto. Build the `toto` target, which adds PyTorch, Toto's packages and the weights
+(about 2.2 GB more), then push it as usual:
+
+```bash
+docker build --target toto -t ${REGISTRY}/hpa-plus-operator:${VERSION} .
+make push REGISTRY=${REGISTRY} VERSION=${VERSION}
+```
+
+Toto needs an older pandas than the other models, so its packages live in their own folder, `/app/toto-site`, which
+only the Toto worker loads. The weights are part of the image; nothing is downloaded at run time.
+
+## Seasonal naive
+
+The simplest forecast that knows about cycles: every future step repeats the CPU of the same point one cycle earlier.
+Without a cycle it repeats the newest sample. Nothing is fitted. Use it as the baseline other models should beat.
+
+```yaml
+models:
+  - type: SeasonalNaive
+    name: cpu-baseline
+    seasonalNaive:
+      historySize: 60
+      lookAhead: 90000
+```
+
+Key fields:
+
+- `seasonalNaive.historySize`: CPU samples kept, at least 3. Finding a cycle needs at least 24 samples covering 12
+  sampling periods; with fewer, the forecast repeats the newest sample.
+- `seasonalNaive.lookAhead`: how far ahead to forecast, in milliseconds.
+- `seasonalNaive.seasonalPeriodSeconds`: optional cycle length. When omitted, the cycle is found from the history
+  with the same detector XGBoost's `seasonalFeatures` use, between 90 seconds and 20 minutes.
+
 ## Options for both tree models
 
 `useUtilizationFeatures: false` inside the `xgboost` or `lightgbm` block leaves out the optional CPU usage-to-request
@@ -279,6 +340,8 @@ Tree feature snapshots for debugging are described in [feature diagnostics](../r
 - Use `HoltWinters` when the workload is strongly seasonal and readable season controls matter.
 - Use `ARIMA` for a classical time-series model with explicit order control or incremental updates.
 - Use `XGBoost` or `LightGBM` when you tune against recorded CPU history and want higher-capacity nonlinear models.
+- Use `Toto` when there is little history or no time to tune: it forecasts without fitting.
+- Use `SeasonalNaive` as the baseline when comparing models.
 
 For the tree models, a practical workflow is:
 
@@ -299,8 +362,10 @@ The controller checks these rules on top of the bounds in the CRD schema:
 | Both trees | `1 <= lags < historySize`; `1 <= windowSize <= lags` when supplied; positive `lookAhead`, `nEstimators`, and `learningRate`; `subsample` and `colsampleBytree` in `(0, 1]`; non-negative regularization. |
 | XGBoost | Positive `maxDepth`; `minChildWeight` and `gamma` may be zero. Explicit zero regularization is preserved. |
 | LightGBM | `maxDepth` is `-1` or positive; `numLeaves >= 2`; `minChildSamples >= 1`. Zero depth is rejected by the controller. |
+| Toto | `2 <= historySize <= 2048`; positive `lookAhead`; `quantileLevel` one of `0.1, 0.2, ..., 0.9` when supplied. |
+| Seasonal naive | `historySize >= 3`; positive `lookAhead`; positive `seasonalPeriodSeconds` when supplied. |
 
-`perSyncPeriod` cannot exceed the retained history: `historySize` for Linear, ARIMA and the trees, or
+`perSyncPeriod` cannot exceed the retained history: `historySize` for Linear, ARIMA, Toto, seasonal naive and the trees, or
 `seasonalPeriods * storedSeasons` for Holt-Winters. With six samples per season, Holt-Winters needs at least three
 stored seasons to pass its initialization minimum. These checks catch configurations that could never train; they
 don't guarantee that a fit converges or forecasts well.
