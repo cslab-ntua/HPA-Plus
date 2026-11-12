@@ -6,7 +6,7 @@ application under the same traffic. Each kind of traffic has its own page:
 - [Synthetic traffic](synthetic.md): a 4-hour run with repeated peaks, slow cycles and a sudden jump, plus shorter runs
   on other shapes. The demand of every moment is known exactly.
 - [Real traffic: 1998 World Cup](world-cup.md): one day of the World Cup web site's requests, replayed 8 times faster,
-  with three forecasting models.
+  with four forecasting models.
 
 ## What was compared
 

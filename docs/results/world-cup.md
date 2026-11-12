@@ -1,7 +1,7 @@
 # Real traffic: 1998 World Cup
 
 The same two setups as on the [overview](README.md#what-was-compared), HPA+ and the HPA formula, now on real traffic:
-the requests the 1998 World Cup web site received on one match day. Three forecasting models were tried in HPA+, one
+the requests the 1998 World Cup web site received on one match day. Four forecasting models were tried in HPA+, one
 run each.
 
 ## The traffic
@@ -32,7 +32,7 @@ Most of the difference came at the 16:00 kick-off, when load doubled within abou
 second pod 5 seconds into the rise. The HPA formula added it about a minute later, once its one pod was full. The rest
 of the day the two missed about the same.
 
-## Three forecasting models
+## Four forecasting models
 
 Each model ran once as HPA+'s forecaster, with the same history size and horizon. The HPA formula ran again in each
 run.
@@ -42,8 +42,9 @@ run.
 | XGBoost | 99.89% | 204 | 269.75 CPU-min | 570 |
 | Seasonal naive | 99.87% | 250 | 255.25 CPU-min | 497 |
 | Toto | 99.89% | 203 | 270.00 CPU-min | 349 |
+| TiRex | 99.93% | 140 | 271.50 CPU-min | 436 |
 
-All three runs passed every check of the benchmark. On one day without an earlier day to learn from, the model
+All four runs passed every check of the benchmark. On one day without an earlier day to learn from, the model
 matters less than the rebuild: the request counts show the demand as it rises, whatever the model forecasts.
 
 ## Limits
@@ -56,6 +57,6 @@ matters less than the rebuild: the request counts show the demand as it rises, w
 
 ## When and how it was run
 
-- **When.** 12 November 2026, one 3-hour run per model, with the code of that day.
+- **When.** 12 November 2026, one 3-hour run per model, with the code of that day; TiRex ran last, from 21:03.
 - **Settings.** As in the [synthetic run](synthetic.md#when-and-how-it-was-configured), including the 60-second scale-up
-  limit. Seasonal naive and Toto used XGBoost's history size (60 samples) and horizon (90 seconds).
+  limit. Seasonal naive, Toto and TiRex used XGBoost's history size (60 samples) and horizon (90 seconds).
