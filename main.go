@@ -54,6 +54,7 @@ import (
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/lightgbm"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/linear"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/seasonalnaive"
+	"github.com/cslab-ntua/HPA-Plus/internal/prediction/tirex"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/toto"
 	"github.com/cslab-ntua/HPA-Plus/internal/prediction/xgboost"
 	"github.com/cslab-ntua/HPA-Plus/internal/worker"
@@ -266,6 +267,9 @@ func main() {
 					Runner: pyRunner,
 				},
 				&toto.Predict{
+					Runner: persistentPyRunner,
+				},
+				&tirex.Predict{
 					Runner: persistentPyRunner,
 				},
 				&seasonalnaive.Predict{

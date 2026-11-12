@@ -1261,6 +1261,39 @@ spec:
                         This value is a string duration, e.g. 2m30s is 2 minutes and 30 seconds.
                       pattern: ^\+?(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+$
                       type: string
+                    tirex:
+                      description: tirex is the configuration to use for the TiRex
+                        model, it will only be used if the type is set to 'TiRex'
+                      properties:
+                        historySize:
+                          description: historySize is how many timestamped CPU samples
+                            are kept and given to the model as context.
+                          minimum: 2
+                          type: integer
+                        lookAhead:
+                          description: lookAhead is how far ahead (in milliseconds)
+                            the prediction should forecast.
+                          maximum: 9223372036854
+                          minimum: 1
+                          type: integer
+                        quantileLevel:
+                          description: 'quantileLevel is the forecast quantile used
+                            as CPU demand: 0.1, 0.2, ..., 0.9. Defaults to 0.9.'
+                          enum:
+                          - 0.1
+                          - 0.2
+                          - 0.3
+                          - 0.4
+                          - 0.5
+                          - 0.6
+                          - 0.7
+                          - 0.8
+                          - 0.9
+                          type: number
+                      required:
+                      - historySize
+                      - lookAhead
+                      type: object
                     toto:
                       description: toto is the configuration to use for the Toto model,
                         it will only be used if the type is set to 'Toto'
@@ -1305,6 +1338,7 @@ spec:
                       - XGBoost
                       - LightGBM
                       - Toto
+                      - TiRex
                       - SeasonalNaive
                       type: string
                     xgboost:

@@ -570,6 +570,9 @@ func TestReconstructedDemandRunsWithEveryModelType(t *testing.T) {
 			m.Type, m.Toto = api.TypeToto, &api.Toto{HistorySize: 45, LookAhead: lookAhead}
 		},
 		func(m *api.Model) {
+			m.Type, m.TiRex = api.TypeTiRex, &api.TiRex{HistorySize: 40, LookAhead: lookAhead}
+		},
+		func(m *api.Model) {
 			m.Type, m.SeasonalNaive = api.TypeSeasonalNaive, &api.SeasonalNaive{HistorySize: 50, LookAhead: lookAhead}
 		},
 	} {

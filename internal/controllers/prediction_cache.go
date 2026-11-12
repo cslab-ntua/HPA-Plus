@@ -55,6 +55,10 @@ func predictionHorizon(instance *api.HPAPlus, model *api.Model) time.Duration {
 		if model.Toto != nil {
 			horizon = time.Duration(model.Toto.LookAhead) * time.Millisecond
 		}
+	case api.TypeTiRex:
+		if model.TiRex != nil {
+			horizon = time.Duration(model.TiRex.LookAhead) * time.Millisecond
+		}
 	case api.TypeSeasonalNaive:
 		if model.SeasonalNaive != nil {
 			horizon = time.Duration(model.SeasonalNaive.LookAhead) * time.Millisecond

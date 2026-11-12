@@ -102,6 +102,8 @@ func family(kind string) string {
 		return "lightgbm"
 	case api.TypeToto:
 		return "toto"
+	case api.TypeTiRex:
+		return "tirex"
 	case api.TypeSeasonalNaive:
 		return "seasonal_naive"
 	default:

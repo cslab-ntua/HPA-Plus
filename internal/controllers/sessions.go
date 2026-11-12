@@ -21,7 +21,7 @@ func (r *HPAPlusReconciler) syncModelSessions(namespace, name string, instance *
 			if model.Type == api.TypeArima && model.Arima != nil && model.Arima.IncrementalUpdates != nil && *model.Arima.IncrementalUpdates {
 				active[modelHistorySessionID(instance, model.Name, histories[model.Name].HistoryEpoch, targetIdentity)] = true
 			}
-			if model.Type == api.TypeToto {
+			if model.Type == api.TypeToto || model.Type == api.TypeTiRex {
 				id := modelHistorySessionID(instance, model.Name, histories[model.Name].HistoryEpoch, targetIdentity)
 				active[id] = true
 				if model.RequestDemand != nil {
