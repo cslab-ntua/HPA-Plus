@@ -6,15 +6,11 @@ Supported models are Linear, Holt-Winters, ARIMA/SARIMA, XGBoost, LightGBM, Toto
 
 Documentation: https://cslab-ntua.github.io/HPA-Plus/
 
-## Results
+## Results on synthetic traffic
 
-In a 4-hour test on a live cluster, HPA+ with [request-demand forecasting](docs/user-guide/request-demand.md) answered 99.9% of requests within 500 ms during repeated traffic peaks. HPA+ forecasting from CPU alone answered 93.6%, and the reactive HPA formula with the same scaling limits answered 28.5%. The [benchmark results](docs/results/README.md) describe the setup, every number and the limits.
+In a 4-hour test on a live cluster, HPA+ with [request-demand forecasting](docs/user-guide/request-demand.md) answered 99.9% of requests within 500 ms during repeated traffic peaks. The Kubernetes HPA formula with the same scaling limits answered 28.5%. The [synthetic results](docs/results/synthetic.md) describe the setup, every number and the limits.
 
 ![Headline numbers from the 4-hour benchmark run](docs/results/figures/overview.svg)
-
-The same run as CPU needed by the requests against CPU given by ready pods. Below the grey area a setup was short and requests had to wait.
-
-![CPU needed and CPU given for each setup in repeated peaks, cycles and the sudden jump](docs/results/figures/cpu-needed.svg)
 
 ## How it works
 
@@ -31,6 +27,8 @@ When pods are full, requests start faster than they finish and the measured CPU 
 Sampling and reconciliation run independently. Missing CPU remains missing; forecasts have source timestamps and expiry. Timed predictive policies can preserve the forecast covering the current interval and defer future decreases until their interval begins.
 
 The [architecture](docs/architecture.md) page shows where each step happens.
+
+For all benchmark results, including real traffic, see [benchmark results](docs/results/README.md).
 
 ## Build and install
 
