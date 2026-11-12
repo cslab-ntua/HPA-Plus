@@ -1,6 +1,6 @@
 # HPA+
 
-HPA+ is a Kubernetes predictive autoscaling operator. It keeps the familiar Horizontal Pod Autoscaler configuration and adds a modular suite of models that forecast aggregate CPU demand. The operator converts those forecasts into replica recommendations using CPU requests and the configured utilization target.
+HPA+ is a Kubernetes predictive autoscaling operator. It keeps the familiar Horizontal Pod Autoscaler configuration and forecasts the CPU a workload needs. When pods are full, their measured CPU stops at what they can do and hides the rest. So by default HPA+ rebuilds the demand from request counters, as measured CPU × requests started ÷ requests finished, and a model forecasts that. The operator turns the forecast into replicas using CPU requests and the utilization target. Workloads without request counters can forecast measured CPU only, which does much worse.
 
 Supported models are Linear, Holt-Winters, ARIMA/SARIMA, XGBoost, LightGBM, Toto and a seasonal naive baseline. Models share history collection, workload identity checks, forecast validity checks, worker limits and the scaling decision path. Predictive performance depends on the workload, measurements and configuration.
 
@@ -12,10 +12,18 @@ In a 4-hour test on a live cluster, HPA+ with [request-demand forecasting](docs/
 
 ![Headline numbers from the 4-hour benchmark run](docs/results/figures/overview.svg)
 
+The same run as CPU needed by the requests against CPU given by ready pods. Below the grey area a setup was short and requests had to wait.
+
+![CPU needed and CPU given for each setup in repeated peaks, cycles and the sudden jump](docs/results/figures/cpu-needed.svg)
+
 ## How it works
 
+When pods are full, requests start faster than they finish and the measured CPU stops at what the pods can do. The rebuild uses that gap:
+
+![What saturated pods hide: requests started and finished, and CPU measured, rebuilt and needed, at one peak](docs/results/figures/rebuild.svg)
+
 1. Collect workload metrics and retain complete CPU observations in durable history.
-2. Compute the reactive HPA-style recommendation and evaluate eligible models. With [request demand](docs/user-guide/request-demand.md), each history window is first rebuilt as measured CPU × requests started ÷ requests finished.
+2. Compute the reactive HPA-style recommendation and evaluate eligible models. With [request demand](docs/user-guide/request-demand.md), the default, each history window is first rebuilt as measured CPU × requests started ÷ requests finished. Models set to `cpuOnly` skip this step.
 3. Convert forecast CPU demand into replicas, optionally combining it with the reactive recommendation through `includeHPA`.
 4. Apply the configured decision policy, rollout mode, replica bounds and scaling behavior.
 5. Update the workload's Scale resource and publish status, logs and operational metrics.
@@ -26,7 +34,7 @@ The [architecture](docs/architecture.md) page shows where each step happens.
 
 ## Build and install
 
-The operator requires Kubernetes 1.23 or newer (`autoscaling/v2`) and a working resource metrics API, such as metrics-server, for CPU forecasting. Installing or upgrading the chart needs cluster-admin rights, because it manages the CRD and cluster-wide RBAC. The supplied image targets Linux/amd64. Use an image tag that identifies your actual checkout:
+The operator requires Kubernetes 1.23 or newer (`autoscaling/v2`), Linux nodes with cgroup v2 for the CPU collector, and a Prometheus that scrapes your application's request counters. [Request demand](docs/user-guide/request-demand.md) lists what it needs. Installing or upgrading the chart needs cluster-admin rights, because it manages the CRD and cluster-wide RBAC. The supplied image targets Linux/amd64. Use an image tag that identifies your actual checkout:
 
 ```bash
 export REGISTRY=your-registry
@@ -36,7 +44,8 @@ make push REGISTRY="$REGISTRY" VERSION="$VERSION"
 helm upgrade --install hpa-plus-operator ./helm \
   --namespace hpa-plus-system --create-namespace \
   --set image.repository="$REGISTRY/hpa-plus-operator" \
-  --set image.tag="$VERSION"
+  --set image.tag="$VERSION" \
+  --set trafficPrometheusURL="http://prometheus.monitoring.svc:9090"
 ```
 
 Check that the operator is running and the CRD exists:

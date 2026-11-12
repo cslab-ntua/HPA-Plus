@@ -151,8 +151,8 @@ See [models](user-guide/models.md), [typed forecasting](reference/typed-forecast
 
 ## Request demand
 
-CPU history cannot show demand that saturated pods failed to serve. Request-demand mode, an opt-in setting for any
-model, adds per-pod request counters from Prometheus. The reconciler queries them for the workload's own pods, rebuilds
+CPU history cannot show demand that saturated pods failed to serve. Request demand, the default for every model
+unless it sets `cpuOnly`, adds per-pod request counters from Prometheus. The reconciler queries them for the workload's own pods, rebuilds
 each closed window's CPU as measured cgroup CPU times arrivals per completion, and runs the model's own forecaster on
 that rebuilt history. It never recommends fewer pods than the current rebuilt demand needs. Its request windows and
 forecasts live in their own ConfigMap. When request data is unavailable, the model uses its CPU forecast, and without

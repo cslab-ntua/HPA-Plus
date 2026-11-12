@@ -20,8 +20,14 @@ so build your own first.
      --namespace hpa-plus-system \
      --create-namespace \
      --set image.repository=${REGISTRY}/hpa-plus-operator \
-     --set image.tag=${VERSION}
+     --set image.tag=${VERSION} \
+     --set trafficPrometheusURL=http://prometheus.monitoring.svc:9090
    ```
+
+   `trafficPrometheusURL` is the Prometheus that scrapes your application's request counters, which
+   [request demand](request-demand.md), the default, needs. The chart also runs a CPU collector on each Linux node; it
+   reads `/sys/fs/cgroup` through a read-only hostPath mount, which clusters enforcing the baseline Pod Security level
+   must allow in this namespace.
 
 The chart installs the CRD, the operator and its permissions. Then follow [getting started](getting-started.md) to
 configure an existing workload.
@@ -92,3 +98,10 @@ See [operating HPA+](operations.md) for capacity planning, warm-up, failover, ba
 [observability](observability.md) for operator status and metrics. Start new configurations in
 [observe mode](rollout.md) with `spec.mode: observe`; an omitted mode means `control`. Install the image and the CRD
 from the same checkout.
+
+## Upgrading from 0.14
+
+Request demand is now the default. Every model needs either a `requestDemand` block or `cpuOnly: true`; a model
+with neither is rejected. To keep a 0.14 configuration as it was, add `cpuOnly: true` to each model without
+`requestDemand`. The chart now enables the cgroup collector and uses it as the CPU source; set
+`cgroupCollector.enabled: false` and `cpuHistorySource: metrics-server` to keep the old setup for `cpuOnly` models.

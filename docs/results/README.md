@@ -18,7 +18,7 @@ Three copies of the same application received the same requests at the same time
 
 | Setup | How it decides the pod count |
 | --- | --- |
-| **HPA+ request demand** | The opt-in [request-demand mode](../user-guide/request-demand.md) with `forecastTarget: reconstructedCPU`. It rebuilds the CPU demand of each 30-second window from measured CPU and the requests that arrived and completed, so a saturated pod no longer hides the work it could not serve. An XGBoost model forecasts that demand 90 seconds ahead, and HPA+ starts pods early enough to be ready when a forecast rise arrives. It never recommends fewer pods than the current demand needs. |
+| **HPA+ request demand** | [Request demand](../user-guide/request-demand.md), now HPA+'s default, with `forecastTarget: reconstructedCPU`. It rebuilds the CPU demand of each 30-second window from measured CPU and the requests that arrived and completed, so a saturated pod no longer hides the work it could not serve. An XGBoost model forecasts that demand 90 seconds ahead, and HPA+ starts pods early enough to be ready when a forecast rise arrives. It never recommends fewer pods than the current demand needs. |
 | **HPA+ CPU forecast** | The same XGBoost model and settings, forecasting from CPU history alone. |
 | **Reactive HPA formula** | HPA+ with no models and `includeHPA: true`: the Kubernetes HPA formula applied to current CPU. |
 
@@ -37,6 +37,10 @@ The large numbers are HPA+ with request demand; the two rows under each are the 
 HPA+ with request demand answered nearly every request in time through all 12 peaks of the measured hour. The reactive formula sees only CPU, and a pod cannot use more than its 1 CPU however many requests are waiting. Each scaling step could therefore ask for at most 1.7 times the current pods (100% ÷ 60%, rounded up), and every peak ended before the reactive formula got past 2 pods. The CPU forecast had 5 pods ready at 5 of the 12 peaks and caught up within the first 15 seconds of the others.
 
 ![One peak up close. HPA+ request demand had 5 pods ready as the peak started. The CPU forecast had 2 pods at the start and 5 after 15 seconds. The reactive formula stayed at 1 to 2 pods and answered 2 to 7% of requests in time.](figures/peak-closeup.svg)
+
+The reactive setup at the same peak shows what full pods hide. Requests started much faster than they finished, its measured CPU stopped at what its 1 to 2 pods could do, and the rebuild came close to the CPU the requests needed:
+
+![The reactive setup at the third peak: about 75 requests per second started but 21 to 50 finished; measured CPU stayed at 1 to 2 cores, the requests needed about 2.5, and the rebuild gave 2.9 to 3.5.](figures/rebuild.svg)
 
 Request demand also released pods sooner after each peak, so its pods requested 9% less CPU than the CPU forecast's in this scenario (133 against 146 CPU-minutes).
 
@@ -69,6 +73,19 @@ Share of the requested CPU that was used:
 | Reactive HPA formula | 43.9% | 56.0% | 62.4% | 59.7% |
 
 All three setups target 60%. A setup that adds pods before a rise runs below that target between rises, and HPA+ request demand never recommends fewer pods than the current demand needs at 60%. During the sudden jump, the CPU forecast's high figure came from overloaded pods: it answered only 58.0% and 77.4% of requests in time.
+
+## CPU needed and CPU given
+
+CPU used cannot show a shortage: full pods use all their CPU however many requests wait. This figure compares the CPU
+the offered requests needed with the CPU of the pods ready to serve them. CPU needed is the request rate times the CPU
+per request, with a checkout costing three browses; that cost was fitted on every 15-second window of the three
+setups that met the SLO (R² 0.998). CPU given counts pods ready at the start of each window, 1 CPU each.
+
+![CPU needed against CPU given for each setup in 20 minutes of repeated peaks, cycles and the sudden jump. Over the whole peaks hour HPA+ request demand was never short and gave 2.4 times the CPU needed, the CPU forecast was short 3% of the time and gave 2.7 times, and the reactive formula was short 26% of the time and gave 1.6 times.](figures/cpu-needed.svg)
+
+At the 60% target a setup would give 1.67 times the CPU needed. HPA+ request demand gave more, 2.2 to 2.4 times in the
+measured hours, because it adds pods before each rise and holds them while demand is still rising. In exchange it
+was never short in either hour. The reactive formula gave the least and was short a quarter of the peaks hour.
 
 ## All numbers
 

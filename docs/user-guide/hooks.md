@@ -24,6 +24,7 @@ explains the origin rules, the blocked addresses and bearer tokens from Secrets.
 models:
   - type: HoltWinters
     name: seasonal
+    # plus requestDemand, or cpuOnly: true
     holtWinters:
       seasonalPeriods: 6
       storedSeasons: 4
