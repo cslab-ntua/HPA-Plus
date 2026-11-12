@@ -1,6 +1,6 @@
 # HPA+
 
-HPA+ adds CPU-demand forecasting to Kubernetes horizontal autoscaling. By default it rebuilds the demand that full pods hide from request counters and forecasts that. Its model suite includes Linear, Holt-Winters, ARIMA/SARIMA, XGBoost, LightGBM, Toto and a seasonal naive baseline. Each model contributes a replica recommendation within shared workload identity, freshness, resource and scaling controls.
+HPA+ adds CPU-demand forecasting to Kubernetes horizontal autoscaling. By default it rebuilds the demand that full pods hide from request counters and forecasts that. Its model suite includes Linear, Holt-Winters, ARIMA/SARIMA, XGBoost, LightGBM, Toto, TiRex and a seasonal naive baseline. Each model contributes a replica recommendation within shared workload identity, freshness, resource and scaling controls.
 
 - [Install the operator](user-guide/installation.md).
 - [Configure an existing workload](user-guide/getting-started.md).
