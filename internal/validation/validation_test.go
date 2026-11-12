@@ -34,7 +34,14 @@ func makeCPUUtilizationMetric(target int32) autoscalingv2.MetricSpec {
 	}
 }
 
+// cpuOnlyUnlessDemand marks a test model CPU-only when it has no requestDemand, as every model must say which.
+func cpuOnlyUnlessDemand(model hpaplusv1alpha1.Model) hpaplusv1alpha1.Model {
+	model.CPUOnly = model.RequestDemand == nil
+	return model
+}
+
 func makeInstance(model hpaplusv1alpha1.Model) *hpaplusv1alpha1.HPAPlus {
+	model = cpuOnlyUnlessDemand(model)
 	return &hpaplusv1alpha1.HPAPlus{
 		Spec: hpaplusv1alpha1.HPAPlusSpec{
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: "app"},
@@ -46,6 +53,7 @@ func makeInstance(model hpaplusv1alpha1.Model) *hpaplusv1alpha1.HPAPlus {
 }
 
 func makeInstanceWithoutMetrics(model hpaplusv1alpha1.Model) *hpaplusv1alpha1.HPAPlus {
+	model = cpuOnlyUnlessDemand(model)
 	return &hpaplusv1alpha1.HPAPlus{
 		Spec: hpaplusv1alpha1.HPAPlusSpec{
 			MaxReplicas: 10,
@@ -272,5 +280,22 @@ func TestValidateRejectsCPUHistoryModelsWithoutCPUUtilizationMetric(t *testing.T
 				t.Fatalf("expected error containing %q, got %q", tt.wantErr, err.Error())
 			}
 		})
+	}
+}
+
+func TestValidateRequiresRequestDemandOrCPUOnly(t *testing.T) {
+	model := hpaplusv1alpha1.Model{Name: "lin", Type: hpaplusv1alpha1.TypeLinear, Linear: &hpaplusv1alpha1.Linear{HistorySize: 10, LookAhead: 1000}}
+	instance := makeInstance(model)
+	instance.Spec.Models[0].CPUOnly = false
+	if err := Validate(instance); err == nil || !strings.Contains(err.Error(), "set requestDemand") {
+		t.Fatalf("a model with neither requestDemand nor cpuOnly must be rejected, got %v", err)
+	}
+	instance.Spec.Models[0].CPUOnly = true
+	if err := Validate(instance); err != nil {
+		t.Fatalf("cpuOnly must be accepted, got %v", err)
+	}
+	model.CPUOnly, model.RequestDemand = true, &hpaplusv1alpha1.RequestDemandConfig{}
+	if err := validateModelBasics(model); err == nil || !strings.Contains(err.Error(), "cannot both be set") {
+		t.Fatalf("requestDemand with cpuOnly must be rejected, got %v", err)
 	}
 }

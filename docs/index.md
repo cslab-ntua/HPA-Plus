@@ -1,6 +1,6 @@
 # HPA+
 
-HPA+ adds CPU-demand forecasting to Kubernetes horizontal autoscaling. Its model suite includes Linear, Holt-Winters, ARIMA/SARIMA, XGBoost, LightGBM, Toto and a seasonal naive baseline. Each model contributes a replica recommendation within shared workload identity, freshness, resource and scaling controls.
+HPA+ adds CPU-demand forecasting to Kubernetes horizontal autoscaling. By default it rebuilds the demand that full pods hide from request counters and forecasts that. Its model suite includes Linear, Holt-Winters, ARIMA/SARIMA, XGBoost, LightGBM, Toto and a seasonal naive baseline. Each model contributes a replica recommendation within shared workload identity, freshness, resource and scaling controls.
 
 - [Install the operator](user-guide/installation.md).
 - [Configure an existing workload](user-guide/getting-started.md).
@@ -10,4 +10,4 @@ HPA+ adds CPU-demand forecasting to Kubernetes horizontal autoscaling. Its model
 - Watch decisions, CPU and forecasts in the [local UI](user-guide/ui.md) with `make ui`.
 - See how request-demand forecasting performed in the [benchmark results](results/README.md).
 
-HPA+ forecasts measured aggregate CPU usage. CPU forecasts alone do not see demand that saturated pods could not serve; the opt-in [request-demand mode](user-guide/request-demand.md) rebuilds that demand from request counters. Fitting a model successfully does not establish its accuracy or application performance.
+Measured CPU stops at what full pods can do, so it does not show demand they could not serve. [Request demand](user-guide/request-demand.md), the default, rebuilds that demand from request counters. Workloads without request counters can forecast measured CPU only with `cpuOnly: true`, which does much worse. Fitting a model successfully does not establish its accuracy or application performance.

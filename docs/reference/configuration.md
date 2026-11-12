@@ -83,7 +83,8 @@ target type `Utilization` and a positive `averageUtilization`. See [metrics](../
 ## models
 
 The forecasting models; see [models](../user-guide/models.md). The field is required but can be an empty list, which
-leaves only the reactive recommendation.
+leaves only the reactive recommendation. Each model needs either `requestDemand` (see [request demand](../user-guide/request-demand.md))
+or `cpuOnly: true` to forecast measured CPU only.
 
 ## behavior
 

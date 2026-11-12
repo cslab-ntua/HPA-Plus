@@ -1,32 +1,69 @@
 # Request demand
 
 CPU history cannot show demand that saturated pods failed to serve: a pod at its CPU limit uses the same CPU whether
-one request or a hundred are waiting. Request-demand mode is an opt-in model setting that rebuilds that demand from
-request counters you already have. Each closed thirty-second window is rebuilt as measured CPU multiplied by the
+one request or a hundred are waiting. Request demand is the default way HPA+ forecasts: it rebuilds that demand from
+request counters. Each closed thirty-second window is rebuilt as measured CPU multiplied by the
 requests that arrived per request completed. While pods keep up the ratio is about one; when completions fall behind
 it rises, so a saturated pod no longer hides the work it could not serve.
 
 The model then forecasts this rebuilt CPU with its own forecaster. Any model type can use it: Linear, Holt-Winters,
 ARIMA, XGBoost, LightGBM, Toto and seasonal naive. No requests-per-pod capacity or per-request CPU cost is supplied or learned.
 
-Request demand supports homogeneous application pods on Linux nodes with cgroup v2. It reads Prometheus telemetry you
-already have; it does not install an ingress, service mesh, application proxy or application instrumentation.
+Request demand supports homogeneous application pods on Linux nodes with cgroup v2. It reads Prometheus telemetry; it
+does not install an ingress, service mesh, application proxy or application instrumentation.
+
+## What it needs today
+
+HPA+ currently reads:
+
+- per-pod counters of requests started and requests finished, in Prometheus, with namespace, pod and pod UID labels;
+- those counters scraped about every 2 seconds;
+- CPU from the cgroup collector, on Linux nodes with cgroup v2;
+- `spec.syncPeriod: 30000`.
+
+These come from our test setup, where the application exports both counters. They are not the only way to get the
+numbers. If your application gives requests started and finished another way, open an issue or a pull request and we
+can adjust HPA+ to read it. Two examples:
+
+- an in-flight gauge: requests started = requests finished + the change in requests in flight;
+- a latency histogram: requests in the system ≈ requests finished per second × mean latency (Little's law), so
+  requests started ≈ requests finished + the growth of that number.
+
+## Without request counters
+
+Set `cpuOnly: true` on a model to forecast measured CPU only:
+
+```yaml
+models:
+  - name: cpu
+    type: Linear
+    cpuOnly: true
+    linear:
+      historySize: 12
+      lookAhead: 60000
+```
+
+It does much worse. When pods are full, measured CPU stops at what they can do, so the forecast does not see the
+demand they could not serve and adds pods late, exactly when load grows. Every model needs either `requestDemand` or
+`cpuOnly: true`.
 
 ## Installation and measurements
 
-The operator image contains the collector, `/app/cgroup-collector`. Configure Helm:
+The operator image contains the collector, `/app/cgroup-collector`, and the chart enables it by default. Point HPA+ at
+the Prometheus that scrapes your request counters:
 
 ```yaml
 image:
   repository: your-registry/hpa-plus
   tag: your-source-tag
-cpuHistorySource: cgroup
 trafficPrometheusURL: http://prometheus.monitoring.svc:9090
 cgroupCollector:
-  enabled: true
   # Empty watches all namespaces. Set to restrict node-side pod discovery.
   watchNamespace: application-namespace
 ```
+
+The collector reads `/sys/fs/cgroup` through a read-only hostPath mount. Clusters that enforce the baseline Pod
+Security level must allow it in the operator's namespace.
 
 The chart deploys one collector per selected Linux node. The collector has a read-only `/sys/fs/cgroup` host mount, reads counters every two seconds and retains three minutes of raw windows. It does not use a container-runtime socket or privileged mode. Pod discovery uses a node-filtered Kubernetes informer; a configured `watchNamespace` limits its RBAC to that namespace. The operator reads shared node snapshots through the Kubernetes pod proxy.
 
@@ -36,7 +73,7 @@ CPU consumption is the difference between cumulative `usage_usec` counters divid
 
 Both reactive CPU evaluation and CPU forecasting use the selected cgroup source with a fixed thirty-second averaging window. Helm does not expose a separate averaging-window setting. Two-second collection reduces measurement delay; it does not make thirty seconds of a new container's history immediately available. A new container needs two reads for its first rate and a complete averaging window for the CPU history path. Gaps are never interpolated. Changing the CPU collection contract resets incompatible stored CPU training histories.
 
-The `metrics-server` default and the optional `kubelet` source still work for models without request demand. Request demand requires the cgroup collector. A failed cgroup read does not silently switch to Metrics API measurements.
+The `metrics-server` and `kubelet` sources still work for `cpuOnly` models; set `cpuHistorySource` in Helm. Request demand requires the cgroup collector. A failed cgroup read does not silently switch to Metrics API measurements.
 
 ## Required traffic telemetry and HPAPlus configuration
 

@@ -1,8 +1,12 @@
 # Getting started
 
-Install the operator using the [installation guide](installation.md). Select an existing Deployment whose serving containers have positive CPU requests and whose resource metrics are available. The HPAPlus and target must be in the same namespace.
+Install the operator using the [installation guide](installation.md), with `trafficPrometheusURL` set to the
+Prometheus that scrapes your application. Select an existing Deployment whose serving containers have positive CPU
+requests. The HPAPlus and target must be in the same namespace.
 
-Create an HPAPlus for that workload, replacing the namespace and deployment name:
+By default HPA+ forecasts the demand rebuilt from two per-pod request counters, requests started and requests
+finished. [Request demand](request-demand.md) lists what it needs. Create an HPAPlus for that workload, replacing the
+namespace, deployment name and metric names:
 
 ```yaml
 apiVersion: hpa.plus/v1alpha1
@@ -20,7 +24,7 @@ spec:
   maxReplicas: 8
   syncPeriod: 30000
   includeHPA: false
-  decisionType: maximum
+  predictionFailurePolicy: HoldCurrent
   metrics:
     - type: Resource
       resource:
@@ -29,11 +33,22 @@ spec:
           type: Utilization
           averageUtilization: 60
   models:
-    - name: linear
+    - name: demand
       type: Linear
+      predictionMaxAge: 120000
+      predictivePolicy:
+        scaleUpLeadSeconds: 15
       linear:
-        historySize: 12
-        lookAhead: 60000
+        historySize: 20
+        lookAhead: 90000
+      requestDemand:
+        traffic:
+          provider: prometheus
+          arrivalsMetric: app_requests_started_total
+          completionsMetric: app_requests_finished_total
+          arrivalSemantics: started
+          completionSemantics: finished
+          retrySemantics: attempts
 ```
 
 Save this as `hpaplus.yaml` and apply it:
@@ -43,8 +58,18 @@ kubectl apply -f hpaplus.yaml
 kubectl -n application-namespace get hpaplus application -o yaml
 ```
 
-This configuration collects CPU history and publishes recommendations in observe mode. Its values illustrate the resource shape; choose a model, history and horizon appropriate to your application. Twelve complete observations at a 30-second cadence require approximately six minutes to accumulate, with longer warm-up when measurements are missing.
+This configuration collects CPU history and request counts and publishes recommendations in observe mode. Its values
+illustrate the resource shape; choose a model, history and horizon appropriate to your application. Twenty complete
+windows at a 30-second cadence take about ten minutes to accumulate, with longer warm-up when measurements are missing.
 
-Inspect conditions and model status for configuration errors, missing CPU, warm-up and expired forecasts. Compare recommendations with actual workload behavior before setting `spec.mode: control`. Ensure only one autoscaler writes the Deployment's replicas when control is enabled.
+Inspect conditions and model status for configuration errors, missing CPU or request counts, warm-up and expired
+forecasts. Compare recommendations with actual workload behavior before setting `spec.mode: control`. Ensure only one
+autoscaler writes the Deployment's replicas when control is enabled.
+
+## Without request counters
+
+If the application has no request counters, replace the `requestDemand` block with `cpuOnly: true`. The model then
+forecasts measured CPU only. It does much worse: when pods are full their CPU stops at what they can do, so the
+forecast misses the demand they could not serve. See [request demand](request-demand.md#without-request-counters).
 
 See [model configuration](models.md), [rollout modes](rollout.md), [configuration reference](../reference/configuration.md) and [operating HPA+](operations.md).

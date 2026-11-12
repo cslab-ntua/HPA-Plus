@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="574" viewBox="0 0 1000 574" role="img" aria-labelledby="title desc">
+<title id="title">What saturated pods hide</title>
+<desc id="desc">At the third peak the reactive setup had 1 to 2 pods. About 72 to 76 requests per second started but only 21 to 50 finished. Its measured CPU stayed at 1.0 to 2.0 cores, while the same requests needed 2.4 to 2.6 cores. The rebuild, measured CPU times started over finished, gave 2.9 to 3.5 cores.</desc>
+<style>text{font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}.display{font-family:"IBM Plex Sans Condensed","Arial Narrow",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-weight:600}.mono{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;font-variant-numeric:tabular-nums}.line{fill:none;stroke-linejoin:round;stroke-linecap:round}.hair{fill:none;stroke-width:1}.plane{fill:#f4f4f1}.card{fill:#fcfcfb;stroke:rgba(11,11,11,0.12)}.grid{stroke:#e1e0d9}.axis{stroke:#c3c2b7}.band{fill:rgba(42,120,214,0.07)}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.muted{fill:#7d7b75}.l-cand{stroke:#2a78d6}.l-cpu{stroke:#eb6834}.l-react{stroke:#1baf7a}.l-load{stroke:#52514e}.f-load{fill:rgba(82,81,78,0.12)}.f-heavy{fill:rgba(82,81,78,0.36)}.f-seg{fill:#e1e0d9}.f-jump{fill:rgba(42,120,214,0.20)}.f-wcand{fill:rgba(42,120,214,0.30)}.f-wcpu{fill:rgba(235,104,52,0.30)}.f-wreact{fill:rgba(27,175,122,0.32)}.l-req{stroke:#0b0b0b}.f-cand{fill:#2a78d6}.f-cpu{fill:#eb6834}.f-react{fill:#1baf7a}.ring{stroke:#fcfcfb}.marker{stroke:#52514e}@media (prefers-color-scheme:dark){.plane{fill:#0f0f0e}.card{fill:#1a1a19;stroke:rgba(255,255,255,0.12)}.grid{stroke:#2c2c2a}.axis{stroke:#44443f}.band{fill:rgba(57,135,229,0.10)}.ink{fill:#f0efec}.ink2{fill:#c3c2b7}.muted{fill:#94928b}.l-cand{stroke:#3987e5}.l-cpu{stroke:#d95926}.l-react{stroke:#199e70}.l-load{stroke:#c3c2b7}.f-load{fill:rgba(195,194,183,0.12)}.f-heavy{fill:rgba(195,194,183,0.34)}.f-seg{fill:#2c2c2a}.f-jump{fill:rgba(57,135,229,0.28)}.f-wcand{fill:rgba(57,135,229,0.36)}.f-wcpu{fill:rgba(217,89,38,0.36)}.f-wreact{fill:rgba(25,158,112,0.40)}.l-req{stroke:#f0efec}.f-cand{fill:#3987e5}.f-cpu{fill:#d95926}.f-react{fill:#199e70}.ring{stroke:#1a1a19}.marker{stroke:#c3c2b7}}</style>
+<rect x="0.5" y="0.5" width="999" height="573" rx="6" class="card"/>
+<text x="24.0" y="44.0" class="ink display" font-size="20">What saturated pods hide</text>
+<text x="24.0" y="68.0" class="muted" font-size="13.5">The reactive setup at the same third peak. Its 1 to 2 pods could not keep up, so requests piled up: more started than</text>
+<text x="24.0" y="87.0" class="muted" font-size="13.5">finished. Its measured CPU stopped at what those pods could do. The rebuild, measured CPU × requests started ÷</text>
+<text x="24.0" y="106.0" class="muted" font-size="13.5">requests finished, follows the CPU the requests needed.</text>
+<rect x="368.0" y="166" width="253.3" height="110" class="band"/>
+<line x1="368.5" y1="166" x2="368.5" y2="276" class="hair marker" stroke-width="1"/>
+<rect x="368.0" y="340" width="253.3" height="170" class="band"/>
+<line x1="368.5" y1="340" x2="368.5" y2="510" class="hair marker" stroke-width="1"/>
+<text x="24.0" y="156.0" class="ink2" font-size="13" font-weight="600">Requests per second, reactive setup</text>
+<rect x="646" y="145" width="18" height="10" rx="2" class="f-load"/><line x1="646" y1="144.5" x2="664" y2="144.5" class="hair l-load" stroke-width="1.5"/>
+<text x="671.0" y="156.0" class="ink2" font-size="12.5">Started</text>
+<line x1="742.875" y1="151.5" x2="760.875" y2="151.5" class="line l-react" stroke-width="2.5"/>
+<text x="767.9" y="156.0" class="ink2" font-size="12.5">Finished</text>
+<line x1="64" y1="276.5" x2="976" y2="276.5" class="hair axis"/>
+<text x="56.0" y="280.5" class="muted mono" font-size="11.5" text-anchor="end">0</text>
+<line x1="64" y1="221.5" x2="976" y2="221.5" class="hair grid"/>
+<text x="56.0" y="225.5" class="muted mono" font-size="11.5" text-anchor="end">50</text>
+<line x1="64" y1="166.5" x2="976" y2="166.5" class="hair grid"/>
+<text x="56.0" y="170.5" class="muted mono" font-size="11.5" text-anchor="end">100</text>
+<path d="M64.0,276.0L64.0,266.3H114.7V266.0H165.3V266.0H216.0V267.2H266.7V266.5H317.3V266.9H368.0V193.9H418.7V196.4H469.3V193.9H520.0V192.2H570.7V192.4H621.3V263.2H672.0V266.0H722.7V265.5H773.3V266.8H824.0V267.1H874.7V265.1H925.3V265.7H976.0V276.0Z" class="f-load"/>
+<path d="M64.0,266.3H114.7V266.0H165.3V266.0H216.0V267.2H266.7V266.5H317.3V266.9H368.0V193.9H418.7V196.4H469.3V193.9H520.0V192.2H570.7V192.4H621.3V263.2H672.0V266.0H722.7V265.5H773.3V266.8H824.0V267.1H874.7V265.1H925.3V265.7H976.0" class="line l-load" stroke-width="1.4"/>
+<path d="M64.0,266.2H114.7V266.0H165.3V266.0H216.0V267.3H266.7V266.5H317.3V266.8H368.0V252.4H418.7V250.6H469.3V247.7H520.0V220.9H570.7V222.4H621.3V261.0H672.0V265.9H722.7V265.6H773.3V266.8H824.0V267.1H874.7V265.1H925.3V265.8H976.0" class="line l-react" stroke-width="2.4"/>
+<text x="374.0" y="179.0" class="muted mono" font-size="11.5">peak starts</text>
+<text x="494.7" y="238.9" class="ink2 mono" font-size="12" text-anchor="middle">21–50 finished per second</text>
+<text x="24.0" y="330.0" class="ink2" font-size="13" font-weight="600">CPU (cores)</text>
+<rect x="416" y="319" width="18" height="10" rx="2" class="f-load"/><line x1="416" y1="318.5" x2="434" y2="318.5" class="hair l-load" stroke-width="1.5"/>
+<text x="441.0" y="330.0" class="ink2" font-size="12.5">Needed by the requests</text>
+<line x1="619.75" y1="325.5" x2="637.75" y2="325.5" class="line l-react" stroke-width="2.5"/>
+<text x="644.8" y="330.0" class="ink2" font-size="12.5">Measured</text>
+<line x1="723.75" y1="325.5" x2="741.75" y2="325.5" class="line l-cand" stroke-width="2.5"/>
+<text x="748.8" y="330.0" class="ink2" font-size="12.5">Rebuilt</text>
+<line x1="64" y1="510.5" x2="976" y2="510.5" class="hair axis"/>
+<text x="56.0" y="514.5" class="muted mono" font-size="11.5" text-anchor="end">0</text>
+<line x1="64" y1="468.5" x2="976" y2="468.5" class="hair grid"/>
+<text x="56.0" y="472.5" class="muted mono" font-size="11.5" text-anchor="end">1</text>
+<line x1="64" y1="425.5" x2="976" y2="425.5" class="hair grid"/>
+<text x="56.0" y="429.5" class="muted mono" font-size="11.5" text-anchor="end">2</text>
+<line x1="64" y1="382.5" x2="976" y2="382.5" class="hair grid"/>
+<text x="56.0" y="386.5" class="muted mono" font-size="11.5" text-anchor="end">3</text>
+<line x1="64" y1="340.5" x2="976" y2="340.5" class="hair grid"/>
+<text x="56.0" y="344.5" class="muted mono" font-size="11.5" text-anchor="end">4</text>
+<path d="M64.0,510.0L64.0,496.7H114.7V496.1H165.3V496.2H216.0V497.1H266.7V497.0H317.3V496.7H368.0V399.0H418.7V406.7H469.3V399.5H520.0V401.9H570.7V398.7H621.3V494.2H672.0V495.8H722.7V495.2H773.3V497.7H824.0V497.8H874.7V495.6H925.3V495.4H976.0V510.0Z" class="f-load"/>
+<path d="M64.0,496.7H114.7V496.1H165.3V496.2H216.0V497.1H266.7V497.0H317.3V496.7H368.0V399.0H418.7V406.7H469.3V399.5H520.0V401.9H570.7V398.7H621.3V494.2H672.0V495.8H722.7V495.2H773.3V497.7H824.0V497.8H874.7V495.6H925.3V495.4H976.0" class="line l-load" stroke-width="1.4"/>
+<path d="M64.0,497.5H114.7V495.5H165.3V495.5H216.0V497.3H266.7V497.3H317.3V496.7H368.0V467.8H418.7V467.5H469.3V467.5H520.0V426.4H570.7V425.0H621.3V489.5H672.0V496.5H722.7V495.6H773.3V497.6H824.0V497.3H874.7V496.3H925.3V495.7H976.0" class="line l-react" stroke-width="2.4"/>
+<path d="M64.0,497.7H114.7V495.5H165.3V495.5H216.0V497.1H266.7V497.3H317.3V496.8H368.0V363.1H418.7V376.7H469.3V386.7H520.0V382.7H570.7V377.5H621.3V492.4H672.0V496.6H722.7V495.5H773.3V497.7H824.0V497.3H874.7V496.3H925.3V495.5H976.0" class="line l-cand" stroke-width="2.4"/>
+<circle cx="650.0" cy="353.5" r="4.5" class="f-cand"/>
+<text x="660.0" y="358.0" class="ink" font-size="12">Rebuilt: 2.9–3.5 cores</text>
+<rect x="645.0" y="367.0" width="10" height="9" rx="1.5" class="f-heavy"/>
+<text x="660.0" y="377.0" class="ink" font-size="12">Needed: 2.4–2.6 cores</text>
+<circle cx="650.0" cy="391.5" r="4.5" class="f-react"/>
+<text x="660.0" y="396.0" class="ink" font-size="12">Measured: 1.0–2.0 cores, the limit of 1–2 pods</text>
+<line x1="64.5" y1="510" x2="64.5" y2="515" class="hair axis"/>
+<text x="64.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">-90</text>
+<line x1="165.5" y1="510" x2="165.5" y2="515" class="hair axis"/>
+<text x="165.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">-60</text>
+<line x1="267.5" y1="510" x2="267.5" y2="515" class="hair axis"/>
+<text x="267.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">-30</text>
+<line x1="368.5" y1="510" x2="368.5" y2="515" class="hair axis"/>
+<text x="368.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">0</text>
+<line x1="469.5" y1="510" x2="469.5" y2="515" class="hair axis"/>
+<text x="469.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">+30</text>
+<line x1="571.5" y1="510" x2="571.5" y2="515" class="hair axis"/>
+<text x="571.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">+60</text>
+<line x1="672.5" y1="510" x2="672.5" y2="515" class="hair axis"/>
+<text x="672.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">+90</text>
+<line x1="773.5" y1="510" x2="773.5" y2="515" class="hair axis"/>
+<text x="773.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">+120</text>
+<line x1="875.5" y1="510" x2="875.5" y2="515" class="hair axis"/>
+<text x="875.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">+150</text>
+<line x1="976.5" y1="510" x2="976.5" y2="515" class="hair axis"/>
+<text x="976.5" y="529.0" class="muted mono" font-size="11.5" text-anchor="middle">+180</text>
+<text x="976.0" y="550.0" class="muted" font-size="12" text-anchor="end">seconds from the start of the peak</text>
+</svg>

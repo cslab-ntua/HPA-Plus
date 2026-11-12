@@ -25,6 +25,10 @@ traffic before giving it control.
 Every model entry has these fields:
 
 - `type`: `Linear`, `HoltWinters`, `ARIMA`, `XGBoost`, `LightGBM`, `Toto` or `SeasonalNaive`.
+- `requestDemand` or `cpuOnly`: every model needs one. `requestDemand` forecasts the demand rebuilt from request
+  counters and is the default way to run HPA+; see [request demand](request-demand.md). `cpuOnly: true` forecasts
+  measured CPU only, for workloads without request counters, and does much worse. The examples below show only the
+  model's own block.
 - `name`: unique within the HPAPlus.
 - `perSyncPeriod`: new samples needed after the last successful run before the model runs again. Default `1`; with
   regular sampling, `2` runs it about every other sync. It cannot exceed the retained history.
