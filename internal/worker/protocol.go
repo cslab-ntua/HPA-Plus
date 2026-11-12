@@ -108,7 +108,7 @@ func (r request) validate() error {
 		}
 		return nil
 	case "session":
-		if r.Session == "" || (r.Script != "algorithms/arima/incremental_worker.py" && r.Script != "algorithms/toto/toto.py") {
+		if r.Session == "" || (r.Script != "algorithms/arima/incremental_worker.py" && r.Script != "algorithms/toto/toto.py" && r.Script != "algorithms/tirex/tirex.py") {
 			return fmt.Errorf("invalid session")
 		}
 	case "forecast", "run":

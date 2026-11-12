@@ -97,6 +97,23 @@ func TestValidateRejectsInvalidTreeModelParameters(t *testing.T) {
 			wantErr: "XGBoost colsampleBytree must be in (0, 1]",
 		},
 		{
+			name:    "tirex-missing-config",
+			model:   hpaplusv1alpha1.Model{Name: "tx", Type: hpaplusv1alpha1.TypeTiRex},
+			wantErr: "no TiRex configuration provided",
+		},
+		{
+			name: "tirex-history-too-long",
+			model: hpaplusv1alpha1.Model{Name: "tx", Type: hpaplusv1alpha1.TypeTiRex,
+				TiRex: &hpaplusv1alpha1.TiRex{HistorySize: 2049, LookAhead: 1000}},
+			wantErr: "TiRex historySize must be between 2 and 2048",
+		},
+		{
+			name: "tirex-quantile-between-levels",
+			model: hpaplusv1alpha1.Model{Name: "tx", Type: hpaplusv1alpha1.TypeTiRex,
+				TiRex: &hpaplusv1alpha1.TiRex{HistorySize: 20, LookAhead: 1000, QuantileLevel: float64Ptr(0.85)}},
+			wantErr: "TiRex quantileLevel must be one of 0.1, 0.2, ..., 0.9",
+		},
+		{
 			name:    "toto-missing-config",
 			model:   hpaplusv1alpha1.Model{Name: "tt", Type: hpaplusv1alpha1.TypeToto},
 			wantErr: "no Toto configuration provided",

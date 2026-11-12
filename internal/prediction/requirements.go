@@ -21,6 +21,10 @@ func RequiredHistorySize(model *api.Model) int {
 		if model.Toto != nil {
 			return model.Toto.HistorySize
 		}
+	case api.TypeTiRex:
+		if model.TiRex != nil {
+			return model.TiRex.HistorySize
+		}
 	case api.TypeSeasonalNaive:
 		if model.SeasonalNaive != nil {
 			return model.SeasonalNaive.HistorySize

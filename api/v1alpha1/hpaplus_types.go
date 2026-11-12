@@ -39,6 +39,7 @@ const (
 	TypeXGBoost       = "XGBoost"
 	TypeLightGBM      = "LightGBM"
 	TypeToto          = "Toto"
+	TypeTiRex         = "TiRex"
 	TypeSeasonalNaive = "SeasonalNaive"
 )
 
@@ -361,6 +362,24 @@ type Toto struct {
 	QuantileLevel *float64 `json:"quantileLevel,omitempty"`
 }
 
+// TiRex is the pretrained TiRex-2 forecaster from NXAI, built on xLSTM. It forecasts aggregate CPU usage from the
+// stored history without fitting, and keeps the model loaded in a persistent worker.
+type TiRex struct {
+	// historySize is how many timestamped CPU samples are kept and given to the model as context.
+	// +kubebuilder:validation:Minimum=2
+	HistorySize int `json:"historySize"`
+
+	// lookAhead is how far ahead (in milliseconds) the prediction should forecast.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=9223372036854
+	LookAhead int `json:"lookAhead"`
+
+	// quantileLevel is the forecast quantile used as CPU demand: 0.1, 0.2, ..., 0.9. Defaults to 0.9.
+	// +kubebuilder:validation:Enum=0.1;0.2;0.3;0.4;0.5;0.6;0.7;0.8;0.9
+	// +optional
+	QuantileLevel *float64 `json:"quantileLevel,omitempty"`
+}
+
 // SeasonalNaive repeats the CPU usage of the same point one cycle earlier, or the newest sample when the
 // history shows no cycle. It fits nothing and is the baseline the other models should beat.
 type SeasonalNaive struct {
@@ -521,7 +540,7 @@ type Model struct {
 
 	// type is the type of the model, for example 'Linear'. To see a full list of supported model types visit
 	// https://github.com/cslab-ntua/HPA-Plus/tree/master/docs/user-guide/models.md.
-	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA;XGBoost;LightGBM;Toto;SeasonalNaive
+	// +kubebuilder:validation:Enum=Linear;HoltWinters;ARIMA;XGBoost;LightGBM;Toto;TiRex;SeasonalNaive
 	Type string `json:"type"`
 
 	// name is the name of the model, this can be any arbitrary name and is just used to distinguish between models if
@@ -623,6 +642,10 @@ type Model struct {
 	// toto is the configuration to use for the Toto model, it will only be used if the type is set to 'Toto'
 	// +optional
 	Toto *Toto `json:"toto,omitempty"`
+
+	// tirex is the configuration to use for the TiRex model, it will only be used if the type is set to 'TiRex'
+	// +optional
+	TiRex *TiRex `json:"tirex,omitempty"`
 
 	// seasonalNaive is the configuration to use for the seasonal naive model, it will only be used if the type is
 	// set to 'SeasonalNaive'

@@ -24,7 +24,7 @@ traffic before giving it control.
 
 Every model entry has these fields:
 
-- `type`: `Linear`, `HoltWinters`, `ARIMA`, `XGBoost`, `LightGBM`, `Toto` or `SeasonalNaive`.
+- `type`: `Linear`, `HoltWinters`, `ARIMA`, `XGBoost`, `LightGBM`, `Toto`, `TiRex` or `SeasonalNaive`.
 - `requestDemand` or `cpuOnly`: every model needs one. `requestDemand` forecasts the demand rebuilt from request
   counters and is the default way to run HPA+; see [request demand](request-demand.md). `cpuOnly: true` forecasts
   measured CPU only, for workloads without request counters, and does much worse. The examples below show only the
@@ -306,6 +306,46 @@ make push REGISTRY=${REGISTRY} VERSION=${VERSION}
 Toto needs an older pandas than the other models, so its packages live in their own folder, `/app/toto-site`, which
 only the Toto worker loads. The weights are part of the image; nothing is downloaded at run time.
 
+## TiRex
+
+TiRex-2 is a pretrained forecasting model from NXAI, built on xLSTM (about 38 million parameters for one series,
+Apache 2.0). Like Toto, it forecasts the stored CPU history without fitting.
+
+```yaml
+models:
+  - type: TiRex
+    name: cpu-predictor
+    calculationTimeout: 30000
+    tirex:
+      historySize: 60
+      lookAhead: 90000
+      quantileLevel: 0.9
+```
+
+Key fields:
+
+- `tirex.historySize`: CPU samples kept and given to the model, between 2 and 2048.
+- `tirex.lookAhead`: how far ahead to forecast, in milliseconds. At most 64 steps of the sampling cadence.
+- `tirex.quantileLevel`: one of 0.1, 0.2, ..., 0.9 (default 0.9), the quantiles the model predicts.
+
+The model runs in a worker that stays up between forecasts. The first forecast loads PyTorch and TiRex-2, about 7
+seconds on one core, so keep `calculationTimeout` at 30000 or more; later forecasts take about 700 milliseconds. The
+worker uses about 610 MiB of memory and reserves about 1 GiB of address space, so set `workers.memoryMiB`
+(`--worker-memory-mib`) to at least 1536. It reads the weights one tensor at a time to stay within that limit, and
+runs without `torch.compile`, which would need a C++ compiler in the image.
+
+The default image doesn't include TiRex. Build the `tirex` target, which adds PyTorch, TiRex-2's packages and the
+weights, then push it as usual:
+
+```bash
+docker build --target tirex -t ${REGISTRY}/hpa-plus-operator:${VERSION} .
+make push REGISTRY=${REGISTRY} VERSION=${VERSION}
+```
+
+Its packages live in their own folder, `/app/tirex-site`, which only the TiRex worker loads. One of them,
+`mlstm-kernels`, is under the NXAI community license rather than Apache 2.0: it asks for an attribution notice when
+redistributed, and a commercial license above 100 million euros of yearly revenue.
+
 ## Seasonal naive
 
 The simplest forecast that knows about cycles: every future step repeats the CPU of the same point one cycle earlier.
@@ -344,7 +384,7 @@ Tree feature snapshots for debugging are described in [feature diagnostics](../r
 - Use `HoltWinters` when the workload is strongly seasonal and readable season controls matter.
 - Use `ARIMA` for a classical time-series model with explicit order control or incremental updates.
 - Use `XGBoost` or `LightGBM` when you tune against recorded CPU history and want higher-capacity nonlinear models.
-- Use `Toto` when there is little history or no time to tune: it forecasts without fitting.
+- Use `Toto` or `TiRex` when there is little history or no time to tune: they forecast without fitting.
 - Use `SeasonalNaive` as the baseline when comparing models.
 
 For the tree models, a practical workflow is:
@@ -367,9 +407,10 @@ The controller checks these rules on top of the bounds in the CRD schema:
 | XGBoost | Positive `maxDepth`; `minChildWeight` and `gamma` may be zero. Explicit zero regularization is preserved. |
 | LightGBM | `maxDepth` is `-1` or positive; `numLeaves >= 2`; `minChildSamples >= 1`. Zero depth is rejected by the controller. |
 | Toto | `2 <= historySize <= 2048`; positive `lookAhead`; `quantileLevel` one of `0.1, 0.2, ..., 0.9` when supplied. |
+| TiRex | `2 <= historySize <= 2048`; positive `lookAhead`; `quantileLevel` one of `0.1, 0.2, ..., 0.9` when supplied. |
 | Seasonal naive | `historySize >= 3`; positive `lookAhead`; positive `seasonalPeriodSeconds` when supplied. |
 
-`perSyncPeriod` cannot exceed the retained history: `historySize` for Linear, ARIMA, Toto, seasonal naive and the trees, or
+`perSyncPeriod` cannot exceed the retained history: `historySize` for Linear, ARIMA, Toto, TiRex, seasonal naive and the trees, or
 `seasonalPeriods * storedSeasons` for Holt-Winters. With six samples per season, Holt-Winters needs at least three
 stored seasons to pass its initialization minimum. These checks catch configurations that could never train; they
 don't guarantee that a fit converges or forecasts well.

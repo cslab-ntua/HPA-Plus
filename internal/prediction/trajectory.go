@@ -33,6 +33,10 @@ func ModelTrajectoryExpiry(model *api.Model, points []api.CPUForecastPoint, cons
 		if model.Toto != nil {
 			millis = model.Toto.LookAhead
 		}
+	case api.TypeTiRex:
+		if model.TiRex != nil {
+			millis = model.TiRex.LookAhead
+		}
 	case api.TypeSeasonalNaive:
 		if model.SeasonalNaive != nil {
 			millis = model.SeasonalNaive.LookAhead

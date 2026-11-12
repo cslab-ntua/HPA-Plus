@@ -48,6 +48,7 @@ func TestRequestDemandAcceptsEveryModelType(t *testing.T) {
 		{Type: api.TypeLightGBM, LightGBM: &api.LightGBM{}},
 		{Type: api.TypeXGBoost, XGBoost: &api.XGBoost{ForecastStrategy: "recursive"}},
 		{Type: api.TypeToto, Toto: &api.Toto{}},
+		{Type: api.TypeTiRex, TiRex: &api.TiRex{}},
 		{Type: api.TypeSeasonalNaive, SeasonalNaive: &api.SeasonalNaive{}},
 	} {
 		s := demandSpec()

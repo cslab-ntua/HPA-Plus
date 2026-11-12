@@ -282,6 +282,26 @@ func validateModels(spec hpaplusv1alpha1.HPAPlusSpec) error {
 			}
 		}
 
+		if model.Type == hpaplusv1alpha1.TypeTiRex {
+			tx := model.TiRex
+			if tx == nil {
+				return fmt.Errorf("invalid model '%s', type is '%s' but no TiRex configuration provided",
+					model.Name, model.Type)
+			}
+			if !hasCPUUtilizationMetric {
+				return fmt.Errorf("invalid model '%s', TiRex CPU-history prediction requires a CPU resource metric with averageUtilization configured", model.Name)
+			}
+			if tx.HistorySize < 2 || tx.HistorySize > 2048 {
+				return fmt.Errorf("invalid model '%s', TiRex historySize must be between 2 and 2048", model.Name)
+			}
+			if !validDuration(tx.LookAhead, time.Millisecond, 1) {
+				return fmt.Errorf("invalid model '%s', TiRex lookAhead must be a positive millisecond duration", model.Name)
+			}
+			if q := tx.QuantileLevel; q != nil && (math.IsNaN(*q) || *q < 0.1 || *q > 0.9 || math.Abs(*q*10-math.Round(*q*10)) > 1e-9) {
+				return fmt.Errorf("invalid model '%s', TiRex quantileLevel must be one of 0.1, 0.2, ..., 0.9", model.Name)
+			}
+		}
+
 		if model.Type == hpaplusv1alpha1.TypeSeasonalNaive {
 			sn := model.SeasonalNaive
 			if sn == nil {
@@ -428,7 +448,7 @@ func validateModelBasics(model hpaplusv1alpha1.Model) error {
 		return fmt.Errorf("unknown model type %q", model.Type)
 	}
 	configs := 0
-	for _, present := range []bool{model.Linear != nil, model.HoltWinters != nil, model.Arima != nil, model.XGBoost != nil, model.LightGBM != nil, model.Toto != nil, model.SeasonalNaive != nil} {
+	for _, present := range []bool{model.Linear != nil, model.HoltWinters != nil, model.Arima != nil, model.XGBoost != nil, model.LightGBM != nil, model.Toto != nil, model.TiRex != nil, model.SeasonalNaive != nil} {
 		if present {
 			configs++
 		}
@@ -537,6 +557,8 @@ func validateModelHistory(model hpaplusv1alpha1.Model, syncPeriod *int) error {
 		retained = model.LightGBM.HistorySize
 	case hpaplusv1alpha1.TypeToto:
 		retained = model.Toto.HistorySize
+	case hpaplusv1alpha1.TypeTiRex:
+		retained = model.TiRex.HistorySize
 	case hpaplusv1alpha1.TypeSeasonalNaive:
 		retained = model.SeasonalNaive.HistorySize
 	case hpaplusv1alpha1.TypeArima:
