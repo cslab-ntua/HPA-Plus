@@ -7,7 +7,7 @@ requests that arrived per request completed. While pods keep up the ratio is abo
 it rises, so a saturated pod no longer hides the work it could not serve.
 
 The model then forecasts this rebuilt CPU with its own forecaster. Any model type can use it: Linear, Holt-Winters,
-ARIMA, XGBoost and LightGBM. No requests-per-pod capacity or per-request CPU cost is supplied or learned.
+ARIMA, XGBoost, LightGBM, Toto and seasonal naive. No requests-per-pod capacity or per-request CPU cost is supplied or learned.
 
 Request demand supports homogeneous application pods on Linux nodes with cgroup v2. It reads Prometheus telemetry you
 already have; it does not install an ingress, service mesh, application proxy or application instrumentation.
@@ -97,7 +97,7 @@ These metric names are illustrative: configure the actual counters exported by y
 
 Request demand requires an explicit `spec.syncPeriod: 30000`; leaving it out means the fifteen-second default, which is rejected. It also requires `predictivePolicy`, `predictionMaxAge`, `includeHPA: false`, `predictionFailurePolicy: HoldCurrent`, and `control` or `observe` mode. `forecastTarget` is optional; its only value is `reconstructedCPU`.
 
-The model forecasts once per closed thirty-second window, after that window's CPU sample exists. It needs as many rebuilt windows as its own history size: `historySize` for Linear, ARIMA, XGBoost and LightGBM, or `seasonalPeriods` times `storedSeasons` for Holt-Winters. A window without request counts keeps its measured CPU, and `reconstructionFallbacks` counts those windows.
+The model forecasts once per closed thirty-second window, after that window's CPU sample exists. It needs as many rebuilt windows as its own history size: `historySize` for Linear, ARIMA, XGBoost, LightGBM, Toto and seasonal naive, or `seasonalPeriods` times `storedSeasons` for Holt-Winters. A window without request counts keeps its measured CPU, and `reconstructionFallbacks` counts those windows.
 
 ## Decisions
 

@@ -2,7 +2,7 @@
 
 HPA+ is a Kubernetes predictive autoscaling operator. It keeps the familiar Horizontal Pod Autoscaler configuration and adds a modular suite of models that forecast aggregate CPU demand. The operator converts those forecasts into replica recommendations using CPU requests and the configured utilization target.
 
-Supported models are Linear, Holt-Winters, ARIMA/SARIMA, XGBoost and LightGBM. Models share history collection, workload identity checks, forecast validity checks, worker limits and the scaling decision path. Predictive performance depends on the workload, measurements and configuration.
+Supported models are Linear, Holt-Winters, ARIMA/SARIMA, XGBoost, LightGBM, Toto and a seasonal naive baseline. Models share history collection, workload identity checks, forecast validity checks, worker limits and the scaling decision path. Predictive performance depends on the workload, measurements and configuration.
 
 Documentation: https://cslab-ntua.github.io/HPA-Plus/
 
