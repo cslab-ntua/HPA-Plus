@@ -12,6 +12,10 @@ In a 4-hour test on a live cluster, HPA+ with [request-demand forecasting](docs/
 
 ![Headline numbers from the 4-hour benchmark run](docs/results/figures/overview.svg)
 
+The same run as CPU needed by the requests against CPU given by ready pods. Below the grey area a setup was short and requests had to wait.
+
+![CPU needed and CPU given for HPA+ and the HPA formula in repeated peaks, cycles and the sudden jump](docs/results/figures/cpu-needed.svg)
+
 ## How it works
 
 When pods are full, requests start faster than they finish and the measured CPU stops at what the pods can do. The rebuild uses that gap:
