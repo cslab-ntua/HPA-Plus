@@ -1,7 +1,7 @@
 # Request demand
 
 CPU history cannot show demand that saturated pods failed to serve: a pod at its CPU limit uses the same CPU whether
-one request or a hundred are waiting. Request demand is the default way HPA+ forecasts: it rebuilds that demand from
+one request or a hundred are waiting. Every HPA+ model forecasts request demand: HPA+ rebuilds that demand from
 request counters. Each closed thirty-second window is rebuilt as measured CPU multiplied by the
 requests that arrived per request completed. While pods keep up the ratio is about one; when completions fall behind
 it rises, so a saturated pod no longer hides the work it could not serve.
@@ -29,23 +29,9 @@ can adjust HPA+ to read it. Two examples:
 - a latency histogram: requests in the system ≈ requests finished per second × mean latency (Little's law), so
   requests started ≈ requests finished + the growth of that number.
 
-## Without request counters
-
-Set `cpuOnly: true` on a model to forecast measured CPU only:
-
-```yaml
-models:
-  - name: cpu
-    type: Linear
-    cpuOnly: true
-    linear:
-      historySize: 12
-      lookAhead: 60000
-```
-
-It does much worse. When pods are full, measured CPU stops at what they can do, so the forecast does not see the
-demand they could not serve and adds pods late, exactly when load grows. Every model needs either `requestDemand` or
-`cpuOnly: true`.
+Without these counters HPA+ has nothing to forecast, and an HPAPlus without models gives only the HPA formula.
+An earlier version could forecast measured CPU alone. It was removed because it did much worse: when pods are full
+their CPU stops at what they can do.
 
 ## Installation and measurements
 
@@ -73,7 +59,7 @@ CPU consumption is the difference between cumulative `usage_usec` counters divid
 
 Both reactive CPU evaluation and CPU forecasting use the selected cgroup source with a fixed thirty-second averaging window. Helm does not expose a separate averaging-window setting. Two-second collection reduces measurement delay; it does not make thirty seconds of a new container's history immediately available. A new container needs two reads for its first rate and a complete averaging window for the CPU history path. Gaps are never interpolated. Changing the CPU collection contract resets incompatible stored CPU training histories.
 
-The `metrics-server` and `kubelet` sources still work for `cpuOnly` models; set `cpuHistorySource` in Helm. Request demand requires the cgroup collector. A failed cgroup read does not silently switch to Metrics API measurements.
+Request demand requires the cgroup collector. The `metrics-server` and `kubelet` sources in `cpuHistorySource` only suit an HPAPlus without models. A failed cgroup read does not silently switch to Metrics API measurements.
 
 ## Required traffic telemetry and HPAPlus configuration
 

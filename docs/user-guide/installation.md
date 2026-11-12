@@ -25,7 +25,7 @@ so build your own first.
    ```
 
    `trafficPrometheusURL` is the Prometheus that scrapes your application's request counters, which
-   [request demand](request-demand.md), the default, needs. The chart also runs a CPU collector on each Linux node; it
+   [request demand](request-demand.md) needs. The chart also runs a CPU collector on each Linux node; it
    reads `/sys/fs/cgroup` through a read-only hostPath mount, which clusters enforcing the baseline Pod Security level
    must allow in this namespace.
 
@@ -101,7 +101,6 @@ from the same checkout.
 
 ## Upgrading from 0.14
 
-Request demand is now the default. Every model needs either a `requestDemand` block or `cpuOnly: true`; a model
-with neither is rejected. To keep a 0.14 configuration as it was, add `cpuOnly: true` to each model without
-`requestDemand`. The chart now enables the cgroup collector and uses it as the CPU source; set
-`cgroupCollector.enabled: false` and `cpuHistorySource: metrics-server` to keep the old setup for `cpuOnly` models.
+Every model now needs a `requestDemand` block; a model without one is rejected. Forecasting measured CPU alone was
+removed. Add request counters and a `requestDemand` block to each model, or remove the models to keep only the HPA
+formula. The chart now enables the cgroup collector and uses it as the CPU source, which request demand needs.

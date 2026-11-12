@@ -71,7 +71,7 @@ models:
   - name: demand
     type: Linear
     historyMaxAge: 600000
-    # plus requestDemand, or cpuOnly: true
+    # plus requestDemand
     linear:
       historySize: 30
       lookAhead: 60000
