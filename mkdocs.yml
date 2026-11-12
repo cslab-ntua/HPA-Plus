@@ -60,7 +60,10 @@ nav:
       - Observability: user-guide/observability.md
       - Operations: user-guide/operations.md
       - Local UI: user-guide/ui.md
-  - Benchmark results: results/README.md
+  - Benchmark results:
+      - Overview: results/README.md
+      - Synthetic traffic: results/synthetic.md
+      - 1998 World Cup: results/world-cup.md
   - Architecture: architecture.md
   - Reference:
       - Configuration: reference/configuration.md
