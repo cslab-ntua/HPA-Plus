@@ -16,20 +16,14 @@ terminationGracePeriodSeconds: 30
 logging:
   level: info
 
-# cgroup supplies the same counter-window measurements to CPU training and
-# reactive evaluation, and requires the collector below. Request demand needs
-# it. metrics-server and kubelet (grants nodes/proxy access) only suit an
-# HPAPlus without models.
-cpuHistorySource: cgroup
-
 # Trusted Prometheus origin with the application's request counters. Request
 # demand models need it; empty disables traffic collection.
 trafficPrometheusURL: ""
 
-# Reads /sys/fs/cgroup through a read-only hostPath mount on each node. Clusters
-# that enforce the baseline Pod Security level must allow it for this namespace.
+# Supplies all pod CPU, for training and the HPA formula. Reads /sys/fs/cgroup
+# through a read-only hostPath mount on each node. Clusters that enforce the
+# baseline Pod Security level must allow it for this namespace.
 cgroupCollector:
-  enabled: true
   # Empty discovers pods cluster-wide; set for a namespace-owned installation.
   watchNamespace: ""
   port: 19091

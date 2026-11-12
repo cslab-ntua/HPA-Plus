@@ -76,14 +76,12 @@ func init() {
 func main() {
 	var metricsAddr string
 	var watchNamespace string
-	var cpuHistorySource string
 	var collectorNamespace, collectorSelector, trafficPrometheusURL string
 	var collectorPort int
-	flag.StringVar(&collectorNamespace, "cgroup-collector-namespace", "", "Namespace of the optional cgroup collectors.")
+	flag.StringVar(&collectorNamespace, "cgroup-collector-namespace", "", "Namespace of the cgroup collectors, which supply all pod CPU.")
 	flag.StringVar(&collectorSelector, "cgroup-collector-selector", "app.kubernetes.io/component=cgroup-collector", "Label selector for trusted cgroup collectors.")
 	flag.IntVar(&collectorPort, "cgroup-collector-port", 19091, "Cgroup collector HTTP port accessed through Kubernetes pod proxy.")
 	flag.StringVar(&trafficPrometheusURL, "traffic-prometheus-url", "", "Trusted Prometheus origin for workload traffic telemetry; empty disables request-demand mode.")
-	flag.StringVar(&cpuHistorySource, "cpu-history-source", "metrics-server", "CPU measurements: metrics-server, kubelet, or cgroup collector. Models need cgroup. Cgroup applies to CPU training and reactive evaluation.")
 	flag.StringVar(&watchNamespace, "watch-namespace", "", "Restrict the manager cache and reconciliation to one namespace; empty watches all namespaces.")
 	var enableLeaderElection bool
 	var probeAddr string
@@ -183,14 +181,8 @@ func main() {
 		setupLog.Error(observability.PublicError(err), "unable to set up metrics gatherer")
 		os.Exit(1)
 	}
-	if cpuHistorySource == "cgroup" {
-		if err := metricGatherer.ConfigureCgroup(metricadapter.CgroupConfig{Namespace: collectorNamespace, Selector: collectorSelector, Port: collectorPort}); err != nil {
-			setupLog.Error(err, "invalid cgroup collector configuration")
-			os.Exit(1)
-		}
-	}
-	if err := metricGatherer.SetCPUHistorySource(cpuHistorySource); err != nil {
-		setupLog.Error(err, "invalid CPU history source")
+	if err := metricGatherer.ConfigureCgroup(metricadapter.CgroupConfig{Namespace: collectorNamespace, Selector: collectorSelector, Port: collectorPort}); err != nil {
+		setupLog.Error(err, "invalid cgroup collector configuration")
 		os.Exit(1)
 	}
 	localRunner := algorithm.NewAlgorithmPython()

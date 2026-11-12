@@ -74,20 +74,13 @@ func (k *Kubernetes) ConfigureCgroup(config CgroupConfig) error {
 	return nil
 }
 
-// CPUHistorySourceIdentity fences persisted training histories across a backend
-// change. Counter windows and Metrics API snapshots are different contracts.
+// CPUHistorySourceIdentity fences persisted training histories across a change
+// of collection contract, such as histories from the removed Metrics API source.
 func (k *Kubernetes) CPUHistorySourceIdentity() string {
-	switch k.cpuHistorySource {
-	case "cgroup":
-		if k.cgroup != nil {
-			return cgroup.Protocol + "/" + k.cgroup.config.Window.String()
-		}
-		return cgroup.Protocol
-	case "kubelet":
-		return "kubelet-summary-v1"
-	default:
-		return "metrics-server-v1"
+	if k.cgroup != nil {
+		return cgroup.Protocol + "/" + k.cgroup.config.Window.String()
 	}
+	return cgroup.Protocol
 }
 
 func (s *cgroupSource) read(parent context.Context, nodes map[string]bool, includeInventory ...bool) ([]cgroup.Snapshot, error) {
