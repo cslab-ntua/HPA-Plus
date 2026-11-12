@@ -398,6 +398,12 @@ func validateSpec(spec hpaplusv1alpha1.HPAPlusSpec) error {
 }
 
 func validateModelBasics(model hpaplusv1alpha1.Model) error {
+	if model.RequestDemand == nil && !model.CPUOnly {
+		return errors.New("set requestDemand to forecast the demand rebuilt from request counters, or cpuOnly: true to forecast measured CPU only")
+	}
+	if model.RequestDemand != nil && model.CPUOnly {
+		return errors.New("requestDemand and cpuOnly cannot both be set")
+	}
 	if model.ForecastReliability != nil {
 		p := model.ForecastReliability.Effective()
 		if p.CalibrationSamples < 10 || p.CalibrationSamples > 100 || p.Window < 2 || p.Window > 20 || p.Breaches < 2 || p.Breaches > p.Window || p.Breaches*2 <= p.Window || math.IsNaN(p.MinimumRelativeError) || math.IsInf(p.MinimumRelativeError, 0) || p.MinimumRelativeError < .001 || p.MinimumRelativeError > 1 {

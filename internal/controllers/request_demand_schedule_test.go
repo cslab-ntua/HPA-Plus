@@ -201,6 +201,7 @@ func TestRequestDemandCooldownRefreshesAndFitsButNeverWritesScale(t *testing.T) 
 func TestLegacyCooldownStillSkipsMetricAndModelEvaluation(t *testing.T) {
 	r, owner, scale, now := demandIntegrationFixture(t)
 	owner.Spec.Models[0].RequestDemand = nil
+	owner.Spec.Models[0].CPUOnly = true
 	owner.Status.LastScaleTime = &metav1.Time{Time: now.Add(-4 * time.Second)}
 	if err := r.Client.Update(context.Background(), owner); err != nil {
 		t.Fatal(err)
