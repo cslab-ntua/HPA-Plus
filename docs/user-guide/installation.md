@@ -103,4 +103,5 @@ from the same checkout.
 
 Every model now needs a `requestDemand` block; a model without one is rejected. Forecasting measured CPU alone was
 removed. Add request counters and a `requestDemand` block to each model, or remove the models to keep only the HPA
-formula. The chart now enables the cgroup collector and uses it as the CPU source, which request demand needs.
+formula. The cgroup collector is now the only CPU source: the `cpuHistorySource` value, the `--cpu-history-source` flag and
+`cgroupCollector.enabled` were removed, and the chart always runs the collector.

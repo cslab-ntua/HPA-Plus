@@ -94,12 +94,9 @@ spec:
           args:
             - --leader-elect={{ .Values.leaderElection }}
             - --zap-log-level={{ .Values.logging.level }}
-            - --cpu-history-source={{ .Values.cpuHistorySource }}
-            {{- if eq .Values.cpuHistorySource "cgroup" }}
             - --cgroup-collector-namespace={{ .Release.Namespace }}
             - --cgroup-collector-selector=app.kubernetes.io/component=cgroup-collector
             - --cgroup-collector-port={{ .Values.cgroupCollector.port }}
-            {{- end }}
             {{- if .Values.trafficPrometheusURL }}
             - {{ printf "--traffic-prometheus-url=%s" .Values.trafficPrometheusURL | quote }}
             {{- end }}

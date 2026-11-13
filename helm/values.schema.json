@@ -15,14 +15,6 @@
     "hooks"
   ],
   "properties": {
-    "cpuHistorySource": {
-      "type": "string",
-      "enum": [
-        "metrics-server",
-        "kubelet",
-        "cgroup"
-      ]
-    },
     "mode": {
       "type": "string",
       "enum": [
@@ -390,7 +382,6 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "enabled",
         "port",
         "interval",
         "retention",
@@ -399,9 +390,6 @@
         "watchNamespace"
       ],
       "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
         "port": {
           "type": "integer",
           "minimum": 1024,
@@ -562,33 +550,5 @@
         }
       }
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "cpuHistorySource": {
-            "const": "cgroup"
-          }
-        },
-        "required": [
-          "cpuHistorySource"
-        ]
-      },
-      "then": {
-        "properties": {
-          "cgroupCollector": {
-            "properties": {
-              "enabled": {
-                "const": true
-              }
-            }
-          }
-        },
-        "required": [
-          "cgroupCollector"
-        ]
-      }
-    }
-  ]
+  }
 }

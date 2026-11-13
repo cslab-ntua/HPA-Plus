@@ -1,4 +1,3 @@
-{{- if .Values.cgroupCollector.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -134,4 +133,3 @@ spec:
             path: /healthz
             port: snapshot
           periodSeconds: 10
-{{- end }}

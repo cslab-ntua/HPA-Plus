@@ -41,8 +41,7 @@ type IndependentCPUHistoryGatherer interface {
 }
 
 // RecentCPUGatherer measures CPU over a chosen window ending at the latest
-// reads, with the CPU-history population rules. Only the cgroup source can
-// choose the window.
+// reads, with the CPU-history population rules.
 type RecentCPUGatherer interface {
 	GatherRecentCPU(context.Context, autoscalingv2.MetricSpec, string, labels.Selector, time.Duration) (*gathered.Metric, error)
 }
@@ -50,21 +49,14 @@ type RecentCPUGatherer interface {
 // Kubernetes keeps configuration and the API rate budget shared, while clients
 // and transports are scoped to one gather. Never retain a canceled call's clients.
 type Kubernetes struct {
-	config           *rest.Config
-	cpuHistorySource string
-	cgroup           *cgroupSource
+	config *rest.Config
+	cgroup *cgroupSource
 }
 
-func (k *Kubernetes) SetCPUHistorySource(source string) error {
-	if source != "metrics-server" && source != "kubelet" && source != "cgroup" {
-		return fmt.Errorf("cpu-history-source must be metrics-server, kubelet or cgroup")
-	}
-	k.cpuHistorySource = source
-	return nil
-}
+var errNoCgroup = fmt.Errorf("cgroup CPU source not configured")
 
 func (k *Kubernetes) IndependentCPUHistory() bool {
-	return k.cpuHistorySource == "kubelet" || k.cpuHistorySource == "cgroup"
+	return k.cgroup != nil
 }
 
 func New(config *rest.Config) (*Kubernetes, error) {
@@ -94,30 +86,18 @@ func (k *Kubernetes) GatherCPUHistory(ctx context.Context, spec autoscalingv2.Me
 	if spec.Resource == nil || spec.Resource.Name != "cpu" || spec.Resource.Target.AverageUtilization == nil {
 		return nil, fmt.Errorf("CPU history requires a CPU utilization metric")
 	}
-	if k.cpuHistorySource == "cgroup" {
-		return k.gatherCgroupCPUHistory(ctx, spec, namespace, selector)
+	if k.cgroup == nil {
+		return nil, errNoCgroup
 	}
-	if k.cpuHistorySource == "kubelet" {
-		return k.gatherKubeletCPUHistory(ctx, spec, namespace, selector)
-	}
-	// A measured startup window is real CPU consumption, even when native HPA
-	// deliberately excludes it from its reactive utilization calculation.
-	values, err := k.Gather(ctx, []autoscalingv2.MetricSpec{spec}, namespace, selector, 0, 0)
-	if err != nil {
-		return nil, err
-	}
-	if len(values) != 1 {
-		return nil, fmt.Errorf("CPU history observation unavailable")
-	}
-	return values[0], nil
+	return k.gatherCgroupCPUHistory(ctx, spec, namespace, selector)
 }
 
 func (k *Kubernetes) GatherRecentCPU(ctx context.Context, spec autoscalingv2.MetricSpec, namespace string, selector labels.Selector, window time.Duration) (*gathered.Metric, error) {
 	if spec.Resource == nil || spec.Resource.Name != "cpu" || spec.Resource.Target.AverageUtilization == nil {
 		return nil, fmt.Errorf("recent CPU requires a CPU utilization metric")
 	}
-	if k.cpuHistorySource != "cgroup" {
-		return nil, fmt.Errorf("recent CPU windows need the cgroup source")
+	if k.cgroup == nil {
+		return nil, errNoCgroup
 	}
 	if window < 2*time.Second || window > time.Minute {
 		return nil, fmt.Errorf("recent CPU window must be between 2s and 1m")
@@ -163,14 +143,10 @@ func (k *Kubernetes) Gather(parent context.Context, specs []autoscalingv2.Metric
 			custom_metrics.NewAvailableAPIsGetter(clientset.Discovery())),
 	}
 	pods := &rawPodLister{client: podClient, ctx: ctx}
-	var cgroup *cgroupSource
-	if k.cpuHistorySource == "cgroup" {
-		cgroup = k.cgroup
-		if cgroup == nil {
-			return nil, fmt.Errorf("cgroup CPU source not configured")
-		}
+	if k.cgroup == nil {
+		return nil, errNoCgroup
 	}
-	gatherer := k8shorizmetrics.NewGatherer(&checkedMetricClient{RESTClient: metricClient, ctx: ctx, pods: pods, cgroup: cgroup}, pods, cpuInitialization, readinessDelay)
+	gatherer := k8shorizmetrics.NewGatherer(&checkedMetricClient{RESTClient: metricClient, ctx: ctx, pods: pods, cgroup: k.cgroup}, pods, cpuInitialization, readinessDelay)
 	var result []*gathered.Metric
 	var firstError error
 	for _, spec := range specs {
