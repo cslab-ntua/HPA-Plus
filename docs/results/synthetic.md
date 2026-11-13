@@ -23,11 +23,11 @@ The large numbers are HPA+; the row under each is the HPA formula. The small cha
 
 ## Repeated peaks
 
-![The measured hour of repeated peaks, the sudden jump and the recovery: offered load, share of requests answered within 500 ms and ready pods for each setup.](figures/peaks-hour.svg)
+![The measured hour of repeated peaks, the sudden jump and the recovery: offered load, requests missed so far and ready pods for each setup. The HPA formula missed 71,245 requests, about 5,400 at each peak; HPA+ missed 5,134, nearly all in the sudden jump.](figures/peaks-hour.svg)
 
 HPA+ answered nearly every request in time through all 12 peaks of the measured hour. The HPA formula sees only CPU, and a pod cannot use more than its 1 CPU however many requests are waiting. Each scaling step could therefore ask for at most 1.7 times the current pods (100% ÷ 60%, rounded up), and every peak ended before the HPA formula got past 2 pods.
 
-![One peak up close. HPA+ had 5 pods ready as the peak started. The HPA formula stayed at 1 to 2 pods and answered 2 to 7% of requests in time.](figures/peak-closeup.svg)
+![One peak up close. HPA+ had 5 pods ready as the peak started and missed 3 requests. The HPA formula stayed at 1 to 2 pods and missed 5,440 of the peak's requests.](figures/peak-closeup.svg)
 
 The HPA formula setup at the same peak shows what full pods hide. Requests started much faster than they finished, its measured CPU stopped at what its 1 to 2 pods could do, and the rebuild came close to the CPU the requests needed:
 
@@ -35,7 +35,7 @@ The HPA formula setup at the same peak shows what full pods hide. Requests start
 
 ## Cycles
 
-![The measured hour of cycles, the sudden jump and the recovery: offered load, share of requests answered within 500 ms and ready pods for each setup.](figures/cycles-hour.svg)
+![The measured hour of cycles, the sudden jump and the recovery: offered load, requests missed so far and ready pods for each setup. The HPA formula missed 34,520 requests and HPA+ 2,070.](figures/cycles-hour.svg)
 
 When requests got heavier in the middle of each cycle, the same request rate needed about 1.5 times the CPU. HPA+ followed both the climbs and the heavier requests, and answered 99.5% of requests in time. The HPA formula fell behind on each climb and each switch to heavier requests, and answered 83.2%.
 

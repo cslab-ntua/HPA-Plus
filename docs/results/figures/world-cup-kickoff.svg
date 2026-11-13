@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="649" viewBox="0 0 1000 649" role="img" aria-labelledby="title desc">
+<title id="title">The 16:00 kick-off up close</title>
+<desc id="desc">The 16:00 kick-off of the World Cup run up close. HPA+ had a second pod from 16:08 and missed 20 requests here. The HPA formula added its second pod at 16:14, once its one pod was full, and missed 351.</desc>
+<style>text{font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}.display{font-family:"IBM Plex Sans Condensed","Arial Narrow",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-weight:600}.mono{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;font-variant-numeric:tabular-nums}.line{fill:none;stroke-linejoin:round;stroke-linecap:round}.hair{fill:none;stroke-width:1}.plane{fill:#f4f4f1}.card{fill:#fcfcfb;stroke:rgba(11,11,11,0.12)}.grid{stroke:#e1e0d9}.axis{stroke:#c3c2b7}.band{fill:rgba(42,120,214,0.07)}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.muted{fill:#7d7b75}.l-cand{stroke:#2a78d6}.l-cpu{stroke:#eb6834}.l-react{stroke:#1baf7a}.l-load{stroke:#52514e}.f-load{fill:rgba(82,81,78,0.12)}.f-heavy{fill:rgba(82,81,78,0.36)}.f-seg{fill:#e1e0d9}.f-jump{fill:rgba(42,120,214,0.20)}.f-wcand{fill:rgba(42,120,214,0.30)}.f-wcpu{fill:rgba(235,104,52,0.30)}.f-wreact{fill:rgba(27,175,122,0.32)}.l-req{stroke:#0b0b0b}.f-cand{fill:#2a78d6}.f-cpu{fill:#eb6834}.f-react{fill:#1baf7a}.ring{stroke:#fcfcfb}.marker{stroke:#52514e}@media (prefers-color-scheme:dark){.plane{fill:#0f0f0e}.card{fill:#1a1a19;stroke:rgba(255,255,255,0.12)}.grid{stroke:#2c2c2a}.axis{stroke:#44443f}.band{fill:rgba(57,135,229,0.10)}.ink{fill:#f0efec}.ink2{fill:#c3c2b7}.muted{fill:#94928b}.l-cand{stroke:#3987e5}.l-cpu{stroke:#d95926}.l-react{stroke:#199e70}.l-load{stroke:#c3c2b7}.f-load{fill:rgba(195,194,183,0.12)}.f-heavy{fill:rgba(195,194,183,0.34)}.f-seg{fill:#2c2c2a}.f-jump{fill:rgba(57,135,229,0.28)}.f-wcand{fill:rgba(57,135,229,0.36)}.f-wcpu{fill:rgba(217,89,38,0.36)}.f-wreact{fill:rgba(25,158,112,0.40)}.l-req{stroke:#f0efec}.f-cand{fill:#3987e5}.f-cpu{fill:#d95926}.f-react{fill:#199e70}.ring{stroke:#1a1a19}.marker{stroke:#c3c2b7}}</style>
+<rect x="0.5" y="0.5" width="999" height="648" rx="6" class="card"/>
+<text x="24.0" y="44.0" class="ink display" font-size="20">The 16:00 kick-off up close</text>
+<text x="24.0" y="68.0" class="muted" font-size="13.5">15:36 to 17:00 on 26 June 1998, 10.5 minutes of the run. CPU needed is what the offered requests cost; CPU given is the</text>
+<text x="24.0" y="87.0" class="muted" font-size="13.5">pods ready, 1 CPU each. Below the dashed line pods ran above the 60% target; near the grey area they were full.</text>
+<rect x="24" y="110" width="18" height="10" rx="2" class="f-heavy"/><line x1="24" y1="109.5" x2="42" y2="109.5" class="hair l-load" stroke-width="1.5"/>
+<text x="49.0" y="121.0" class="ink2" font-size="13">CPU needed</text>
+<line x1="145.1" y1="116.5" x2="163.1" y2="116.5" class="line l-load" stroke-width="1.5" stroke-dasharray="3 3"/>
+<text x="170.1" y="121.0" class="ink2" font-size="13">Needed at the 60% CPU target</text>
+<line x1="399.58" y1="116.5" x2="417.58" y2="116.5" class="line l-cand" stroke-width="2.5"/>
+<text x="424.6" y="121.0" class="ink2" font-size="13">HPA+, CPU given</text>
+<line x1="557.73" y1="116.5" x2="575.73" y2="116.5" class="line l-react" stroke-width="2.5"/>
+<text x="582.7" y="121.0" class="ink2" font-size="13">HPA formula, CPU given</text>
+<line x1="325.5" y1="167" x2="325.5" y2="237" class="hair marker" stroke-width="1"/>
+<line x1="325.5" y1="281" x2="325.5" y2="431" class="hair marker" stroke-width="1"/>
+<line x1="325.5" y1="475" x2="325.5" y2="585" class="hair marker" stroke-width="1"/>
+<text x="24.0" y="157.0" class="ink2" font-size="13" font-weight="600">Offered load (requests per second)</text>
+<line x1="64" y1="237.5" x2="976" y2="237.5" class="hair axis"/>
+<text x="56.0" y="241.5" class="muted mono" font-size="11.5" text-anchor="end">0</text>
+<line x1="64" y1="202.5" x2="976" y2="202.5" class="hair grid"/>
+<text x="56.0" y="206.5" class="muted mono" font-size="11.5" text-anchor="end">30</text>
+<line x1="64" y1="167.5" x2="976" y2="167.5" class="hair grid"/>
+<text x="56.0" y="171.5" class="muted mono" font-size="11.5" text-anchor="end">60</text>
+<path d="M64.0,237.0L64.0,223.4H85.7V223.0H107.4V223.6H129.1V222.4H150.9V222.6H172.6V224.2H194.3V223.0H216.0V223.2H237.7V222.4H259.4V222.5H281.1V221.4H302.9V219.8H324.6V220.8H346.3V218.6H368.0V217.6H389.7V217.3H411.4V215.4H433.1V210.8H454.9V208.7H476.6V204.3H498.3V201.8H520.0V196.6H541.7V201.1H563.4V196.9H585.1V194.6H606.9V193.3H628.6V192.5H650.3V188.2H672.0V191.3H693.7V186.8H715.4V185.7H737.1V182.1H758.9V180.3H780.6V177.3H802.3V180.1H824.0V179.4H845.7V175.8H867.4V175.4H889.1V177.6H910.9V178.4H932.6V174.1H954.3V178.3H976.0V237.0Z" class="f-load"/>
+<path d="M64.0,223.4H85.7V223.0H107.4V223.6H129.1V222.4H150.9V222.6H172.6V224.2H194.3V223.0H216.0V223.2H237.7V222.4H259.4V222.5H281.1V221.4H302.9V219.8H324.6V220.8H346.3V218.6H368.0V217.6H389.7V217.3H411.4V215.4H433.1V210.8H454.9V208.7H476.6V204.3H498.3V201.8H520.0V196.6H541.7V201.1H563.4V196.9H585.1V194.6H606.9V193.3H628.6V192.5H650.3V188.2H672.0V191.3H693.7V186.8H715.4V185.7H737.1V182.1H758.9V180.3H780.6V177.3H802.3V180.1H824.0V179.4H845.7V175.8H867.4V175.4H889.1V177.6H910.9V178.4H932.6V174.1H954.3V178.3H976.0" class="line l-load" stroke-width="1.4"/>
+<text x="330.6" y="180.0" class="muted mono" font-size="11.5">16:00 kick-off</text>
+<text x="24.0" y="271.0" class="ink2" font-size="13" font-weight="600">CPU needed and CPU given (cores)</text>
+<line x1="64" y1="431.5" x2="976" y2="431.5" class="hair axis"/>
+<text x="56.0" y="435.5" class="muted mono" font-size="11.5" text-anchor="end">0</text>
+<line x1="64" y1="394.5" x2="976" y2="394.5" class="hair grid"/>
+<text x="56.0" y="398.5" class="muted mono" font-size="11.5" text-anchor="end">1</text>
+<line x1="64" y1="356.5" x2="976" y2="356.5" class="hair grid"/>
+<text x="56.0" y="360.5" class="muted mono" font-size="11.5" text-anchor="end">2</text>
+<line x1="64" y1="318.5" x2="976" y2="318.5" class="hair grid"/>
+<text x="56.0" y="322.5" class="muted mono" font-size="11.5" text-anchor="end">3</text>
+<line x1="64" y1="281.5" x2="976" y2="281.5" class="hair grid"/>
+<text x="56.0" y="285.5" class="muted mono" font-size="11.5" text-anchor="end">4</text>
+<path d="M64.0,431.0L64.0,416.5H85.7V416.1H107.4V416.8H129.1V415.5H150.9V415.7H172.6V417.4H194.3V416.1H216.0V416.3H237.7V415.5H259.4V415.6H281.1V414.5H302.9V412.7H324.6V413.8H346.3V411.4H368.0V410.4H389.7V410.1H411.4V408.0H433.1V403.2H454.9V400.9H476.6V396.3H498.3V393.7H520.0V388.0H541.7V392.8H563.4V388.5H585.1V386.0H606.9V384.6H628.6V383.8H650.3V379.2H672.0V382.5H693.7V377.7H715.4V376.5H737.1V372.7H758.9V370.8H780.6V367.6H802.3V370.6H824.0V369.9H845.7V366.0H867.4V365.6H889.1V367.9H910.9V368.7H932.6V364.2H954.3V368.6H976.0V431.0Z" class="f-heavy"/>
+<path d="M64.0,406.9H85.7V406.2H107.4V407.3H129.1V405.1H150.9V405.5H172.6V408.3H194.3V406.2H216.0V406.5H237.7V405.1H259.4V405.3H281.1V403.5H302.9V400.6H324.6V402.4H346.3V398.4H368.0V396.6H389.7V396.2H411.4V392.7H433.1V384.6H454.9V380.9H476.6V373.2H498.3V368.8H520.0V359.4H541.7V367.4H563.4V360.1H585.1V356.0H606.9V353.6H628.6V352.3H650.3V344.7H672.0V350.2H693.7V342.2H715.4V340.1H737.1V333.8H758.9V330.6H780.6V325.3H802.3V330.4H824.0V329.1H845.7V322.7H867.4V322.0H889.1V325.8H910.9V327.2H932.6V319.6H954.3V327.1H976.0" class="line l-load" stroke-width="1" stroke-dasharray="3 3"/>
+<path d="M64.0,393.5H85.7V393.5H107.4V393.5H129.1V393.5H150.9V393.5H172.6V393.5H194.3V393.5H216.0V393.5H237.7V393.5H259.4V393.5H281.1V393.5H302.9V393.5H324.6V393.5H346.3V393.5H368.0V393.5H389.7V393.5H411.4V393.5H433.1V393.5H454.9V393.5H476.6V356.0H498.3V356.0H520.0V356.0H541.7V356.0H563.4V356.0H585.1V356.0H606.9V356.0H628.6V356.0H650.3V318.5H672.0V318.5H693.7V318.5H715.4V318.5H737.1V318.5H758.9V318.5H780.6V318.5H802.3V318.5H824.0V318.5H845.7V318.5H867.4V318.5H889.1V318.5H910.9V318.5H932.6V318.5H954.3V318.5H976.0" class="line l-react" stroke-width="2.2"/>
+<path d="M64.0,393.5H85.7V393.5H107.4V393.5H129.1V393.5H150.9V393.5H172.6V393.5H194.3V393.5H216.0V393.5H237.7V393.5H259.4V393.5H281.1V393.5H302.9V393.5H324.6V356.0H346.3V393.5H368.0V393.5H389.7V393.5H411.4V356.0H433.1V356.0H454.9V356.0H476.6V356.0H498.3V356.0H520.0V356.0H541.7V356.0H563.4V356.0H585.1V318.5H606.9V318.5H628.6V318.5H650.3V318.5H672.0V318.5H693.7V318.5H715.4V318.5H737.1V318.5H758.9V318.5H780.6V318.5H802.3V281.0H824.0V318.5H845.7V318.5H867.4V318.5H889.1V281.0H910.9V281.0H932.6V318.5H954.3V318.5H976.0" class="line l-cand" stroke-width="2.2"/>
+<circle cx="75.0" cy="294.5" r="4.5" class="f-cand"/>
+<text x="85.0" y="299.0" class="ink" font-size="12">HPA+: 2 pods from 16:08</text>
+<circle cx="75.0" cy="313.5" r="4.5" class="f-react"/>
+<text x="85.0" y="318.0" class="ink" font-size="12">HPA formula: 2 pods from 16:14, once its one pod was nearly full</text>
+<text x="24.0" y="465.0" class="ink2" font-size="13" font-weight="600">Requests missed (each 15 s window)</text>
+<line x1="64" y1="585.5" x2="976" y2="585.5" class="hair axis"/>
+<text x="56.0" y="589.5" class="muted mono" font-size="11.5" text-anchor="end">0</text>
+<line x1="64" y1="541.5" x2="976" y2="541.5" class="hair grid"/>
+<text x="56.0" y="545.5" class="muted mono" font-size="11.5" text-anchor="end">100</text>
+<line x1="64" y1="497.5" x2="976" y2="497.5" class="hair grid"/>
+<text x="56.0" y="501.5" class="muted mono" font-size="11.5" text-anchor="end">200</text>
+<path d="M64.0,585.0H85.7V585.0H107.4V585.0H129.1V585.0H150.9V585.0H172.6V585.0H194.3V585.0H216.0V585.0H237.7V585.0H259.4V585.0H281.1V585.0H302.9V585.0H324.6V585.0H346.3V585.0H368.0V584.6H389.7V584.6H411.4V584.6H433.1V557.3H454.9V493.5H476.6V558.6H498.3V585.0H520.0V585.0H541.7V585.0H563.4V585.0H585.1V585.0H606.9V581.9H628.6V585.0H650.3V585.0H672.0V585.0H693.7V585.0H715.4V585.0H737.1V584.1H758.9V585.0H780.6V585.0H802.3V584.1H824.0V585.0H845.7V584.6H867.4V584.6H889.1V584.1H910.9V585.0H932.6V584.1H954.3V585.0H976.0" class="line l-react" stroke-width="2"/>
+<path d="M64.0,585.0H85.7V585.0H107.4V585.0H129.1V585.0H150.9V585.0H172.6V585.0H194.3V585.0H216.0V585.0H237.7V585.0H259.4V585.0H281.1V585.0H302.9V585.0H324.6V585.0H346.3V585.0H368.0V585.0H389.7V581.5H411.4V585.0H433.1V585.0H454.9V585.0H476.6V585.0H498.3V584.6H520.0V585.0H541.7V585.0H563.4V584.6H585.1V585.0H606.9V585.0H628.6V585.0H650.3V585.0H672.0V585.0H693.7V585.0H715.4V585.0H737.1V585.0H758.9V584.6H780.6V585.0H802.3V584.6H824.0V585.0H845.7V584.1H867.4V583.7H889.1V585.0H910.9V585.0H932.6V583.7H954.3V585.0H976.0" class="line l-cand" stroke-width="2"/>
+<circle cx="776.0" cy="488.5" r="4.5" class="f-cand"/>
+<text x="786.0" y="493.0" class="ink" font-size="12">HPA+: 20 missed here</text>
+<circle cx="776.0" cy="507.5" r="4.5" class="f-react"/>
+<text x="786.0" y="512.0" class="ink" font-size="12">HPA formula: 351 missed here</text>
+<line x1="107.5" y1="585" x2="107.5" y2="590" class="hair axis"/>
+<text x="107.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">15:40</text>
+<line x1="325.5" y1="585" x2="325.5" y2="590" class="hair axis"/>
+<text x="325.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">16:00</text>
+<line x1="542.5" y1="585" x2="542.5" y2="590" class="hair axis"/>
+<text x="542.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">16:20</text>
+<line x1="759.5" y1="585" x2="759.5" y2="590" class="hair axis"/>
+<text x="759.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">16:40</text>
+<line x1="976.5" y1="585" x2="976.5" y2="590" class="hair axis"/>
+<text x="976.5" y="604.0" class="muted mono" font-size="11.5" text-anchor="middle">17:00</text>
+<text x="976.0" y="625.0" class="muted" font-size="12" text-anchor="end">time of day on 26 June 1998 (French time) · 1 minute of the day is 7.5 seconds of the run</text>
+</svg>
