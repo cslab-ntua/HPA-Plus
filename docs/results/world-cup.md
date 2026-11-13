@@ -19,7 +19,7 @@ run each.
 
 ## Results with XGBoost
 
-![The XGBoost run on the 1998 World Cup trace: offered load, share of requests answered within 500 ms and ready pods for each setup over the replayed day. Most of the HPA formula's misses came at the 16:00 kick-off.](figures/world-cup.svg)
+![The XGBoost run on the 1998 World Cup trace: offered load, requests missed so far and ready pods for each setup over the replayed day. Most of the HPA formula's misses came at the 16:00 kick-off.](figures/world-cup.svg)
 
 | Setup | Requests on time | Missed | p95 | CPU requested |
 | --- | ---: | ---: | ---: | ---: |
@@ -29,8 +29,14 @@ run each.
 Out of 187,008 requests per setup. HPA+ missed less than half as many requests as the HPA formula, for 15% more CPU.
 
 Most of the difference came at the 16:00 kick-off, when load doubled within about a minute of the run. HPA+ had a
-second pod 5 seconds into the rise. The HPA formula added it about a minute later, once its one pod was full. The rest
-of the day the two missed about the same.
+second pod from 16:08 and missed 20 requests between 15:36 and 17:00. The HPA formula added its second pod at 16:14,
+45 seconds of the run later, once its one pod was nearly full, and missed 351. The rest of the day the two missed
+about the same.
+
+![The 16:00 kick-off up close: offered load, CPU needed against CPU given by each setup's ready pods, and requests missed per 15 seconds. HPA+ had a second pod from 16:08 and missed 20 requests; the HPA formula added its second pod at 16:14 and missed 351.](figures/world-cup-kickoff.svg)
+
+CPU needed uses the CPU per request measured on the [synthetic runs](synthetic.md); on this run's windows that met
+the SLO it fits within 3%.
 
 ## Four forecasting models
 
