@@ -251,6 +251,10 @@ func TestReconstructedTargetForecastsRebuiltDemandAndFloorsDecision(t *testing.T
 	if fake.requests[0].Model.SessionID != model.SessionID+"/reconstructed" {
 		t.Fatal("reconstructed forecast shares the measured-CPU forecast session")
 	}
+	// A configured lead keeps the configured horizon, and the status says so.
+	if fake.requests[0].Model.XGBoost.LookAhead != 90000 || d.ForecastHorizonSeconds != 90 {
+		t.Fatalf("horizon changed without a measured lead: %d ms, status %d s", fake.requests[0].Model.XGBoost.LookAhead, d.ForecastHorizonSeconds)
+	}
 	// The published events are what the benchmark supervisor checks for eligibility.
 	updated := &corev1.ConfigMap{}
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(cm), updated); err != nil {

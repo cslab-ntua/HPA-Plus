@@ -146,7 +146,8 @@ arrives. When the maximum age is longer than the horizon, validity also ends wit
 reading the cache never renews it. Single-value forecasts keep their horizon limit.
 
 With [request demand](../user-guide/request-demand.md#lead-time-from-pod-startup), `scaleUpLeadFromStartup: true`
-derives the lead time from how fast the workload's pods actually start.
+derives the lead time from how fast the workload's pods actually start, and lengthens the forecast horizon past
+`lookAhead` when that lead needs it.
 
 ## Reliability checks
 
