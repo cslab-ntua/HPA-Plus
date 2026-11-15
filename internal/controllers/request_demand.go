@@ -413,11 +413,19 @@ func (r *HPAPlusReconciler) processRequestDemand(ctx context.Context, instance *
 	}
 	diagnostic.State, diagnostic.Target = "learning", api.RequestDemandTargetReconstructedCPU
 	reconstructedRows, reconstructionFallbacks := reconstructedHistory(sampled, state.Observations, historySize)
+	// Forecast far enough ahead to order pods a measured start-up before a rise.
+	configured := predictionHorizon(instance, model)
+	horizon := forecastHorizon(configured, syncPeriodForInstance(instance), model, pods.Items, state.ForecastEvents)
+	diagnostic.ForecastHorizonSeconds = int32(horizon / time.Second)
 	// Fit once per closed slot, after that slot's own CPU sample exists.
 	if state.LastFitSlot.Before(state.LastSlot) && len(reconstructedRows) >= historySize &&
 		!reconstructedRows[len(reconstructedRows)-1].Time.Time.Before(state.LastSlot.Add(-reconstructedWindowMatch)) {
 		requested := r.now()
-		result, fitErr := r.runReconstructedForecast(ctx, instance, model, reconstructedRows, scaleTargetIdentity(instance, scale), status)
+		forecastModel := model
+		if horizon > configured {
+			forecastModel = withLookAhead(model, horizon)
+		}
+		result, fitErr := r.runReconstructedForecast(ctx, instance, forecastModel, reconstructedRows, scaleTargetIdentity(instance, scale), status)
 		state.LastForecastAttemptAt = requested
 		state.LastForecastOutcome, state.LastForecastReason = "ready", ""
 		if fitErr != nil {

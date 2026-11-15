@@ -2227,6 +2227,12 @@ spec:
                                 floorReplicas:
                                   format: int32
                                   type: integer
+                                forecastHorizonSeconds:
+                                  description: |-
+                                    ForecastHorizonSeconds is how far the last forecast reached: the configured horizon, or longer when the
+                                    measured pod start-up needs it.
+                                  format: int32
+                                  type: integer
                                 forecastOnlyReplicas:
                                   format: int32
                                   type: integer
@@ -2440,6 +2446,12 @@ spec:
                         fallbackReason:
                           type: string
                         floorReplicas:
+                          format: int32
+                          type: integer
+                        forecastHorizonSeconds:
+                          description: |-
+                            ForecastHorizonSeconds is how far the last forecast reached: the configured horizon, or longer when the
+                            measured pod start-up needs it.
                           format: int32
                           type: integer
                         forecastOnlyReplicas:

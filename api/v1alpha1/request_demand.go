@@ -82,6 +82,10 @@ type RequestDemandStatus struct {
 	// still increasing, fast when the last few seconds needed more pods, or
 	// postponed when a new forecast took back a rise the previous one expected.
 	DecidedBy string `json:"decidedBy,omitempty"`
+	// ForecastHorizonSeconds is how far the last forecast reached: the configured horizon, or longer when the
+	// measured pod start-up needs it.
+	// +optional
+	ForecastHorizonSeconds int32 `json:"forecastHorizonSeconds,omitempty"`
 }
 
 func (in *RequestDemandConfig) DeepCopyInto(out *RequestDemandConfig) {

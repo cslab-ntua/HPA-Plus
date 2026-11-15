@@ -140,6 +140,7 @@ The request windows and issued forecasts are persisted in an owned ConfigMap, se
 
 - `state`, `source` (`request-demand`, `cpu-forecast` or `hold`) and `fallbackReason`;
 - `measuredCores` and `reconstructedCores` of the latest window, and `reconstructionFallbacks`;
+- `forecastHorizonSeconds`: how far the forecast reaches, the model's `lookAhead` or longer when the lead needs it;
 - `forecastOnlyReplicas`, `floorReplicas` and `decidedBy`: `forecast`, `floor`, `rising`, `fast`, `postponed`, or
   `hold` when the window that closed at the last sampling boundary was not measured yet.
 
@@ -153,6 +154,8 @@ predictivePolicy:
   scaleUpLeadFromStartup: true
   tolerance: 0.1
 ```
+
+The forecast then also reaches far enough for that lead. With W the 30-second window, it covers W × (⌈(lead + delay) ÷ W⌉ + 2): the windows that the lead and the forecast's own delay span, plus the window where a rise starts and the one after it, which places the rise inside its window. The delay is the longest time a recent forecast took to arrive after the window it was built on, or half a window before the first one. A longer `lookAhead` on the model stays. With the 90-second `lookAhead` above, pods that start in a few seconds keep 90 seconds and pods that need a minute get 150.
 
 ## Limits
 
