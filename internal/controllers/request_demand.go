@@ -85,6 +85,26 @@ func finalizeRequestDemandSources(statuses []api.ModelStatus, predictions map[st
 	}
 }
 
+// windowRecommendations gives, in the order of the predictions, each model's
+// count without the rules that keep the current pods for one cycle, so the
+// scale-down window does not keep those pods for its whole length.
+func windowRecommendations(models []api.Model, statuses []api.ModelStatus, predictions map[string]int32) []int32 {
+	out := make([]int32, 0, len(predictions))
+	for i, model := range models {
+		replicas, ok := predictions[model.Name]
+		if !ok {
+			continue
+		}
+		if i < len(statuses) {
+			if d := statuses[i].RequestDemand; d != nil && d.Source == "request-demand" && d.RecommendedReplicas < replicas {
+				replicas = d.RecommendedReplicas
+			}
+		}
+		out = append(out, replicas)
+	}
+	return out
+}
+
 type demandPod struct {
 	workloaddemand.PodIdentity
 	SeenAt time.Time `json:"seenAt"`

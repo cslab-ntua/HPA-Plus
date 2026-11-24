@@ -109,7 +109,7 @@ func TestReconstructedReplicasFloorStopsWrongScaleIn(t *testing.T) {
 		return &reconstructedWindow{End: slot.Add(-time.Second), Reconstructed: cores}
 	}
 	got, err := reconstructedReplicas(forecast(1.2), window(2*76.6/29.6), policy, capacity, 3, now, 30*time.Second)
-	if err != nil || got.Replicas != 9 || got.ForecastOnly != 2 || got.Floor != 9 || got.DecidedBy != "floor" {
+	if err != nil || got.Replicas != 9 || got.ForecastOnly != 2 || got.Floor != 9 || got.DecidedBy != "floor" || got.Recommended != 9 {
 		t.Fatalf("floor must replace a wrong scale-in: %+v %v", got, err)
 	}
 	got, err = reconstructedReplicas(forecast(2.9), window(.3), policy, capacity, 1, now, 30*time.Second)
@@ -124,8 +124,8 @@ func TestReconstructedReplicasFloorStopsWrongScaleIn(t *testing.T) {
 	// Without a recent CPU window the floor holds current capacity, so a
 	// wrong forecast cannot scale in while demand is unmeasured.
 	got, err = reconstructedReplicas(forecast(1.2), nil, policy, capacity, 3, now, 30*time.Second)
-	if err != nil || got.Floor != 3 || got.Replicas != 3 || got.ForecastOnly != 2 || got.DecidedBy != "hold" {
-		t.Fatalf("unmeasured demand must hold current capacity: %+v %v", got, err)
+	if err != nil || got.Floor != 3 || got.Replicas != 3 || got.ForecastOnly != 2 || got.DecidedBy != "hold" || got.Recommended != 2 {
+		t.Fatalf("unmeasured demand must hold current capacity and recommend the forecast: %+v %v", got, err)
 	}
 	got, err = reconstructedReplicas(forecast(4.2), nil, policy, capacity, 3, now, 30*time.Second)
 	if err != nil || got.Replicas != 7 || got.DecidedBy != "forecast" {
@@ -285,8 +285,8 @@ func TestRisingDemandBlocksScaleIn(t *testing.T) {
 	ptr := func(v float64) *float64 { return &v }
 	// r13 cycle 1: 0.27 -> 1.35 cores needs 1 -> 3 pods, so 5 pods stay.
 	got, err := reconstructedReplicas(forecast, window(1.35, ptr(.27)), policy, capacity, 5, now, 30*time.Second)
-	if err != nil || got.Replicas != 5 || got.DecidedBy != "rising" {
-		t.Fatalf("a ramp up must block scale-in: %+v %v", got, err)
+	if err != nil || got.Replicas != 5 || got.DecidedBy != "rising" || got.Recommended != 3 {
+		t.Fatalf("a ramp up must block scale-in and recommend the floor: %+v %v", got, err)
 	}
 	for _, c := range []struct {
 		name          string
@@ -625,5 +625,18 @@ func TestReconstructedDemandRunsWithEveryModelType(t *testing.T) {
 				t.Fatalf("history size %d, want %d from the model's own settings", len(history), want)
 			}
 		})
+	}
+}
+
+func TestWindowRecommendationsDropOneCycleHolds(t *testing.T) {
+	models := []api.Model{{Name: "request"}, {Name: "cpu"}, {Name: "off"}}
+	statuses := []api.ModelStatus{
+		{Name: "request", RequestDemand: &api.RequestDemandStatus{Source: "request-demand", DecidedBy: "rising", RecommendedReplicas: 2}},
+		{Name: "cpu", RequestDemand: &api.RequestDemandStatus{Source: "cpu-forecast", RecommendedReplicas: 1}},
+		{Name: "off"},
+	}
+	got := windowRecommendations(models, statuses, map[string]int32{"request": 5, "cpu": 4})
+	if len(got) != 2 || got[0] != 2 || got[1] != 4 {
+		t.Fatalf("want the request rule's 2 and the CPU forecast's own 4, in model order: %v", got)
 	}
 }

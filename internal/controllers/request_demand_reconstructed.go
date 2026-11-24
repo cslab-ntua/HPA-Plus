@@ -335,8 +335,12 @@ func cpuForecastPoints(points []requestforecast.Point) []api.CPUForecastPoint {
 
 type reconstructedDecision struct {
 	Replicas, ForecastOnly, Floor int32
-	DecidedBy                     string
-	Deadline                      time.Time
+	// Recommended is what the forecast, floor and fast rules ask for, without
+	// the rules that keep the current pods for this cycle (hold, rising,
+	// postponed). The scale-down window stores it.
+	Recommended int32
+	DecidedBy   string
+	Deadline    time.Time
 }
 
 // reconstructedReplicas converts the forecast exactly as CPU forecasts are
@@ -462,7 +466,7 @@ func reconstructedReplicas(points []requestforecast.Point, latest *reconstructed
 	if err != nil {
 		return reconstructedDecision{}, err
 	}
-	decision := reconstructedDecision{Replicas: forecast, ForecastOnly: forecast, DecidedBy: "forecast", Deadline: deadline}
+	decision := reconstructedDecision{Replicas: forecast, ForecastOnly: forecast, Recommended: forecast, DecidedBy: "forecast", Deadline: deadline}
 	if latest == nil || now.Before(latest.End) || !now.Before(latest.End.Add(reconstructedFloorValidity)) ||
 		!latestWindowClosed(latest.End, now, period) {
 		// Current demand is unmeasured, typically while pods start or stop, or
@@ -485,7 +489,7 @@ func reconstructedReplicas(points []requestforecast.Point, latest *reconstructed
 		decision.Deadline = floorDeadline
 	}
 	if floor > forecast {
-		decision.Replicas, decision.DecidedBy = floor, "floor"
+		decision.Replicas, decision.Recommended, decision.DecidedBy = floor, floor, "floor"
 	}
 	// While demand is still rising the last window understates it, so neither
 	// the forecast nor the floor may remove capacity yet.
@@ -500,7 +504,7 @@ func reconstructedReplicas(points []requestforecast.Point, latest *reconstructed
 			return reconstructedDecision{}, err
 		}
 		if replicas > current && replicas > decision.Replicas {
-			decision.Replicas, decision.DecidedBy = replicas, "fast"
+			decision.Replicas, decision.Recommended, decision.DecidedBy = replicas, replicas, "fast"
 		}
 	}
 	return decision, nil
@@ -552,6 +556,7 @@ func (r *HPAPlusReconciler) reconstructedRecommendation(model *api.Model, scale 
 	diagnostic.State, diagnostic.FreshUntil = "qualified", &metav1.Time{Time: ageDeadline}
 	diagnostic.Source, diagnostic.FallbackReason = "request-demand", ""
 	diagnostic.ForecastOnlyReplicas, diagnostic.FloorReplicas, diagnostic.DecidedBy = decision.ForecastOnly, decision.Floor, decision.DecidedBy
+	diagnostic.RecommendedReplicas = decision.Recommended
 	status.State = "Ready"
 	status.HistorySamples = int64(len(history))
 	replicas := decision.Replicas
