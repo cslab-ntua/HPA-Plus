@@ -19,7 +19,12 @@ type Input struct {
 	Now                 time.Time
 	Requested, Baseline int32
 	Predictions         []int32
-	MetricsIncomplete   bool
+	// WindowPredictions are the same models' counts without the rules that
+	// only keep the current pods for one cycle. The scale-down window stores
+	// them, so such a hold delays one decision and not the whole window. Nil,
+	// or a length other than Predictions', stores the counts as decided.
+	WindowPredictions []int32
+	MetricsIncomplete bool
 }
 
 // Result is a reviewable plan. Persistence and write-time freshness/identity
@@ -47,7 +52,7 @@ func Plan(in Input) (Result, error) {
 		return Result{}, err
 	}
 	baselineInput := in
-	baselineInput.Predictions = nil
+	baselineInput.Predictions, baselineInput.WindowPredictions = nil, nil
 	baselineInput.Spec = *in.Spec.DeepCopy()
 	baselineInput.Spec.Models = nil
 	baselineInput.Spec.PredictionFailurePolicy = api.PredictionFailureReactive
@@ -86,6 +91,10 @@ func plan(in Input, assist bool) (Result, error) {
 	}
 	result := Result{Mode: "baseline", BaselineIncluded: (len(in.Predictions) == 0 && !holdFailure) || (len(in.Predictions) > 0 && in.Spec.IncludeHPA != nil && *in.Spec.IncludeHPA)}
 	candidates := append([]int32(nil), in.Predictions...)
+	var window []int32
+	if len(in.WindowPredictions) > 0 && len(in.WindowPredictions) == len(in.Predictions) {
+		window = append(window, in.WindowPredictions...)
+	}
 	if len(candidates) == 0 && holdFailure {
 		candidates = append(candidates, in.Requested)
 		result.Mode = "hold"
@@ -99,6 +108,9 @@ func plan(in Input, assist bool) (Result, error) {
 	}
 	if result.BaselineIncluded {
 		candidates = append(candidates, in.Baseline)
+		if window != nil {
+			window = append(window, in.Baseline)
+		}
 	}
 	selected, err := scalebehavior.DecideTargetReplicasByScalingStrategy(strategy, candidates)
 	if err != nil {
@@ -119,13 +131,28 @@ func plan(in Input, assist bool) (Result, error) {
 		result.MetricsHeld = true
 		result.Guarded = in.Requested
 	}
+	// The scale-down window keeps what was asked for, not a count held for this
+	// cycle only (partial metrics, or a model rule that keeps the current pods).
+	// This cycle still decides on the held count.
+	recommended := selected
+	if window != nil {
+		if value, err := scalebehavior.DecideTargetReplicasByScalingStrategy(strategy, window); err == nil {
+			if assist && value < in.Baseline {
+				value = in.Baseline
+			}
+			if value < recommended {
+				recommended = value
+			}
+		}
+	}
 	behavior := BehaviorDefaults(in.Spec.Behavior)
 	status := in.Status.DeepCopy()
 	upEvents := scalebehavior.PruneTimestampedReplicasToWindow(status.ScaleUpEventHistory, scalebehavior.GetLongestPolicyPeriod(behavior.ScaleUp), in.Now)
 	downEvents := scalebehavior.PruneTimestampedReplicasToWindow(status.ScaleDownEventHistory, scalebehavior.GetLongestPolicyPeriod(behavior.ScaleDown), in.Now)
 	row := api.TimestampedSample{Time: &metav1.Time{Time: in.Now}, Replicas: result.Guarded}
 	result.ScaleUpRecommendations = append(scalebehavior.PruneTimestampedReplicasToWindow(status.ScaleUpReplicaHistory, *behavior.ScaleUp.StabilizationWindowSeconds, in.Now), row)
-	result.ScaleDownRecommendations = append(scalebehavior.PruneTimestampedReplicasToWindow(status.ScaleDownReplicaHistory, *behavior.ScaleDown.StabilizationWindowSeconds, in.Now), row)
+	result.ScaleDownRecommendations = append(scalebehavior.PruneTimestampedReplicasToWindow(status.ScaleDownReplicaHistory, *behavior.ScaleDown.StabilizationWindowSeconds, in.Now),
+		api.TimestampedSample{Time: &metav1.Time{Time: in.Now}, Replicas: recommended})
 	details := scalebehavior.DecideTargetReplicasByBehaviorDetails(behavior, in.Requested, result.Guarded, min, in.Spec.MaxReplicas,
 		result.ScaleUpRecommendations, result.ScaleDownRecommendations, upEvents, downEvents, in.Now)
 	result.Desired = details.Desired

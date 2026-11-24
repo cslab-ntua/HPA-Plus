@@ -2237,6 +2237,13 @@ spec:
                                   description: MeasuredCores and ReconstructedCores
                                     describe the latest closed window.
                                   type: number
+                                recommendedReplicas:
+                                  description: |-
+                                    RecommendedReplicas is what the forecast, floor and fast rules ask for,
+                                    without hold, rising and postponed, which keep the current pods for one
+                                    cycle only. The scale-down stabilization window stores this count.
+                                  format: int32
+                                  type: integer
                                 reconstructedCores:
                                   type: number
                                 reconstructionFallbacks:
@@ -2452,6 +2459,13 @@ spec:
                           description: MeasuredCores and ReconstructedCores describe
                             the latest closed window.
                           type: number
+                        recommendedReplicas:
+                          description: |-
+                            RecommendedReplicas is what the forecast, floor and fast rules ask for,
+                            without hold, rising and postponed, which keep the current pods for one
+                            cycle only. The scale-down stabilization window stores this count.
+                          format: int32
+                          type: integer
                         reconstructedCores:
                           type: number
                         reconstructionFallbacks:

@@ -82,6 +82,10 @@ type RequestDemandStatus struct {
 	// still increasing, fast when the last few seconds needed more pods, or
 	// postponed when a new forecast took back a rise the previous one expected.
 	DecidedBy string `json:"decidedBy,omitempty"`
+	// RecommendedReplicas is what the forecast, floor and fast rules ask for,
+	// without hold, rising and postponed, which keep the current pods for one
+	// cycle only. The scale-down stabilization window stores this count.
+	RecommendedReplicas int32 `json:"recommendedReplicas,omitempty"`
 }
 
 func (in *RequestDemandConfig) DeepCopyInto(out *RequestDemandConfig) {

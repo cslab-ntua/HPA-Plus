@@ -278,6 +278,7 @@ func (r *HPAPlusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 
 	plan, err := decision.Plan(decision.Input{Spec: instance.Spec, Status: instance.Status, Now: now,
 		Requested: scale.Spec.Replicas, Baseline: calculatedReplicas, Predictions: predictedReplicas,
+		WindowPredictions: windowRecommendations(instance.Spec.Models, modelStatuses, modelPredictions),
 		MetricsIncomplete: cpuSnapshot.MetricsIncomplete})
 	if err != nil {
 		return reconcile.Result{RequeueAfter: defaultErrorRetryPeriod}, err
